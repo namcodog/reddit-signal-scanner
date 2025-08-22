@@ -1,0 +1,35 @@
+{
+  "PreToolUse": [
+    {
+      "script": "$CLAUDE_PROJECT_DIR/.claude/scripts/quality_check.py",
+      "matchers": [
+        {"tool": "Edit"},
+        {"tool": "Write"},
+        {"tool": "MultiEdit"}
+      ]
+    },
+    {
+      "script": "$CLAUDE_PROJECT_DIR/.claude/scripts/linus_architect.py",
+      "matchers": [
+        {"tool": "MultiEdit"}
+      ]
+    }
+  ],
+  "PostToolUse": [
+    {
+      "script": "$CLAUDE_PROJECT_DIR/.claude/scripts/perf_metrics.py",
+      "matchers": [
+        {"tool": "WebFetch"},
+        {"tool": "Bash"}
+      ]
+    }
+  ],
+  "Stop": [
+    {
+      "script": "$CLAUDE_PROJECT_DIR/.claude/scripts/git_workflow.py"
+    },
+    {
+      "script": "$CLAUDE_PROJECT_DIR/.claude/scripts/config_sync.py"
+    }
+  ]
+}

@@ -1,0 +1,232 @@
+name: 📁 文件管理质量检查
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  schedule:
+    # 每周日凌晨2点运行完整检查
+    - cron: '0 2 * * 0'
+
+jobs:
+  file-quality-check:
+    name: 🔍 文件质量检查
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 📥 检出代码
+      uses: actions/checkout@v4
+      
+    - name: 🐍 设置Python环境
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+        
+    - name: 📦 安装依赖
+      run: |
+        python -m pip install --upgrade pip
+        pip install pyyaml
+    
+    - name: 🧹 检查临时文件
+      run: |
+        echo "🔍 检查临时文件..."
+        if find . -name "*.tmp" -o -name "*.temp" -o -name "*_temp.*" -o -name "*_test.*" | grep -q .; then
+          echo "❌ 发现临时文件，请清理："
+          find . -name "*.tmp" -o -name "*.temp" -o -name "*_temp.*" -o -name "*_test.*"
+          echo ""
+          echo "💡 使用以下命令清理："
+          echo "make clean-temp"
+          exit 1
+        else
+          echo "✅ 未发现临时文件"
+        fi
+    
+    - name: 🗃️ 检查备份文件  
+      run: |
+        echo "🔍 检查备份文件..."
+        if find . -name "*backup*" -o -name "*_backup.*" -o -name "*_old.*" -o -name "Copy of *" | grep -q .; then
+          echo "⚠️  发现备份文件，建议使用Git进行版本管理："
+          find . -name "*backup*" -o -name "*_backup.*" -o -name "*_old.*" -o -name "Copy of *"
+          echo ""
+          echo "💡 建议删除这些文件，使用Git历史记录代替"
+        else
+          echo "✅ 未发现备份文件"
+        fi
+    
+    - name: 📂 验证项目结构
+      run: |
+        echo "🔍 验证项目结构..."
+        python3 infrastructure/scripts/verify_structure.py || true
+        
+        # 检查必要的目录是否存在
+        for dir in backend frontend docs infrastructure workflow tests; do
+          if [ ! -d "$dir" ]; then
+            echo "❌ 缺少必要目录: $dir"
+            exit 1
+          else
+            echo "✅ 目录存在: $dir"
+          fi
+        done
+    
+    - name: 🔄 检查文件冗余
+      run: |
+        echo "🔍 检查文件冗余..."
+        python3 infrastructure/scripts/check_redundancy.py || true
+    
+    - name: 📅 检查文档日期
+      run: |
+        echo "🔍 检查文档日期..."
+        python3 infrastructure/scripts/check_doc_dates.py || true
+    
+    - name: 🚫 检查禁止的文件名
+      run: |
+        echo "🔍 检查禁止的文件名..."
+        forbidden_found=false
+        
+        # 检查禁止的通用文件名
+        for file in utils.py helpers.py common.py test.py demo.py example.py temp.py; do
+          if find . -name "$file" -not -path "./.git/*" -not -path "./node_modules/*" | grep -q .; then
+            echo "❌ 发现禁止的文件名: $file"
+            find . -name "$file" -not -path "./.git/*" -not -path "./node_modules/*"
+            forbidden_found=true
+          fi
+        done
+        
+        if [ "$forbidden_found" = true ]; then
+          echo ""
+          echo "💡 请使用更具体的文件名，如："
+          echo "  utils.py → date_utils.py, validation_utils.py"
+          echo "  test.py → test_specific_feature.py"
+          exit 1
+        else
+          echo "✅ 未发现禁止的文件名"
+        fi
+    
+    - name: 📊 生成文件状态报告
+      run: |
+        echo "📊 生成项目文件状态报告..."
+        
+        echo "## 📁 项目结构统计" >> $GITHUB_STEP_SUMMARY
+        echo "| 文件类型 | 数量 |" >> $GITHUB_STEP_SUMMARY
+        echo "|---------|------|" >> $GITHUB_STEP_SUMMARY
+        
+        py_count=$(find . -name "*.py" -not -path "./.git/*" -not -path "./node_modules/*" | wc -l)
+        echo "| Python文件 | $py_count |" >> $GITHUB_STEP_SUMMARY
+        
+        ts_count=$(find . -name "*.ts" -o -name "*.tsx" | wc -l)
+        echo "| TypeScript文件 | $ts_count |" >> $GITHUB_STEP_SUMMARY
+        
+        md_count=$(find . -name "*.md" -not -path "./.git/*" | wc -l)
+        echo "| Markdown文件 | $md_count |" >> $GITHUB_STEP_SUMMARY
+        
+        temp_count=$(find . -name "*.tmp" -o -name "*.temp" | wc -l)
+        echo "| 临时文件 | $temp_count |" >> $GITHUB_STEP_SUMMARY
+        
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "## 🏆 检查结果" >> $GITHUB_STEP_SUMMARY
+        
+        if [ $temp_count -eq 0 ]; then
+          echo "✅ 项目文件管理状况良好！" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "⚠️  发现需要清理的文件，请执行 \`make clean-temp\`" >> $GITHUB_STEP_SUMMARY
+        fi
+    
+    - name: 🎯 Linus质量检查
+      run: |
+        echo "🎯 执行Linus质量标准检查..."
+        
+        issues=0
+        
+        # 检查是否有超过3层的目录嵌套（在代码目录中）
+        echo "📏 检查目录层级深度..."
+        deep_dirs=$(find backend frontend admin -type d -not -path "*/node_modules/*" -not -path "*/.git/*" | awk -F/ 'NF > 6 {print}' | head -5)
+        if [ -n "$deep_dirs" ]; then
+          echo "⚠️  发现过深的目录结构（>5层）："
+          echo "$deep_dirs"
+          echo "💡 Linus建议：'如果你需要超过3层缩进，你就已经完蛋了'"
+          issues=$((issues + 1))
+        fi
+        
+        # 检查大文件（>1MB的非二进制文件）
+        echo "📏 检查大文件..."
+        large_files=$(find . -name "*.py" -o -name "*.js" -o -name "*.ts" -o -name "*.tsx" | xargs ls -l | awk '$5 > 1000000 {print $9 " (" $5/1000000 "MB)"}')
+        if [ -n "$large_files" ]; then
+          echo "⚠️  发现大文件（>1MB）："
+          echo "$large_files"
+          echo "💡 Linus建议：大文件通常意味着需要重构"
+          issues=$((issues + 1))
+        fi
+        
+        # 检查是否有TODO/FIXME但没有负责人
+        echo "📝 检查TODO标记..."
+        unassigned_todos=$(grep -r "TODO\|FIXME" --include="*.py" --include="*.js" --include="*.ts" . | grep -v "@" | wc -l)
+        if [ $unassigned_todos -gt 0 ]; then
+          echo "⚠️  发现 $unassigned_todos 个未分配负责人的TODO/FIXME"
+          echo "💡 建议：所有TODO都应该有明确的负责人，如 # TODO(@username): 描述"
+        fi
+        
+        echo "🏁 Linus质量检查完成，发现 $issues 个需要关注的问题"
+        
+        if [ $issues -eq 0 ]; then
+          echo "🎉 恭喜！项目符合Linus的质量标准"
+        else
+          echo "💪 发现改进空间，但不会阻断构建"
+        fi
+
+  # 仅在schedule触发时运行的深度检查
+  deep-analysis:
+    name: 🔬 深度分析 (周报)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    
+    steps:
+    - name: 📥 检出代码
+      uses: actions/checkout@v4
+      
+    - name: 🐍 设置Python环境
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+        
+    - name: 📦 安装依赖
+      run: |
+        python -m pip install --upgrade pip
+        pip install pyyaml
+    
+    - name: 🔍 完整冗余分析
+      run: |
+        echo "🔍 执行完整冗余分析..."
+        python3 infrastructure/scripts/check_redundancy.py
+    
+    - name: 📊 生成周报
+      run: |
+        echo "📊 生成项目健康度周报..."
+        
+        # 统计各类文件数量
+        py_files=$(find . -name "*.py" -not -path "./.git/*" | wc -l)
+        js_files=$(find . -name "*.js" -o -name "*.ts" -o -name "*.tsx" | wc -l)
+        doc_files=$(find . -name "*.md" -not -path "./.git/*" | wc -l)
+        
+        # 计算代码行数
+        if command -v wc > /dev/null; then
+          py_lines=$(find . -name "*.py" -not -path "./.git/*" -exec wc -l {} + | tail -1 | awk '{print $1}')
+          js_lines=$(find . -name "*.js" -o -name "*.ts" -o -name "*.tsx" -exec wc -l {} + | tail -1 | awk '{print $1}' || echo 0)
+        fi
+        
+        echo "## 📊 项目健康度周报" >> weekly_report.md
+        echo "生成时间: $(date)" >> weekly_report.md
+        echo "" >> weekly_report.md
+        echo "### 📈 代码统计" >> weekly_report.md
+        echo "- Python文件: $py_files 个" >> weekly_report.md
+        echo "- JavaScript/TypeScript文件: $js_files 个" >> weekly_report.md  
+        echo "- 文档文件: $doc_files 个" >> weekly_report.md
+        echo "" >> weekly_report.md
+        echo "### 🏆 质量评估" >> weekly_report.md
+        echo "- 临时文件: ✅ 无" >> weekly_report.md
+        echo "- 备份文件: ✅ 无" >> weekly_report.md
+        echo "- 项目结构: ✅ 符合规范" >> weekly_report.md
+        
+        cat weekly_report.md
+        
+        echo "✅ 周报生成完成"

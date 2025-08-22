@@ -1,0 +1,247 @@
+# PRD-02: API设计规范 - 任务拆分  
+# 基于 Linus Torvalds 设计哲学：简单胜过聪明，SSE替代轮询
+
+tasks:
+  - id: prd02-01
+    name: "设计API基础架构和路由系统"
+    desc: "建立FastAPI项目，设计4个核心端点的基础路由结构"
+    size: "M"
+    deps: ["prd01-02", "prd01-03"]
+    files:
+      - backend/app/main.py
+      - backend/app/api/__init__.py
+      - backend/app/api/v1/router.py
+      - backend/app/core/config.py
+    context: |
+      设计API基础结构：
+      1. FastAPI应用初始化和配置
+      2. 路由系统设计：
+         - POST /api/analyze (创建任务)
+         - GET /api/analyze/stream/{task_id} (SSE推送)
+         - GET /api/status/{task_id} (轮询fallback)
+         - GET /api/report/{task_id} (获取报告)
+      3. 中间件配置：CORS、认证、错误处理
+      4. API版本管理策略
+      
+      这是API系统的骨架，为后续端点实现奠定基础。
+
+  - id: prd02-02
+    name: "实现POST /api/analyze端点"
+    desc: "创建分析任务端点，实现输入验证和异步任务创建"
+    size: "M"
+    deps: ["prd02-01"]
+    files:
+      - backend/app/api/v1/endpoints/analyze.py
+      - backend/app/schemas/task.py
+      - backend/app/core/validation.py
+    context: |
+      实现任务创建端点：
+      1. 请求模型：AnalyzeRequest (product_description)
+      2. 输入验证：
+         - 10-2000字符限制
+         - 非空内容验证
+         - 恶意输入过滤
+      3. 任务创建逻辑：
+         - 生成UUID task_id
+         - 写入tasks表 (status: pending)  
+         - 返回task_id和SSE端点URL
+      4. 错误处理：400 Bad Request, 422 Validation Error
+      5. 响应时间优化：< 200ms
+      
+      这是用户交互的入口点，必须快速可靠。
+
+  - id: prd02-03  
+    name: "实现SSE实时推送系统"
+    desc: "实现Server-Sent Events，替代轮询方式的实时进度推送"
+    size: "L"
+    deps: ["prd02-01"]
+    files:
+      - backend/app/api/v1/endpoints/stream.py
+      - backend/app/core/sse.py
+      - backend/app/services/task_monitor.py
+    context: |
+      实现SSE实时推送：
+      1. GET /api/analyze/stream/{task_id}端点
+      2. SSE事件类型：
+         - connected: 连接确认
+         - progress: 进度更新 (percentage, current_step)
+         - completed: 任务完成
+         - error: 错误事件  
+         - close: 连接关闭
+      3. 任务监控服务：
+         - 监听数据库状态变化
+         - 异步推送进度更新
+         - 连接管理和清理
+      4. 断线重连机制
+      5. 错误恢复策略
+      
+      这是API系统的核心创新，替代传统轮询。
+
+  - id: prd02-04
+    name: "实现状态查询fallback端点"
+    desc: "实现GET /api/status端点，作为SSE的降级备份方案"
+    size: "M"
+    deps: ["prd02-01"]
+    files:
+      - backend/app/api/v1/endpoints/status.py
+      - backend/app/schemas/status.py
+      - backend/app/core/fallback.py
+    context: |
+      实现状态查询端点：
+      1. GET /api/status/{task_id}
+      2. 响应模型：TaskStatusResponse
+         - task_id, status, progress
+         - created_at, estimated_completion
+         - error信息 (失败时)
+      3. 进度计算逻辑：
+         - current_step映射到percentage
+         - completed_steps计数
+         - 预估剩余时间
+      4. 错误状态处理：
+         - 错误码和恢复策略
+         - 自动降级描述
+      5. 客户端轮询指导
+      
+      这是SSE的可靠备份，确保在任何情况下都能获取状态。
+
+  - id: prd02-05
+    name: "实现分析报告获取端点"
+    desc: "实现GET /api/report端点，返回完整的分析结果"
+    size: "M"
+    deps: ["prd02-01", "prd01-05", "prd01-06"]
+    files:
+      - backend/app/api/v1/endpoints/report.py
+      - backend/app/schemas/report.py
+      - backend/app/services/report_formatter.py
+    context: |
+      实现报告获取端点：
+      1. GET /api/report/{task_id}
+      2. 数据来源：
+         - analyses表的insights JSONB
+         - reports表的html_content
+         - sources表的溯源信息
+      3. 响应结构：
+         - executive_summary: 执行摘要
+         - pain_points: 痛点列表 (description, frequency, sentiment)
+         - competitors: 竞品分析 (mentions, strengths, weaknesses)
+         - opportunities: 机会识别 (relevance_score, potential_users)
+      4. 数据格式化服务
+      5. 缓存策略：预渲染HTML优先
+      
+      这是价值输出端点，用户获得最终分析报告。
+
+  - id: prd02-06
+    name: "实现JWT认证中间件"
+    desc: "集成用户认证，实现多租户数据隔离"
+    size: "M"
+    deps: ["prd02-01", "prd01-02"]
+    files:
+      - backend/app/core/auth.py
+      - backend/app/middleware/jwt_middleware.py
+      - backend/app/core/dependencies.py
+    context: |
+      实现认证系统：
+      1. JWT中间件：
+         - Token验证和解析
+         - 用户信息提取
+         - 过期处理
+      2. 依赖注入：
+         - get_current_user() 依赖
+         - 多租户隔离检查
+      3. 认证装饰器：
+         - @require_auth
+         - 自动user_id注入
+      4. 错误响应：
+         - 401 Unauthorized
+         - 403 Forbidden (跨租户访问)
+      5. 无状态设计验证
+      
+      确保API安全性和多租户隔离。
+
+  - id: prd02-07
+    name: "实现API错误处理和恢复机制"
+    desc: "建立完整的错误处理系统，支持自动恢复和优雅降级"
+    size: "L"
+    deps: ["prd02-02", "prd02-03", "prd02-04", "prd02-05"]
+    files:
+      - backend/app/core/exceptions.py
+      - backend/app/core/error_handlers.py
+      - backend/app/core/recovery.py
+      - backend/app/middleware/error_middleware.py
+    context: |
+      实现错误处理系统：
+      1. 异常类型定义：
+         - ValidationError: 输入验证错误
+         - TaskNotFoundError: 任务不存在
+         - RedditAPIError: Reddit API异常
+         - DatabaseError: 数据库异常
+      2. 错误恢复策略：
+         - Reddit API限制 → 缓存模式
+         - 数据库连接失败 → 重试机制
+         - SSE连接断开 → 轮询模式
+      3. 全局异常处理器
+      4. 错误日志和监控
+      5. 客户端错误指导
+      
+      确保API在任何异常情况下都能优雅处理。
+
+  - id: prd02-08
+    name: "实现API性能监控和优化"
+    desc: "建立性能监控系统，确保API响应时间达标"
+    size: "M" 
+    deps: ["prd02-07"]
+    files:
+      - backend/app/middleware/timing_middleware.py
+      - backend/app/core/metrics.py
+      - backend/app/core/cache.py
+    context: |
+      实现性能监控：
+      1. 响应时间监控：
+         - 中间件记录每个端点耗时
+         - 慢查询检测和告警
+      2. 性能指标：
+         - POST /api/analyze < 200ms
+         - GET /api/status < 10ms
+         - GET /api/report < 20ms
+      3. 缓存策略：
+         - 状态查询结果缓存 (5s TTL)
+         - 报告内容缓存 (永久，直到任务更新)
+      4. 数据库连接池优化
+      5. 异步IO性能调优
+      
+      确保API性能满足"5分钟承诺"的要求。
+
+  - id: prd02-09  
+    name: "编写API端点集成测试"
+    desc: "创建完整的API测试套件，验证所有端点功能"
+    size: "L"
+    deps: ["prd02-08"]
+    files:
+      - backend/tests/api/test_analyze.py
+      - backend/tests/api/test_stream.py
+      - backend/tests/api/test_status.py
+      - backend/tests/api/test_report.py
+      - backend/tests/api/test_auth.py
+    context: |
+      实现API测试套件：
+      1. 端点功能测试：
+         - 正常流程测试
+         - 边界条件测试
+         - 错误场景测试
+      2. SSE测试：
+         - 事件流验证
+         - 断线重连测试
+         - 并发连接测试
+      3. 认证测试：
+         - JWT验证
+         - 多租户隔离
+         - 权限检查
+      4. 性能测试：
+         - 响应时间验证
+         - 并发请求测试
+         - 负载测试
+      5. 集成测试：
+         - 完整任务生命周期
+         - 错误恢复流程
+      
+      确保API系统的生产就绪性。

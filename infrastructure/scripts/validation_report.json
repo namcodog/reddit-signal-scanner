@@ -1,0 +1,38 @@
+{
+  "timestamp": "2025-08-22T00:17:16.550520",
+  "root_path": "/Users/hujia/Desktop/最小化Navigator",
+  "summary": {
+    "total_checks": 20,
+    "passed": 19,
+    "warnings": 1,
+    "errors": 0,
+    "status": "PASS"
+  },
+  "details": {
+    "passed": [
+      "✅ 目录存在: backend",
+      "✅ 目录存在: backend/app",
+      "✅ 目录存在: backend/tests",
+      "✅ 文件存在: backend/requirements.txt",
+      "✅ 目录存在: frontend",
+      "✅ 目录存在: frontend/src",
+      "✅ 文件存在: frontend/package.json",
+      "✅ 目录存在: admin",
+      "✅ 目录存在: admin/src",
+      "✅ 目录存在: docs",
+      "✅ 目录存在: docs/PRD",
+      "✅ 目录存在: infrastructure",
+      "✅ 目录存在: infrastructure/scripts",
+      "✅ 目录存在: workflow",
+      "✅ 目录存在: workflow/tasks",
+      "✅ 目录存在: tests",
+      "✅ 文件存在: Makefile",
+      "✅ 文件存在: .gitignore",
+      "✅ 文件存在: docker-compose.yml"
+    ],
+    "warnings": [
+      "⚠️  React组件文件应使用PascalCase: frontend/src/main.tsx"
+    ],
+    "errors": []
+  }
+}

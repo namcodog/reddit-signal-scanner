@@ -1,0 +1,247 @@
+# PRD-06: 用户认证系统 - 任务拆分
+# 基于 Linus Torvalds 设计哲学：JWT无状态认证，多租户数据隔离
+
+tasks:
+  - id: prd06-01
+    name: "设计JWT认证系统架构"
+    desc: "建立无状态JWT认证系统，支持安全的多租户访问"
+    size: "M"
+    deps: ["prd01-02"]
+    files:
+      - backend/app/core/security.py
+      - backend/app/core/jwt_handler.py
+      - backend/config/security.yaml
+    context: |
+      设计认证系统架构：
+      1. JWT配置：
+         - RS256算法签名
+         - 公私钥对生成
+         - Token有效期管理（24小时）
+      2. 安全参数：
+         - 密码哈希策略（BCrypt）
+         - 盐值随机生成
+         - 安全头部配置
+      3. Token结构：
+         - user_id, email, exp
+         - 租户隔离标识
+         - 权限声明
+      4. 密钥管理：
+         - 环境变量密钥存储
+         - 密钥轮换策略
+      
+      这是整个系统安全的基础。
+
+  - id: prd06-02
+    name: "实现用户注册API端点"
+    desc: "创建用户注册功能，包含输入验证和密码安全处理"
+    size: "M"
+    deps: ["prd06-01"]
+    files:
+      - backend/app/api/v1/endpoints/auth.py
+      - backend/app/schemas/auth.py
+      - backend/app/services/user_service.py
+      - backend/app/core/password_validator.py
+    context: |
+      实现用户注册：
+      1. 注册端点 POST /api/auth/register：
+         - 邮箱格式验证
+         - 密码强度检查
+         - 重复邮箱检查
+      2. 密码安全：
+         - 8位以上长度要求
+         - 大小写字母+数字+特殊字符
+         - BCrypt哈希存储
+      3. 输入验证：
+         - Pydantic模型验证
+         - SQL注入防护
+         - XSS攻击防护
+      4. 响应设计：
+         - 成功：返回user_id和JWT
+         - 失败：明确错误信息
+      
+      确保用户注册的安全性和可用性。
+
+  - id: prd06-03
+    name: "实现用户登录和Token颁发"
+    desc: "创建登录验证逻辑，颁发JWT访问令牌"
+    size: "M"
+    deps: ["prd06-02"]
+    files:
+      - backend/app/services/auth_service.py
+      - backend/app/core/token_generator.py
+      - backend/app/utils/rate_limiter.py
+    context: |
+      实现用户登录：
+      1. 登录端点 POST /api/auth/login：
+         - 邮箱密码验证
+         - BCrypt密码校验
+         - 用户状态检查（is_active）
+      2. Token颁发：
+         - JWT生成和签名
+         - Refresh Token（可选）
+         - 过期时间设置
+      3. 安全措施：
+         - 登录频率限制（5次/分钟）
+         - 账户锁定机制
+         - 异常登录检测
+      4. 审计日志：
+         - 登录成功/失败记录
+         - IP地址和时间戳
+         - 异常行为告警
+      
+      提供安全可靠的身份验证。
+
+  - id: prd06-04
+    name: "实现Token验证中间件"
+    desc: "创建JWT验证中间件，保护API端点访问"
+    size: "M"
+    deps: ["prd06-03"]
+    files:
+      - backend/app/middleware/auth_middleware.py
+      - backend/app/core/token_validator.py
+      - backend/app/dependencies/auth_deps.py
+    context: |
+      实现Token验证：
+      1. 认证中间件：
+         - Authorization头部解析
+         - JWT签名验证
+         - Token过期检查
+      2. 依赖注入：
+         - get_current_user()依赖
+         - 用户信息自动注入
+         - 可选认证支持
+      3. 错误处理：
+         - 401 Unauthorized响应
+         - 403 Forbidden响应
+         - Token格式错误处理
+      4. 性能优化：
+         - Token解析缓存
+         - 批量验证优化
+         - 异步验证支持
+      
+      确保所有API调用的安全性。
+
+  - id: prd06-05
+    name: "实现多租户数据隔离"
+    desc: "确保不同用户的数据完全隔离，防止数据泄露"
+    size: "L"
+    deps: ["prd06-04", "prd01-03"]
+    files:
+      - backend/app/core/tenant_isolation.py
+      - backend/app/middleware/tenant_middleware.py
+      - backend/app/utils/query_filter.py
+    context: |
+      实现多租户隔离：
+      1. 数据库隔离：
+         - 所有查询自动添加user_id过滤
+         - ORM级别的行级安全
+         - 跨租户查询检测和阻止
+      2. 隔离中间件：
+         - 自动注入租户上下文
+         - 查询拦截和验证
+         - 数据访问审计
+      3. 安全检查：
+         - 资源所有权验证
+         - 跨租户访问尝试告警
+         - 数据泄露防护
+      4. 测试验证：
+         - 隔离性单元测试
+         - 渗透测试脚本
+         - 数据完整性检查
+      
+      这是系统安全的核心保障。
+
+  - id: prd06-06
+    name: "实现用户账户管理"
+    desc: "提供用户信息查询、更新和账户状态管理"
+    size: "M"
+    deps: ["prd06-05"]
+    files:
+      - backend/app/api/v1/endpoints/users.py
+      - backend/app/services/account_service.py
+      - backend/app/schemas/user_update.py
+    context: |
+      实现账户管理：
+      1. 用户信息API：
+         - GET /api/users/me 获取当前用户信息
+         - PUT /api/users/me 更新用户信息
+         - POST /api/users/change-password 修改密码
+      2. 账户状态：
+         - 账户激活/停用
+         - 邮箱验证状态
+         - 最后登录时间
+      3. 数据更新：
+         - 邮箱更改验证
+         - 密码修改安全检查
+         - 个人信息更新
+      4. 安全措施：
+         - 敏感操作二次验证
+         - 修改历史记录
+         - 异常操作检测
+      
+      提供完整的账户管理功能。
+
+  - id: prd06-07
+    name: "实现Token刷新和注销机制"
+    desc: "支持Token自动刷新和安全注销功能"
+    size: "M"
+    deps: ["prd06-06"]
+    files:
+      - backend/app/api/v1/endpoints/token.py
+      - backend/app/services/token_service.py
+      - backend/app/core/token_blacklist.py
+    context: |
+      实现Token管理：
+      1. Token刷新：
+         - POST /api/auth/refresh 刷新Token
+         - Refresh Token验证
+         - 新Token颁发
+      2. 安全注销：
+         - POST /api/auth/logout 用户注销
+         - Token黑名单机制
+         - 会话清理
+      3. Token黑名单：
+         - Redis存储失效Token
+         - 过期Token自动清理
+         - 批量Token撤销
+      4. 会话管理：
+         - 活跃会话跟踪
+         - 多设备登录管理
+         - 强制注销功能
+      
+      提供完整的会话生命周期管理。
+
+  - id: prd06-08
+    name: "编写认证系统安全测试"
+    desc: "创建全面的安全测试套件，验证认证系统安全性"
+    size: "L"
+    deps: ["prd06-07"]
+    files:
+      - backend/tests/security/test_jwt_auth.py
+      - backend/tests/security/test_tenant_isolation.py
+      - backend/tests/security/test_password_security.py
+      - backend/tests/security/test_rate_limiting.py
+    context: |
+      实现安全测试：
+      1. JWT安全测试：
+         - Token篡改检测
+         - 过期Token拒绝
+         - 签名验证测试
+      2. 多租户隔离测试：
+         - 跨租户数据访问测试
+         - 权限边界验证
+         - 数据泄露检测
+      3. 密码安全测试：
+         - 弱密码拒绝测试
+         - 哈希安全性验证
+         - 暴力破解防护
+      4. 渗透测试：
+         - SQL注入测试
+         - XSS攻击防护
+         - CSRF攻击防护
+      5. 性能测试：
+         - 高并发认证测试
+         - Token验证性能
+         - 频率限制测试
+      
+      确保认证系统的安全可靠。

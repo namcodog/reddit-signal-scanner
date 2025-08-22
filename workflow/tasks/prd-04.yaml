@@ -1,0 +1,242 @@
+# PRD-04: 任务系统架构 - 任务拆分
+# 基于 Linus Torvalds 设计哲学：解耦HTTP层与分析引擎，生产者-消费者模式
+
+tasks:
+  - id: prd04-01
+    name: "设计Celery异步任务系统架构"
+    desc: "建立Celery + Redis的任务队列，实现HTTP层与分析引擎解耦"
+    size: "M"
+    deps: ["prd01-03"]
+    files:
+      - backend/app/core/celery_app.py
+      - backend/app/core/celery_config.py
+      - backend/config/celery.yaml
+      - docker-compose.yml
+    context: |
+      设计异步任务系统：
+      1. Celery应用配置：
+         - Redis作为消息队列broker
+         - 任务序列化和结果存储
+         - 工作者进程配置
+      2. 队列设计：
+         - analysis_queue: 分析任务队列
+         - maintenance_queue: 维护任务队列
+         - 优先级队列支持
+      3. 容器化部署：
+         - worker容器配置
+         - Redis服务配置
+         - 环境变量管理
+      4. 监控和管理：
+         - Flower监控界面
+         - 任务状态跟踪
+      
+      这是异步处理的核心基础设施。
+
+  - id: prd04-02
+    name: "实现分析任务生产者接口"
+    desc: "创建任务提交接口，将HTTP请求转化为异步任务"
+    size: "M"
+    deps: ["prd04-01", "prd02-02"]
+    files:
+      - backend/app/tasks/analysis_tasks.py
+      - backend/app/services/task_producer.py
+      - backend/app/core/task_manager.py
+    context: |
+      实现任务生产者：
+      1. 任务定义：
+         - @celery.task装饰的分析任务
+         - 任务参数验证和序列化
+         - 任务ID与数据库task记录关联
+      2. 提交接口：
+         - HTTP endpoint调用异步任务
+         - 立即返回task_id
+         - 任务状态初始化 (pending)
+      3. 任务路由：
+         - 基于任务类型的队列分发
+         - 负载均衡策略
+      4. 错误处理：
+         - 任务提交失败处理
+         - 队列满载处理
+      
+      这是用户请求与异步处理的桥梁。
+
+  - id: prd04-03
+    name: "实现分析任务消费者Worker"
+    desc: "创建Celery worker，执行实际的分析处理逻辑"
+    size: "L"
+    deps: ["prd04-02", "prd03-01"]
+    files:
+      - backend/app/workers/analysis_worker.py
+      - backend/app/tasks/task_handlers.py
+      - backend/app/core/worker_config.py
+    context: |
+      实现任务消费者：
+      1. Worker进程设计：
+         - 多进程worker配置
+         - 任务并发处理
+         - 资源限制和隔离
+      2. 任务处理逻辑：
+         - 调用分析引擎四步流水线
+         - 实时更新任务状态
+         - 结果写入数据库
+      3. 进度报告机制：
+         - 各步骤完成后更新状态
+         - SSE实时推送进度
+         - 处理时间统计
+      4. 异常处理：
+         - 任务执行异常捕获
+         - 错误信息记录
+         - 优雅降级机制
+      
+      这是实际执行分析的工作引擎。
+
+  - id: prd04-04
+    name: "实现任务状态管理和监控"
+    desc: "建立任务状态跟踪，支持实时查询和历史记录"
+    size: "M"
+    deps: ["prd04-03"]
+    files:
+      - backend/app/services/task_tracker.py
+      - backend/app/core/task_status.py
+      - backend/app/services/task_monitor.py
+    context: |
+      实现状态管理：
+      1. 状态跟踪器：
+         - 数据库状态同步
+         - Redis缓存状态快照
+         - 状态变更历史记录
+      2. 实时监控：
+         - 任务执行进度监控
+         - Worker健康状态检查
+         - 队列积压监控
+      3. 查询接口：
+         - 按用户ID查询任务
+         - 按状态过滤任务
+         - 任务执行统计
+      4. 告警机制：
+         - 长时间运行任务告警
+         - Worker宕机检测
+         - 队列堆积告警
+      
+      提供任务执行的全程可视化。
+
+  - id: prd04-05
+    name: "实现任务重试和死信队列机制"
+    desc: "建立3次重试策略和死信队列，确保任务执行可靠性"
+    size: "M"
+    deps: ["prd04-04"]
+    files:
+      - backend/app/core/retry_policy.py
+      - backend/app/tasks/dead_letter_handler.py
+      - backend/app/services/failure_analyzer.py
+    context: |
+      实现重试机制：
+      1. 重试策略：
+         - 3次重试，指数退避延迟
+         - 不同错误类型的重试策略
+         - 重试次数和时间记录
+      2. 死信队列：
+         - 3次失败后进入死信队列
+         - 失败原因分析和分类
+         - 手动重试接口
+      3. 失败分析：
+         - 常见失败模式识别
+         - 自动修复建议
+         - 失败率统计和告警
+      4. 恢复机制：
+         - 部分成功任务的恢复
+         - 断点续传支持
+         - 数据一致性检查
+      
+      确保任务执行的高可靠性。
+
+  - id: prd04-06
+    name: "实现动态Worker配置和扩展"
+    desc: "支持根据负载动态调整Worker数量，实现弹性伸缩"
+    size: "M"
+    deps: ["prd04-05"]
+    files:
+      - backend/app/core/worker_scaler.py
+      - backend/app/services/load_balancer.py
+      - backend/config/scaling.yaml
+    context: |
+      实现动态扩展：
+      1. 负载监控：
+         - 队列长度监控
+         - Worker CPU/内存使用率
+         - 任务处理时间统计
+      2. 自动扩缩容：
+         - 基于队列长度自动增减Worker
+         - 最小/最大Worker数量限制
+         - 扩缩容冷却时间
+      3. 负载均衡：
+         - 任务分发策略优化
+         - 繁忙Worker识别和负载转移
+         - 资源利用率优化
+      4. 配置管理：
+         - YAML配置动态加载
+         - 热更新扩缩容策略
+         - A/B测试支持
+      
+      提供系统的弹性和适应性。
+
+  - id: prd04-07
+    name: "实现任务系统性能优化"
+    desc: "优化任务队列性能，确保高并发下的稳定性"
+    size: "M"
+    deps: ["prd04-06"]
+    files:
+      - backend/app/core/queue_optimizer.py
+      - backend/app/services/connection_pool.py
+      - backend/app/core/task_serializer.py
+    context: |
+      实现性能优化：
+      1. 连接池优化：
+         - Redis连接池管理
+         - 数据库连接池配置
+         - 连接复用和超时设置
+      2. 序列化优化：
+         - 高效的任务参数序列化
+         - 结果数据压缩
+         - 二进制协议支持
+      3. 内存管理：
+         - Worker内存使用监控
+         - 内存泄漏检测和修复
+         - 垃圾回收优化
+      4. 网络优化：
+         - 批量消息处理
+         - 网络IO复用
+         - 心跳机制优化
+      
+      确保任务系统的高性能运行。
+
+  - id: prd04-08
+    name: "编写任务系统集成测试"
+    desc: "创建完整的任务系统测试套件，验证可靠性和性能"
+    size: "L"
+    deps: ["prd04-07"]
+    files:
+      - backend/tests/tasks/test_celery_integration.py
+      - backend/tests/tasks/test_task_lifecycle.py
+      - backend/tests/tasks/test_retry_mechanism.py
+      - backend/tests/tasks/test_performance.py
+    context: |
+      实现测试套件：
+      1. 集成测试：
+         - 完整任务生命周期测试
+         - 生产者-消费者交互测试
+         - 多Worker协作测试
+      2. 可靠性测试：
+         - 重试机制验证
+         - 死信队列测试
+         - Worker崩溃恢复测试
+      3. 性能测试：
+         - 高并发任务处理
+         - 队列积压处理能力
+         - 内存和CPU压力测试
+      4. 故障注入测试：
+         - Redis服务中断模拟
+         - 网络分区测试
+         - 数据库连接失败测试
+      
+      确保任务系统的生产就绪性。

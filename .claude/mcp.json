@@ -1,0 +1,87 @@
+{
+  "mcpServers": {
+    "tavily-mcp": {
+      "command": "/Users/hujia/.nvm/versions/node/v24.2.0/bin/npx",
+      "args": [
+        "-y",
+        "tavily-mcp@0.2.3"
+      ],
+      "env": {
+        "TAVILY_API_KEY": "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"
+      }
+    },
+    "context7": {
+      "command": "/Users/hujia/.nvm/versions/node/v24.2.0/bin/npx",
+      "args": [
+        "-y",
+        "@upstash/context7-mcp@latest"
+      ]
+    },
+    "sequential-thinking": {
+      "command": "/Users/hujia/.nvm/versions/node/v24.2.0/bin/npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-sequential-thinking"
+      ]
+    },
+    "mcp-feedback-enhanced": {
+      "command": "/Users/hujia/.local/bin/uv",
+      "args": [
+        "tool",
+        "run",
+        "mcp-feedback-enhanced@latest",
+        "server"
+      ],
+      "timeout": 600,
+      "autoApprove": [
+        "interactive_feedback"
+      ]
+    },
+    "devcontext": {
+      "command": "/Users/hujia/.nvm/versions/node/v24.2.0/bin/npx",
+      "args": [
+        "-y",
+        "devcontext@latest"
+      ],
+      "enabled": true,
+      "env": {
+        "TURSO_DATABASE_URL": "libsql://my-reddit-project-db-namcodog.aws-ap-northeast-1.turso.io",
+        "TURSO_AUTH_TOKEN": "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3NDk1NjY3MDYsImlkIjoiNzZiNjI4ZTEtZmExOC00MTkzLWEzMjctNWVjMmJlZGFkNWE0IiwicmlkIjoiNjMzYzI0OTYtZThjNS00MWEzLWE5ODAtZTg4OTJhN2UyYTMxIn0.aaXb0rsvKZncat2qcbMJ3_kbgIgi-nfyXH5ew65vXef4ZmSv6VgDuo-vvlJTOSJF2t0dswt_Jv1C90_ZBlP_DQ"
+      }
+    },
+    "openmemory-local": {
+      "command": "/Users/hujia/.nvm/versions/node/v24.2.0/bin/npx",
+      "args": [
+        "-y",
+        "supergateway@3.4.0",
+        "--sse",
+        "http://localhost:8765/mcp/cursor/sse/hujia"
+      ]
+    },
+    "serena": {
+      "command": "/Users/hujia/.local/bin/uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/oraios/serena",
+        "serena",
+        "start-mcp-server",
+        "--context",
+        "ide-assistant",
+        "--project",
+        "/Users/hujia/Desktop/最小化Navigator",
+        "--transport",
+        "stdio"
+      ],
+      "timeout": 600,
+      "enabled": true
+    },
+    "ide": {
+      "command": "/Users/hujia/.local/bin/uvx",
+      "args": [
+        "mcp-ide@latest"
+      ],
+      "timeout": 300,
+      "enabled": true
+    }
+  }
+}

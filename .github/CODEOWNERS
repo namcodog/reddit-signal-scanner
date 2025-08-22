@@ -1,0 +1,205 @@
+# Reddit Signal Scanner - 代码拥有者配置
+# 
+# 基于 Linus Torvalds 哲学：明确责任，避免混乱
+# 
+# 格式: pattern @owner1 @owner2
+# 详细文档: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# ===========================================
+# 全局默认拥有者
+# ===========================================
+# 所有文件的默认审批者
+* @project-lead
+
+# ===========================================
+# 后端代码 (Python/FastAPI)
+# ===========================================
+# 后端应用代码
+backend/ @backend-team @project-lead
+
+# 核心算法和分析引擎
+backend/app/services/algorithms/ @algorithm-team @project-lead
+backend/app/services/analysis/ @algorithm-team @project-lead
+
+# API端点和路由
+backend/app/api/ @backend-team @api-team
+
+# 数据模型和数据库
+backend/app/models/ @backend-team @data-team
+backend/app/schemas/ @backend-team @data-team
+backend/migrations/ @data-team @project-lead
+
+# 后端测试
+backend/tests/ @backend-team @qa-team
+
+# ===========================================
+# 前端代码 (React/TypeScript)
+# ===========================================
+# 前端应用代码
+frontend/ @frontend-team @project-lead
+
+# 核心组件
+frontend/src/components/ @frontend-team @ui-team
+frontend/src/pages/ @frontend-team @ui-team
+
+# 状态管理和服务
+frontend/src/store/ @frontend-team @state-team
+frontend/src/services/ @frontend-team @api-team
+
+# 样式和主题
+frontend/src/styles/ @ui-team @design-team
+frontend/src/themes/ @ui-team @design-team
+
+# 前端测试
+frontend/tests/ @frontend-team @qa-team
+
+# ===========================================
+# Admin后台 (React/TypeScript)
+# ===========================================
+admin/ @admin-team @project-lead
+admin/src/components/ @admin-team @ui-team
+
+# ===========================================
+# 基础设施和部署
+# ===========================================
+# Docker配置
+Dockerfile @devops-team @project-lead
+docker-compose*.yml @devops-team @project-lead
+.dockerignore @devops-team
+
+# Kubernetes配置 
+k8s/ @devops-team @project-lead
+deployment/ @devops-team @project-lead
+
+# CI/CD流水线
+.github/workflows/ @devops-team @project-lead
+.github/actions/ @devops-team
+
+# Makefile和脚本
+Makefile @devops-team @project-lead
+scripts/ @devops-team @project-lead
+infrastructure/scripts/ @devops-team @project-lead
+
+# ===========================================
+# 配置文件
+# ===========================================
+# 项目根配置
+pyproject.toml @backend-team @project-lead
+requirements.txt @backend-team @project-lead
+package.json @frontend-team @project-lead
+tsconfig.json @frontend-team @project-lead
+
+# 环境配置
+.env* @devops-team @project-lead
+config/ @devops-team @project-lead
+
+# Git配置
+.gitignore @project-lead
+.gitattributes @project-lead
+.githooks/ @project-lead
+
+# ===========================================
+# 文档和规范
+# ===========================================
+# 项目文档
+README.md @project-lead @tech-writer
+docs/ @tech-writer @project-lead
+
+# PRD文档 (产品需求文档)
+docs/prd/ @product-team @project-lead
+
+# API文档
+docs/api/ @backend-team @tech-writer
+
+# 开发规范
+docs/*规范*.md @project-lead
+docs/*标准*.md @project-lead
+CLAUDE.md @project-lead
+
+# ===========================================
+# 安全和合规
+# ===========================================
+# 安全配置
+.github/security.md @security-team @project-lead
+SECURITY.md @security-team @project-lead
+
+# 依赖安全
+requirements.txt @security-team @backend-team
+package-lock.json @security-team @frontend-team
+yarn.lock @security-team @frontend-team
+
+# ===========================================
+# 测试和质量保证
+# ===========================================
+# 测试配置
+pytest.ini @qa-team @backend-team
+jest.config.js @qa-team @frontend-team
+.eslintrc* @qa-team @frontend-team
+.prettierrc* @qa-team @frontend-team
+
+# E2E测试
+tests/e2e/ @qa-team @project-lead
+cypress/ @qa-team @frontend-team
+
+# 性能测试
+tests/performance/ @qa-team @devops-team
+
+# ===========================================
+# 数据和算法 (特殊审批要求)
+# ===========================================
+# 机器学习模型
+models/ @ml-team @algorithm-team @project-lead
+
+# 数据处理脚本
+data/ @data-team @algorithm-team
+scripts/data/ @data-team @algorithm-team
+
+# 算法配置
+config/algorithms/ @algorithm-team @project-lead
+
+# ===========================================
+# 法律和许可证
+# ===========================================
+LICENSE @legal-team @project-lead
+NOTICE @legal-team @project-lead
+ATTRIBUTION.md @legal-team @project-lead
+
+# ===========================================
+# 特殊文件 (需要更高权限)
+# ===========================================
+# GitHub配置 (需要管理员权限)
+.github/CODEOWNERS @project-lead
+.github/pull_request_template.md @project-lead
+.github/issue_template/ @project-lead
+
+# 分支保护相关
+docs/分支保护规则配置.md @project-lead
+docs/Git版本控制规范.md @project-lead
+
+# 项目管理工具
+workflow.py @project-lead
+state.yaml @project-lead
+
+# ===========================================
+# 团队映射说明
+# ===========================================
+#
+# @project-lead     - 项目技术负责人
+# @backend-team     - 后端开发团队  
+# @frontend-team    - 前端开发团队
+# @admin-team       - 管理后台团队
+# @algorithm-team   - 算法工程师团队
+# @ml-team          - 机器学习团队
+# @data-team        - 数据工程师团队
+# @api-team         - API设计团队
+# @ui-team          - UI/UX团队
+# @design-team      - 设计团队
+# @state-team       - 状态管理专家
+# @devops-team      - 运维和基础设施团队
+# @qa-team          - 测试和质量保证团队
+# @security-team    - 安全团队
+# @product-team     - 产品团队
+# @tech-writer      - 技术写作团队
+# @legal-team       - 法务团队
+#
+# 注意: 在实际使用中，需要将这些团队名称替换为真实的GitHub用户名或团队名称

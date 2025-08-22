@@ -1,0 +1,47 @@
+# Reddit Signal Scanner - 工作流管理配置
+# 基于 Linus Torvalds 设计哲学
+
+# 任务大小定义
+task_sizes:
+  S:  # Small - 小任务
+    max_context_lines: 1000
+    estimated_hours: "1-2"
+    description: "单文件修改，简单逻辑"
+    
+  M:  # Medium - 中等任务  
+    max_context_lines: 3000
+    estimated_hours: "2-4"
+    description: "多文件修改，模块内逻辑"
+    
+  L:  # Large - 大任务
+    max_context_lines: 5000
+    estimated_hours: "4-8"  
+    description: "模块级实现，跨组件交互"
+
+# PRD优先级（用于任务排序）
+prd_priority:
+  - prd-01  # 数据模型 - 根基础
+  - prd-02  # API设计 - 接口层
+  - prd-06  # 用户认证 - 安全层
+  - prd-03  # 分析引擎 - 核心逻辑
+  - prd-04  # 任务系统 - 异步处理
+  - prd-05  # 前端交互 - 用户界面
+  - prd-07  # Admin后台 - 运维工具
+  - prd-08  # 端到端测试 - 质量保证
+
+# 自动验证规则
+verification:
+  file_existence: true      # 检查相关文件是否存在
+  dependency_check: true    # 强制依赖检查
+  backup_state: true        # 自动备份状态文件
+
+# 故障恢复配置
+recovery:
+  max_auto_repair_attempts: 3
+  backup_retention_days: 30
+  
+# 显示配置
+display:
+  max_ready_tasks_shown: 5
+  show_progress_bar: true
+  use_emoji: true

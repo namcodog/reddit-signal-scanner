@@ -1,0 +1,246 @@
+# PRD-03: 分析引擎设计 - 任务拆分
+# 基于 Linus Torvalds 设计哲学：缓存优先，线性流水线，避免复杂分支
+
+tasks:
+  - id: prd03-01
+    name: "设计分析引擎架构和配置系统"
+    desc: "建立四步分析流水线的基础架构，实现配置驱动的参数管理"
+    size: "M"
+    deps: ["prd01-03"]
+    files:
+      - backend/app/services/analysis_engine.py
+      - backend/app/core/analyzer_config.py  
+      - backend/config/analyzer.yaml
+      - backend/app/models/analysis_pipeline.py
+    context: |
+      设计分析引擎架构：
+      1. 四步流水线结构：
+         - Step 1: 智能社区发现 (30s)
+         - Step 2: 并行数据采集 (120s)
+         - Step 3: 统一信号提取 (90s)
+         - Step 4: 智能排序输出 (30s)
+      2. 配置驱动系统：
+         - analyzer.yaml 参数配置
+         - 动态社区数量（10-30个基于缓存命中率）
+         - NLP模型参数配置
+      3. 基础接口定义：
+         - AnalysisStep 抽象基类
+         - PipelineResult 结果模型
+         - ConfigManager 配置管理器
+      
+      这是整个分析引擎的骨架。
+
+  - id: prd03-02
+    name: "实现Step1: 智能社区发现算法"
+    desc: "基于产品描述，从社区池中发现最相关的Top N社区"
+    size: "L"
+    deps: ["prd03-01", "prd01-07"]
+    files:
+      - backend/app/services/community_discovery.py
+      - backend/app/algorithms/keyword_extraction.py
+      - backend/app/algorithms/community_ranking.py
+      - backend/data/community_pool.yaml
+    context: |
+      实现社区发现算法：
+      1. 关键词提取：
+         - TF-IDF + 领域词典
+         - 产品类型识别（SaaS, 硬件, 服务等）
+         - 同义词扩展
+      2. 社区匹配算法：
+         - 500+社区预定义池
+         - 语义相似度计算
+         - 社区活跃度权重
+      3. 动态数量决策：
+         - 检查community_cache表命中率
+         - 命中率>80%: 30个社区
+         - 命中率60-80%: 20个社区  
+         - 命中率<60%: 10个社区
+      4. 结果排序和验证
+      
+      这是精准分析的基础，决定了数据收集的质量。
+
+  - id: prd03-03
+    name: "实现Step2: 缓存优先数据采集系统"
+    desc: "建立Redis缓存 + 精准API补充的混合数据源"
+    size: "L"
+    deps: ["prd03-02"]
+    files:
+      - backend/app/services/data_collector.py
+      - backend/app/services/reddit_client.py
+      - backend/app/services/cache_manager.py
+      - backend/app/core/rate_limiter.py
+    context: |
+      实现数据采集系统：
+      1. 缓存优先策略：
+         - Redis查询预爬取数据（90%数据源）
+         - 识别缓存缺失项
+         - 精准API调用补充（10%数据源）
+      2. Reddit API客户端：
+         - OAuth认证管理
+         - 速率限制：<20请求/分钟（远低于60限制）
+         - 请求重试和错误处理
+      3. 并行采集引擎：
+         - 异步IO并行请求
+         - 数据去重和清洗
+         - 实时进度更新
+      4. 数据质量保证：
+         - 帖子质量过滤（删除、被封等）
+         - 内容长度和相关性验证
+      
+      这是"5分钟承诺"的关键实现。
+
+  - id: prd03-04
+    name: "实现Step3: Reddit特定NLP信号提取"
+    desc: "使用专门针对Reddit的NLP模型提取三类商业信号"
+    size: "L"
+    deps: ["prd03-03"]
+    files:
+      - backend/app/services/signal_extractor.py
+      - backend/app/algorithms/pain_point_detector.py
+      - backend/app/algorithms/competitor_analyzer.py
+      - backend/app/algorithms/opportunity_finder.py
+      - backend/app/models/reddit_nlp.py
+    context: |
+      实现信号提取算法：
+      1. 痛点信号提取：
+         - Reddit特有表达识别（"sucks", "frustrating", "hate when"）
+         - 情感分析和强度评分
+         - 频率统计和聚类
+      2. 竞品信号分析：  
+         - 品牌名称识别和标准化
+         - 用户反馈情感分类
+         - 优缺点自动提取
+      3. 机会信号发现：
+         - 未满足需求识别
+         - 功能空白分析
+         - 用户期望vs现状对比
+      4. Reddit语境适配：
+         - 非正式语言处理
+         - 缩写和俚语识别
+         - 讽刺和反话检测
+      
+      这是核心价值生成环节，决定洞察质量。
+
+  - id: prd03-05
+    name: "实现Step4: 智能排序和结果输出"
+    desc: "基于置信度和相关性，生成最终的结构化分析报告"
+    size: "M"
+    deps: ["prd03-04"]
+    files:
+      - backend/app/services/result_ranker.py
+      - backend/app/services/report_generator.py
+      - backend/app/algorithms/confidence_scoring.py
+      - backend/app/templates/report_template.py
+    context: |
+      实现结果处理系统：
+      1. 置信度评分：
+         - 数据源质量权重
+         - 样本数量统计
+         - 信号强度和一致性
+      2. 智能排序算法：
+         - 商业价值优先排序
+         - 可操作性评分
+         - 用户相关性匹配
+      3. 结果结构化：
+         - 标准化JSON Schema输出
+         - 执行摘要生成
+         - 数据溯源信息
+      4. 报告模板渲染：
+         - HTML报告预渲染
+         - 可视化图表生成
+         - 响应式设计支持
+      
+      这是价值输出的最后环节，影响用户体验。
+
+  - id: prd03-06
+    name: "实现后台缓存维护系统"
+    desc: "建立24小时持续爬虫，维护Redis缓存数据新鲜度"
+    size: "L"
+    deps: ["prd03-01", "prd01-07"]
+    files:
+      - backend/app/tasks/background_crawler.py
+      - backend/app/services/cache_updater.py
+      - backend/app/core/crawler_scheduler.py
+      - backend/config/crawler.yaml
+    context: |
+      实现后台爬虫系统：
+      1. 智能爬取策略：
+         - 基于社区活跃度优先级
+         - 热门帖子优先爬取
+         - 避免重复爬取已缓存内容
+      2. 缓存更新机制：
+         - Redis TTL管理
+         - 增量更新 vs 全量刷新
+         - 缓存命中率监控
+      3. 爬虫调度系统：
+         - Celery Beat定时任务
+         - 24/7持续运行
+         - 异常恢复和重试
+      4. 资源管理：
+         - Reddit API配额管理
+         - 并发限制和负载均衡
+         - 存储空间优化
+      
+      这是"缓存优先"架构的基础设施。
+
+  - id: prd03-07
+    name: "实现分析引擎监控和调优"
+    desc: "建立性能监控系统，确保5分钟处理承诺"
+    size: "M"
+    deps: ["prd03-05", "prd03-06"]
+    files:
+      - backend/app/core/analyzer_metrics.py
+      - backend/app/middleware/analysis_monitor.py
+      - backend/app/services/performance_tuner.py
+    context: |
+      实现性能监控：
+      1. 实时性能指标：
+         - 每步处理时间监控
+         - API调用统计和限制检查
+         - 内存和CPU使用率
+      2. 质量指标跟踪：
+         - 缓存命中率统计
+         - 数据源覆盖度
+         - 信号提取准确率
+      3. 自动调优机制：
+         - 基于性能数据调整参数
+         - 动态社区数量优化
+         - 超时和重试策略调整
+      4. 告警和通知：
+         - 处理时间超过5分钟告警
+         - 缓存命中率低于60%告警
+         - API限制接近时预警
+      
+      确保分析引擎的稳定性和承诺达成。
+
+  - id: prd03-08
+    name: "编写分析算法单元测试"
+    desc: "创建完整的测试套件，验证每个算法组件"
+    size: "L"
+    deps: ["prd03-07"]
+    files:
+      - backend/tests/services/test_analysis_engine.py
+      - backend/tests/algorithms/test_community_discovery.py  
+      - backend/tests/algorithms/test_signal_extraction.py
+      - backend/tests/services/test_data_collector.py
+      - backend/tests/fixtures/reddit_data_samples.py
+    context: |
+      实现测试套件：
+      1. 算法单元测试：
+         - 社区发现准确性验证
+         - 信号提取精度测试  
+         - 排序算法一致性检查
+      2. 集成测试：
+         - 完整四步流水线测试
+         - 缓存和API混合数据源测试
+         - 性能基准测试
+      3. 模拟数据生成：
+         - 真实Reddit数据样本
+         - 边界情况数据构造
+         - 异常场景模拟
+      4. 质量验证：
+         - 5分钟处理时间验证
+         - 置信度评分准确性
+         - 多租户数据隔离测试
+      
+      确保分析引擎的生产就绪性和可靠性。

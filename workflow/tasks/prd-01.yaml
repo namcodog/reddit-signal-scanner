@@ -1,0 +1,252 @@
+# PRD-01: 数据模型设计 - 任务拆分
+# 基于 Linus Torvalds 设计哲学：数据结构决定代码复杂度
+
+tasks:
+  - id: prd01-01
+    name: "创建数据库基础结构和枚举类型"
+    desc: "建立PostgreSQL数据库，创建task_status枚举和UUID扩展"
+    size: "S"
+    deps: []
+    files:
+      - backend/database/init.sql
+      - backend/database/types.sql
+      - backend/alembic/versions/001_init_database.py
+    context: |
+      创建数据库基础设施：
+      1. 启用gen_random_uuid()扩展
+      2. 创建task_status枚举：'pending', 'processing', 'completed', 'failed'
+      3. 设置数据库基本配置
+      4. 准备Alembic迁移框架
+      
+      这是整个项目的基础，所有后续任务都依赖这个。
+
+  - id: prd01-02
+    name: "创建users表实现多租户基础"
+    desc: "设计用户账户表，从第一天就支持多租户隔离"
+    size: "M"
+    deps: ["prd01-01"]
+    files:
+      - backend/database/tables/users.sql
+      - backend/models/user.py
+      - backend/alembic/versions/002_create_users.py
+    context: |
+      创建users表结构：
+      - id (UUID主键)
+      - email (唯一，带验证约束)  
+      - password_hash (BCrypt)
+      - created_at, updated_at, is_active
+      
+      索引策略：
+      - 唯一索引：email
+      - 条件索引：is_active = true
+      
+      这张表是多租户架构的基础，后续所有数据都通过user_id实现隔离。
+
+  - id: prd01-03
+    name: "创建tasks表和状态管理"
+    desc: "实现任务表，支持用户分析请求的完整生命周期"
+    size: "M" 
+    deps: ["prd01-01", "prd01-02"]
+    files:
+      - backend/database/tables/tasks.sql
+      - backend/models/task.py
+      - backend/alembic/versions/003_create_tasks.py
+    context: |
+      创建tasks表结构：
+      - id (UUID), user_id (外键到users)
+      - product_description (TEXT, 10-2000字符约束)
+      - status (task_status枚举)
+      - error_message, created_at, updated_at, completed_at
+      
+      索引策略（多租户优化）：
+      - 组合索引：(user_id, status) - 最重要
+      - 组合索引：(user_id, created_at DESC) - 历史查询
+      - 单独索引：status - 系统监控
+      
+      约束设计：
+      - 外键级联删除：用户删除时清理任务
+      - 业务约束：完成时间必须晚于创建时间
+
+  - id: prd01-04
+    name: "创建JSON Schema验证函数"
+    desc: "实现PostgreSQL函数验证insights和sources的JSON结构"
+    size: "L"
+    deps: ["prd01-01"]
+    files:
+      - backend/database/functions/json_validators.sql
+      - backend/tests/test_json_validation.py
+    context: |
+      实现两个PostgreSQL函数：
+      
+      1. validate_insights_schema(data jsonb) -> boolean
+         验证结构：{
+           "pain_points": [{description, frequency, sentiment_score, example_posts}],
+           "competitors": [{name, mentions, sentiment, strengths, weaknesses}],
+           "opportunities": [{description, relevance_score, potential_users}]
+         }
+      
+      2. validate_sources_schema(data jsonb) -> boolean  
+         验证结构：{
+           "communities": ["r/xxx"],
+           "posts_analyzed": number,
+           "cache_hit_rate": number,
+           "analysis_duration_seconds": number,
+           "reddit_api_calls": number
+         }
+      
+      这些函数确保数据质量，防止格式错误影响分析结果。
+
+  - id: prd01-05
+    name: "创建analyses表和JSONB优化"
+    desc: "实现分析结果表，使用Schema验证的JSONB存储"
+    size: "L"
+    deps: ["prd01-03", "prd01-04"]
+    files:
+      - backend/database/tables/analyses.sql
+      - backend/models/analysis.py
+      - backend/alembic/versions/004_create_analyses.py
+    context: |
+      创建analyses表结构：
+      - id (UUID), task_id (外键，唯一)
+      - insights (JSONB with validate_insights_schema检查)
+      - sources (JSONB with validate_sources_schema检查) 
+      - confidence_score (DECIMAL 0.00-1.00)
+      - analysis_version, created_at
+      
+      JSONB索引优化：
+      - GIN索引：insights (支持复杂查询)
+      - GIN索引：sources (支持溯源查询)
+      - B-tree索引：confidence_score DESC
+      - B-tree索引：created_at DESC
+      
+      一对一关系：每个task只有一个analysis结果。
+
+  - id: prd01-06
+    name: "创建reports表实现报告缓存"
+    desc: "实现报告表，存储预渲染的HTML内容"
+    size: "M"
+    deps: ["prd01-05"]
+    files:
+      - backend/database/tables/reports.sql
+      - backend/models/report.py
+      - backend/alembic/versions/005_create_reports.py
+    context: |
+      创建reports表结构：
+      - id (UUID), analysis_id (外键，唯一)
+      - html_content (TEXT) - 预渲染的完整HTML报告
+      - template_version (版本管理)
+      - generated_at (TIMESTAMP)
+      
+      索引策略：
+      - 唯一索引：analysis_id
+      - B-tree索引：generated_at DESC
+      - B-tree索引：template_version
+      
+      设计理念：预渲染HTML避免每次请求重新生成，提升用户体验。
+
+  - id: prd01-07
+    name: "创建community_cache表支持缓存优先"
+    desc: "实现社区缓存表，支持缓存优先架构的元数据管理"
+    size: "M"
+    deps: ["prd01-01"]
+    files:
+      - backend/database/tables/community_cache.sql
+      - backend/models/community_cache.py
+      - backend/alembic/versions/006_create_community_cache.py
+    context: |
+      创建community_cache表结构：
+      - community_name (VARCHAR(100) 主键)
+      - last_crawled_at, posts_cached, ttl_seconds
+      - quality_score (0.00-1.00), hit_count, crawl_priority (1-100)
+      - last_hit_at, created_at, updated_at
+      
+      索引策略（缓存优化）：
+      - B-tree索引：crawl_priority DESC (优先级排序)
+      - B-tree索引：last_crawled_at (新鲜度查询)
+      - B-tree索引：hit_count DESC (热度排序)
+      - B-tree索引：quality_score DESC (质量排序)
+      
+      这张表管理Reddit社区的缓存状态，支持智能缓存更新策略。
+
+  - id: prd01-08  
+    name: "实现数据库配置和性能优化"
+    desc: "配置PostgreSQL参数，优化JSONB和多租户查询性能"
+    size: "S"
+    deps: ["prd01-05", "prd01-07"]
+    files:
+      - backend/config/database.yml
+      - docker/postgres/postgresql.conf
+      - backend/core/database.py
+    context: |
+      配置PostgreSQL性能参数：
+      - shared_buffers: 512MB (支持JSONB索引)
+      - effective_cache_size: 2GB
+      - work_mem: 8MB (复杂查询支持)
+      - gin_pending_list_limit: 4MB (GIN索引优化)
+      
+      连接池配置：
+      - max_connections: 100
+      - statement_timeout: 30s
+      - idle_in_transaction_session_timeout: 60s
+      
+      这些配置确保数据库在多租户和JSONB查询场景下的性能。
+
+  - id: prd01-09
+    name: "实现30天自动数据清理机制"  
+    desc: "创建定时任务清理过期数据，防止数据库无限增长"
+    size: "M"
+    deps: ["prd01-06", "prd01-07"]
+    files:
+      - backend/database/maintenance/cleanup.sql
+      - backend/tasks/data_cleanup.py
+      - backend/core/scheduler.py
+    context: |
+      实现数据清理策略：
+      - 完成的任务：保留30天
+      - 失败的任务：保留7天  
+      - 孤儿analysis记录：1小时内清理
+      - 非活跃用户：保留365天
+      - 社区缓存：根据TTL自动清理
+      
+      清理机制：
+      - SQL存储过程实现清理逻辑
+      - Python定时任务调度 (Celery Beat)
+      - 软删除 vs 硬删除策略
+      - 清理日志记录
+      
+      确保数据库大小可控，同时保留必要的历史数据。
+
+  - id: prd01-10
+    name: "编写完整的数据模型验收测试"
+    desc: "创建测试套件验证所有表结构、约束和性能指标"
+    size: "L"
+    deps: ["prd01-08", "prd01-09"] 
+    files:
+      - backend/tests/test_database_schema.py
+      - backend/tests/test_data_integrity.py
+      - backend/tests/test_performance_benchmarks.py
+      - backend/tests/fixtures/sample_data.sql
+    context: |
+      实现完整测试覆盖：
+      
+      1. Schema测试：
+         - 所有表和约束正确创建
+         - 外键关系和级联删除
+         - 索引存在并生效
+      
+      2. 数据完整性测试：
+         - JSON Schema验证函数
+         - CHECK约束阻止无效数据
+         - UNIQUE约束确保一对一关系
+      
+      3. 性能基准测试：
+         - 创建Task < 50ms (1万条记录)
+         - 查询Task状态 < 10ms
+         - 写入Analysis < 100ms (JSON < 1MB)
+         - 获取Report < 20ms (HTML < 500KB)
+      
+      4. 多租户隔离测试：
+         - 跨租户查询返回空结果
+         - 用户删除清理所有相关数据
+      
+      这个测试套件确保数据模型的生产就绪性。

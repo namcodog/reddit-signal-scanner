@@ -1,0 +1,278 @@
+# PRD-05: 前端交互设计 - 任务拆分
+# 基于 Linus Torvalds 设计哲学：极简用户旅程，三页面React SPA
+
+tasks:
+  - id: prd05-01
+    name: "建立React项目基础架构"
+    desc: "创建React SPA项目，配置TypeScript和基础开发环境"
+    size: "M"
+    deps: ["prd02-01"]
+    files:
+      - frontend/package.json
+      - frontend/tsconfig.json
+      - frontend/src/index.tsx
+      - frontend/src/App.tsx
+      - frontend/webpack.config.js
+    context: |
+      建立前端项目基础：
+      1. React 18 + TypeScript项目初始化
+      2. 构建工具配置：
+         - Webpack 5打包配置
+         - 开发服务器设置
+         - HMR热更新支持
+      3. 基础依赖：
+         - React Router路由
+         - Axios HTTP客户端
+         - Tailwind CSS样式框架
+      4. 开发工具：
+         - ESLint代码检查
+         - Prettier代码格式化
+         - TypeScript类型检查
+      
+      这是前端应用的技术基础。
+
+  - id: prd05-02
+    name: "实现JWT认证和API客户端"
+    desc: "集成JWT认证，创建统一的API客户端服务"
+    size: "M"
+    deps: ["prd05-01", "prd02-06"]
+    files:
+      - frontend/src/services/auth.service.ts
+      - frontend/src/services/api.client.ts
+      - frontend/src/hooks/useAuth.ts
+      - frontend/src/types/auth.types.ts
+    context: |
+      实现认证系统：
+      1. JWT Token管理：
+         - Token存储和刷新
+         - 自动过期检测
+         - 退出登录清理
+      2. API客户端：
+         - Axios实例配置
+         - 自动Token注入
+         - 请求/响应拦截器
+      3. 认证Hook：
+         - useAuth React Hook
+         - 登录状态管理
+         - 权限检查
+      4. 类型定义：
+         - User接口定义
+         - API响应类型
+         - 认证状态类型
+      
+      为所有API调用提供认证基础。
+
+  - id: prd05-03
+    name: "实现输入页面组件"
+    desc: "创建产品描述输入页面，支持30秒快速输入体验"
+    size: "M"
+    deps: ["prd05-02"]
+    files:
+      - frontend/src/pages/InputPage.tsx
+      - frontend/src/components/ProductDescriptionForm.tsx
+      - frontend/src/components/InputValidation.tsx
+      - frontend/src/hooks/useFormValidation.ts
+    context: |
+      实现输入页面：
+      1. 表单组件设计：
+         - 大型文本输入框
+         - 实时字符计数 (10-2000字符)
+         - 输入提示和占位符
+      2. 客户端验证：
+         - 实时输入验证
+         - 错误提示显示
+         - 提交按钮状态管理
+      3. 用户体验优化：
+         - 自动聚焦输入框
+         - 回车键快捷提交
+         - 防抖动提交
+      4. 响应式设计：
+         - 移动端适配
+         - 不同屏幕尺寸优化
+      
+      这是用户交互的起点，需要简洁高效。
+
+  - id: prd05-04
+    name: "实现等待页面和SSE进度显示"
+    desc: "创建分析等待页面，集成SSE实时进度推送"
+    size: "L" 
+    deps: ["prd05-03", "prd02-03"]
+    files:
+      - frontend/src/pages/WaitingPage.tsx
+      - frontend/src/components/ProgressTracker.tsx
+      - frontend/src/services/sse.service.ts
+      - frontend/src/hooks/useSSE.ts
+    context: |
+      实现等待页面：
+      1. SSE客户端：
+         - EventSource连接管理
+         - 事件监听和解析
+         - 断线重连机制
+      2. 进度显示组件：
+         - 四步进度条显示
+         - 当前步骤高亮
+         - 预估剩余时间
+      3. 实时更新：
+         - SSE事件处理
+         - 状态自动更新
+         - 进度动画效果
+      4. 降级处理：
+         - SSE连接失败自动切换轮询
+         - 网络异常处理
+         - 长时间等待提示
+      
+      这是用户体验的关键页面，需要实时反馈。
+
+  - id: prd05-05
+    name: "实现报告页面和数据可视化"
+    desc: "创建分析报告展示页面，包含结构化的洞察展示"
+    size: "L"
+    deps: ["prd05-04", "prd02-05"]
+    files:
+      - frontend/src/pages/ReportPage.tsx
+      - frontend/src/components/ExecutiveSummary.tsx
+      - frontend/src/components/PainPointsList.tsx
+      - frontend/src/components/CompetitorAnalysis.tsx
+      - frontend/src/components/OpportunityMatrix.tsx
+    context: |
+      实现报告页面：
+      1. 报告结构组件：
+         - ExecutiveSummary: 核心洞察摘要
+         - PainPointsList: 痛点问题列表
+         - CompetitorAnalysis: 竞品分析表格
+         - OpportunityMatrix: 机会识别矩阵
+      2. 数据可视化：
+         - 简单图表展示（Chart.js）
+         - 情感分析可视化
+         - 频率分布图
+      3. 交互功能：
+         - 可展开的详细信息
+         - 示例帖子查看
+         - 社区来源链接
+      4. 导出功能：
+         - PDF报告导出
+         - 数据分享链接
+      
+      这是价值输出页面，需要清晰易懂。
+
+  - id: prd05-06
+    name: "实现路由和页面导航"
+    desc: "配置React Router，实现三页面之间的流畅导航"
+    size: "S"
+    deps: ["prd05-05"]
+    files:
+      - frontend/src/router/AppRouter.tsx
+      - frontend/src/components/Navigation.tsx
+      - frontend/src/hooks/useNavigation.ts
+    context: |
+      实现路由系统：
+      1. 路由配置：
+         - "/" 首页（输入页）
+         - "/analysis/:taskId" 等待页
+         - "/report/:taskId" 报告页
+      2. 导航管理：
+         - 程序化导航
+         - 浏览器历史管理
+         - 页面状态保持
+      3. 路由保护：
+         - 认证状态检查
+         - 任务ID有效性验证
+         - 权限控制
+      4. 用户体验：
+         - 页面切换动画
+         - 加载状态显示
+         - 错误页面处理
+      
+      确保页面间导航的流畅体验。
+
+  - id: prd05-07
+    name: "实现响应式设计和移动端优化"
+    desc: "优化移动端体验，确保在不同设备上的可用性"
+    size: "M"
+    deps: ["prd05-06"]
+    files:
+      - frontend/src/styles/responsive.css
+      - frontend/src/components/MobileLayout.tsx
+      - frontend/src/hooks/useDeviceDetection.ts
+    context: |
+      实现响应式设计：
+      1. 移动端优化：
+         - 触摸友好的按钮尺寸
+         - 移动端输入框优化
+         - 滑动手势支持
+      2. 断点设计：
+         - 手机 (<768px)
+         - 平板 (768px-1024px)  
+         - 桌面 (>1024px)
+      3. 布局适配：
+         - 弹性布局系统
+         - 内容优先级调整
+         - 图表移动端适配
+      4. 性能优化：
+         - 移动端图片优化
+         - 懒加载实现
+         - 缓存策略
+      
+      确保所有设备上的良好体验。
+
+  - id: prd05-08
+    name: "实现错误处理和用户反馈"
+    desc: "建立完整的错误处理系统和用户反馈机制"
+    size: "M"
+    deps: ["prd05-07"]
+    files:
+      - frontend/src/components/ErrorBoundary.tsx
+      - frontend/src/services/error.handler.ts
+      - frontend/src/components/Toast.tsx
+      - frontend/src/hooks/useErrorHandler.ts
+    context: |
+      实现错误处理：
+      1. 错误边界组件：
+         - React Error Boundary
+         - 优雅的错误页面
+         - 错误信息收集
+      2. API错误处理：
+         - 网络错误捕获
+         - HTTP状态码处理
+         - 重试机制
+      3. 用户反馈：
+         - Toast通知组件
+         - 加载状态指示
+         - 成功/失败提示
+      4. 错误恢复：
+         - 自动重试机制
+         - 用户手动重试
+         - 降级功能提示
+      
+      提供稳定可靠的用户体验。
+
+  - id: prd05-09
+    name: "编写前端组件测试套件"
+    desc: "创建完整的前端测试，包括单元测试和集成测试"
+    size: "L"
+    deps: ["prd05-08"]
+    files:
+      - frontend/src/__tests__/components/
+      - frontend/src/__tests__/pages/
+      - frontend/src/__tests__/services/
+      - frontend/src/__tests__/integration/
+    context: |
+      实现前端测试：
+      1. 组件单元测试：
+         - Jest + React Testing Library
+         - 组件渲染测试
+         - 用户交互测试
+      2. 服务层测试：
+         - API客户端测试
+         - SSE服务测试
+         - 认证服务测试
+      3. 集成测试：
+         - 页面间导航测试
+         - 完整用户流程测试
+         - 错误场景测试
+      4. E2E测试：
+         - Cypress端到端测试
+         - 真实用户场景模拟
+         - 跨浏览器兼容性测试
+      
+      确保前端应用的质量和稳定性。

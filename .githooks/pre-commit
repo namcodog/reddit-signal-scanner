@@ -1,0 +1,164 @@
+#!/bin/bash
+# Pre-commit hook: 代码质量检查
+# Reddit Signal Scanner 项目 Git Hook
+
+set -e
+
+echo "🔍 Running pre-commit checks..."
+
+# 颜色定义
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# 检查是否在项目根目录
+if [ ! -f "Makefile" ]; then
+    echo -e "${RED}❌ Error: Please run from project root directory${NC}"
+    exit 1
+fi
+
+# 1. 项目结构验证
+echo -e "${BLUE}📁 Verifying project structure...${NC}"
+if [ -f "infrastructure/scripts/verify_structure.py" ]; then
+    python3 infrastructure/scripts/verify_structure.py || {
+        echo -e "${RED}❌ Project structure validation failed${NC}"
+        exit 1
+    }
+else
+    echo -e "${YELLOW}⚠️  Structure verification script not found, skipping...${NC}"
+fi
+
+# 2. Python代码格式检查
+echo -e "${BLUE}🐍 Checking Python code formatting...${NC}"
+if command -v black &> /dev/null; then
+    if [ -d "backend" ]; then
+        black --check backend/ || {
+            echo -e "${RED}❌ Python code formatting failed. Run: black backend/${NC}"
+            exit 1
+        }
+    fi
+    
+    if [ -d "infrastructure/scripts" ]; then
+        black --check infrastructure/scripts/ || {
+            echo -e "${RED}❌ Scripts formatting failed. Run: black infrastructure/scripts/${NC}"
+            exit 1
+        }
+    fi
+else
+    echo -e "${YELLOW}⚠️  Black not found, skipping Python formatting check...${NC}"
+fi
+
+# 3. JavaScript/TypeScript代码格式检查
+echo -e "${BLUE}📝 Checking JavaScript/TypeScript formatting...${NC}"
+if [ -d "frontend" ] && [ -f "frontend/package.json" ]; then
+    if command -v npm &> /dev/null; then
+        cd frontend
+        if npm list prettier &> /dev/null; then
+            npx prettier --check src/ || {
+                echo -e "${RED}❌ Frontend formatting failed. Run: npm run format${NC}"
+                exit 1
+            }
+        else
+            echo -e "${YELLOW}⚠️  Prettier not installed, skipping frontend formatting...${NC}"
+        fi
+        cd ..
+    else
+        echo -e "${YELLOW}⚠️  npm not found, skipping frontend checks...${NC}"
+    fi
+fi
+
+# 4. Python Linting检查
+echo -e "${BLUE}🔍 Running Python linters...${NC}"
+if command -v flake8 &> /dev/null; then
+    if [ -d "backend" ]; then
+        flake8 backend/ --max-line-length=88 --extend-ignore=E203 || {
+            echo -e "${RED}❌ Python linting failed${NC}"
+            exit 1
+        }
+    fi
+else
+    echo -e "${YELLOW}⚠️  Flake8 not found, skipping Python linting...${NC}"
+fi
+
+# 5. JavaScript/TypeScript Linting检查
+echo -e "${BLUE}🔍 Running JavaScript/TypeScript linters...${NC}"
+if [ -d "frontend" ] && [ -f "frontend/package.json" ]; then
+    cd frontend
+    if npm list eslint &> /dev/null; then
+        npm run lint || {
+            echo -e "${RED}❌ Frontend linting failed${NC}"
+            exit 1
+        }
+    else
+        echo -e "${YELLOW}⚠️  ESLint not configured, skipping frontend linting...${NC}"
+    fi
+    cd ..
+fi
+
+# 6. 类型检查
+echo -e "${BLUE}🔍 Type checking...${NC}"
+if command -v mypy &> /dev/null; then
+    if [ -d "backend" ]; then
+        mypy backend/ --ignore-missing-imports || {
+            echo -e "${YELLOW}⚠️  Python type checking failed (non-blocking)${NC}"
+        }
+    fi
+else
+    echo -e "${YELLOW}⚠️  Mypy not found, skipping Python type checking...${NC}"
+fi
+
+if [ -d "frontend" ] && [ -f "frontend/package.json" ]; then
+    cd frontend
+    if [ -f "tsconfig.json" ]; then
+        npm run type-check 2>/dev/null || {
+            echo -e "${YELLOW}⚠️  TypeScript type checking failed (non-blocking)${NC}"
+        }
+    fi
+    cd ..
+fi
+
+# 7. 检查禁止的文件
+echo -e "${BLUE}🚫 Checking for forbidden files...${NC}"
+forbidden_files=$(git diff --cached --name-only | grep -E '\.(tmp|temp|bak|backup|pyc)$' || true)
+if [ -n "$forbidden_files" ]; then
+    echo -e "${RED}❌ Forbidden files found:${NC}"
+    echo "$forbidden_files"
+    echo -e "${YELLOW}💡 Please remove these files before committing${NC}"
+    exit 1
+fi
+
+# 8. 检查大文件
+echo -e "${BLUE}📏 Checking for large files...${NC}"
+large_files=$(git diff --cached --name-only | xargs -I {} sh -c 'if [ -f "{}" ] && [ $(stat -f%z "{}" 2>/dev/null || stat -c%s "{}" 2>/dev/null || echo 0) -gt 1048576 ]; then echo "{}"; fi' || true)
+if [ -n "$large_files" ]; then
+    echo -e "${YELLOW}⚠️  Large files detected (>1MB):${NC}"
+    echo "$large_files"
+    echo -e "${YELLOW}💡 Consider using Git LFS for large files${NC}"
+fi
+
+# 9. 运行快速测试（如果存在）
+echo -e "${BLUE}🧪 Running quick tests...${NC}"
+if [ -d "backend/tests" ]; then
+    cd backend
+    if command -v pytest &> /dev/null; then
+        pytest tests/unit/ -q --tb=no || {
+            echo -e "${YELLOW}⚠️  Some unit tests failed (non-blocking for now)${NC}"
+        }
+    fi
+    cd ..
+fi
+
+# 10. 检查提交中的敏感信息
+echo -e "${BLUE}🔒 Checking for sensitive information...${NC}"
+sensitive_patterns="(password|secret|key|token|api[_-]?key)"
+if git diff --cached | grep -iE "$sensitive_patterns" > /dev/null; then
+    echo -e "${RED}❌ Potential sensitive information detected in commit!${NC}"
+    echo -e "${YELLOW}💡 Please review your changes and remove any secrets${NC}"
+    echo -e "${YELLOW}💡 Use environment variables or config files (gitignored) for secrets${NC}"
+    exit 1
+fi
+
+echo -e "${GREEN}✅ Pre-commit checks passed!${NC}"
+echo -e "${GREEN}🚀 Ready to commit${NC}"
