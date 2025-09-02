@@ -1,7 +1,7 @@
 /**
  * 安全认证Hook - 消灭JWT安全技术债务
  * 基于 Linus 安全原则：Never trust user input, 永远验证
- * 
+ *
  * 安全改进：
  * 1. 后端token验证而非客户端解析
  * 2. 加密存储敏感数据
@@ -9,7 +9,13 @@
  * 4. 完整的错误分类处理
  */
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  ReactNode,
+} from 'react';
 import { SecureStorage, secureApiFetch } from '@/utils/security';
 
 // 用户类型定义
@@ -34,7 +40,7 @@ export enum AuthErrorType {
   INVALID_CREDENTIALS = 'invalid_credentials',
   TOKEN_EXPIRED = 'token_expired',
   RATE_LIMITED = 'rate_limited',
-  UNKNOWN = 'unknown'
+  UNKNOWN = 'unknown',
 }
 
 // 认证操作接口
@@ -61,7 +67,9 @@ interface AuthProviderProps {
  * 安全认证Provider - 完全重写版本
  * 解决所有安全技术债务
  */
-export const SecureAuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
+export const SecureAuthProvider: React.FC<AuthProviderProps> = ({
+  children,
+}) => {
   const [authState, setAuthState] = useState<AuthState>({
     user: null,
     token: null,
@@ -81,9 +89,9 @@ export const SecureAuthProvider: React.FC<AuthProviderProps> = ({ children }) =>
     try {
       const response = await secureApiFetch('/api/auth/verify', {
         method: 'POST',
-        body: JSON.stringify({ token })
+        body: JSON.stringify({ token }),
       });
-      
+
       return response.ok;
     } catch (error) {
       console.error('Token verification failed:', error);
@@ -101,7 +109,7 @@ export const SecureAuthProvider: React.FC<AuthProviderProps> = ({ children }) =>
 
       if (savedToken && savedUser) {
         const user = JSON.parse(savedUser);
-        
+
         // 安全验证：通过后端验证token而非客户端解析
         const isValid = await verifyTokenSafely(savedToken);
         if (isValid) {
@@ -137,7 +145,7 @@ export const SecureAuthProvider: React.FC<AuthProviderProps> = ({ children }) =>
 
       const response = await secureApiFetch('/api/auth/refresh', {
         method: 'POST',
-        body: JSON.stringify({ refresh_token: refreshToken })
+        body: JSON.stringify({ refresh_token: refreshToken }),
       });
 
       const data = await response.json();
@@ -167,7 +175,7 @@ export const SecureAuthProvider: React.FC<AuthProviderProps> = ({ children }) =>
     SecureStorage.removeItem(TOKEN_KEY);
     SecureStorage.removeItem(USER_KEY);
     SecureStorage.removeItem(REFRESH_TOKEN_KEY);
-    
+
     setAuthState({
       user: null,
       token: null,
@@ -179,40 +187,42 @@ export const SecureAuthProvider: React.FC<AuthProviderProps> = ({ children }) =>
   /**
    * 分类认证错误
    */
-  const getAuthError = (error: Error): { type: AuthErrorType; message: string } => {
+  const getAuthError = (
+    error: Error
+  ): { type: AuthErrorType; message: string } => {
     const message = error.message.toLowerCase();
-    
+
     if (message.includes('network') || message.includes('fetch')) {
       return {
         type: AuthErrorType.NETWORK,
-        message: '网络连接失败，请检查网络设置'
+        message: '网络连接失败，请检查网络设置',
       };
     }
-    
+
     if (message.includes('401') || message.includes('unauthorized')) {
       return {
         type: AuthErrorType.INVALID_CREDENTIALS,
-        message: '用户名或密码错误'
+        message: '用户名或密码错误',
       };
     }
-    
+
     if (message.includes('expired') || message.includes('403')) {
       return {
         type: AuthErrorType.TOKEN_EXPIRED,
-        message: '登录已过期，请重新登录'
+        message: '登录已过期，请重新登录',
       };
     }
-    
+
     if (message.includes('rate limit') || message.includes('429')) {
       return {
         type: AuthErrorType.RATE_LIMITED,
-        message: '请求过于频繁，请稍后再试'
+        message: '请求过于频繁，请稍后再试',
       };
     }
-    
+
     return {
       type: AuthErrorType.UNKNOWN,
-      message: '登录失败，请稍后重试'
+      message: '登录失败，请稍后重试',
     };
   };
 
@@ -293,9 +303,7 @@ export const SecureAuthProvider: React.FC<AuthProviderProps> = ({ children }) =>
   };
 
   return (
-    <AuthContext.Provider value={contextValue}>
-      {children}
-    </AuthContext.Provider>
+    <AuthContext.Provider value={contextValue}>{children}</AuthContext.Provider>
   );
 };
 
@@ -304,18 +312,20 @@ export const SecureAuthProvider: React.FC<AuthProviderProps> = ({ children }) =>
  */
 export const useSecureAuth = (): AuthContextType => {
   const context = useContext(AuthContext);
-  
+
   if (context === undefined) {
     throw new Error('useSecureAuth must be used within a SecureAuthProvider');
   }
-  
+
   return context;
 };
 
 /**
  * 获取安全认证头部
  */
-export const getSecureAuthHeader = (): { Authorization: string } | Record<string, never> => {
+export const getSecureAuthHeader = ():
+  | { Authorization: string }
+  | Record<string, never> => {
   const token = SecureStorage.getItem(TOKEN_KEY);
   return token ? { Authorization: `Bearer ${token}` } : {};
 };

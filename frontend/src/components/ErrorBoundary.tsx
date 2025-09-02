@@ -1,7 +1,7 @@
 /**
  * React Error Boundary - 增强版
  * 基于 Linus 简洁原则：优雅降级，不破坏用户体验
- * 
+ *
  * 技术债务消除：集成智能错误处理系统
  */
 
@@ -41,17 +41,17 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
       action: 'react_component_error',
       // 从错误堆栈提取更多上下文
       ...(errorInfo.componentStack && {
-        sessionId: Date.now().toString()
-      })
+        sessionId: Date.now().toString(),
+      }),
     });
-    
+
     // 更新状态，包含用户友好信息
     this.setState({
       error,
       errorInfo,
       userMessage: errorReport.userMessage,
       canRetry: errorReport.canRetry,
-      recoveryActions: errorReport.recoveryActions
+      recoveryActions: errorReport.recoveryActions,
     });
 
     console.error('React Error Boundary - Classified error:', errorReport);
@@ -67,31 +67,31 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 
   private handleRetry = (): void => {
     // 清除错误状态，重新渲染
-    this.setState({ 
-      hasError: false, 
+    this.setState({
+      hasError: false,
       error: undefined,
       errorInfo: undefined,
       userMessage: undefined,
       canRetry: undefined,
-      recoveryActions: undefined
+      recoveryActions: undefined,
     });
   };
 
   render(): ReactNode {
     if (this.state.hasError) {
       const { userMessage, canRetry, recoveryActions } = this.state;
-      
+
       return (
         <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
           <div className="max-w-lg w-full bg-white rounded-xl shadow-lg p-8 text-center">
             {/* 错误图标 */}
             <div className="text-6xl mb-6">😵‍💫</div>
-            
+
             {/* 错误标题 */}
             <h1 className="text-2xl font-bold text-gray-900 mb-4">
               糟糕！出现了错误
             </h1>
-            
+
             {/* 用户友好的错误消息 */}
             <p className="text-gray-600 mb-8">
               {userMessage || '应用遇到了意外错误，请尝试以下操作'}
@@ -100,7 +100,9 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
             {/* 恢复建议 */}
             {recoveryActions && recoveryActions.length > 0 && (
               <div className="mb-8">
-                <h3 className="text-sm font-semibold text-gray-700 mb-3">建议操作：</h3>
+                <h3 className="text-sm font-semibold text-gray-700 mb-3">
+                  建议操作：
+                </h3>
                 <ul className="text-sm text-gray-600 space-y-1">
                   {recoveryActions.map((action, index) => (
                     <li key={index} className="flex items-center">
@@ -122,14 +124,14 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
                   重试
                 </button>
               )}
-              
+
               <button
                 onClick={this.handleReload}
                 className="w-full px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 font-medium transition-colors"
               >
                 刷新页面
               </button>
-              
+
               <button
                 onClick={this.handleGoHome}
                 className="w-full px-4 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 font-medium transition-colors"

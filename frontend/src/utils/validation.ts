@@ -52,7 +52,7 @@ export class InputValidator {
 
     return {
       valid: true,
-      sanitized: this.escapeHtml(cleanInput)
+      sanitized: this.escapeHtml(cleanInput),
     };
   }
 }

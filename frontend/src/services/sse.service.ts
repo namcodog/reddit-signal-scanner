@@ -1,7 +1,7 @@
 /**
  * SSE实时通信服务 - PRD-05核心要求
  * 实现Server-Sent Events连接，支持自动重连和错误处理
- * 
+ *
  * 基于PRD设计：
  * - SSE优先策略，降级到轮询
  * - 心跳检测防止连接断开
@@ -41,7 +41,7 @@ export class SSEManager {
   private isConnected: boolean = false;
   private heartbeatTimer: number | null = null;
   private lastTaskId: string | null = null; // 存储taskId避免URL解析
-  
+
   private onStatusUpdate?: SSEEventHandler;
   private onError?: SSEErrorHandler;
   private onClose?: SSECloseHandler;
@@ -52,7 +52,7 @@ export class SSEManager {
       retryDelay: 2000, // 2秒重连间隔
       heartbeatInterval: 30000, // 30秒心跳
       connectionTimeout: 10000, // 10秒连接超时
-      ...config
+      ...config,
     };
   }
 
@@ -96,11 +96,11 @@ export class SSEManager {
         this.isConnected = true;
         this.retryCount = 0;
         this.startHeartbeat();
-        
+
         console.log(`SSE连接已建立: ${taskId}`);
       };
 
-      this.eventSource.onmessage = (event) => {
+      this.eventSource.onmessage = event => {
         try {
           const status: TaskStatus = JSON.parse(event.data);
           this.onStatusUpdate?.(status);
@@ -121,11 +121,10 @@ export class SSEManager {
       };
 
       // 监听心跳事件
-      this.eventSource.addEventListener('heartbeat', (event) => {
+      this.eventSource.addEventListener('heartbeat', event => {
         const data = JSON.parse(event.data);
         console.log('SSE心跳收到:', data.timestamp);
       });
-
     } catch (error) {
       this.handleConnectionError(error as Error);
     }
@@ -142,14 +141,16 @@ export class SSEManager {
 
     // 判断是否需要重试
     const shouldRetry = this.retryCount < this.config.maxRetries;
-    
+
     this.onError?.(error);
     this.onClose?.(shouldRetry);
 
     if (shouldRetry) {
       this.retryCount++;
-      console.log(`SSE重连第${this.retryCount}次，${this.config.retryDelay}ms后重试`);
-      
+      console.log(
+        `SSE重连第${this.retryCount}次，${this.config.retryDelay}ms后重试`
+      );
+
       setTimeout(() => {
         // 使用存储的taskId重新连接，不依赖URL解析
         if (this.lastTaskId) {
@@ -166,7 +167,7 @@ export class SSEManager {
    */
   private startHeartbeat(): void {
     this.stopHeartbeat();
-    
+
     this.heartbeatTimer = window.setInterval(() => {
       if (!this.isConnected || !this.eventSource) {
         this.stopHeartbeat();
@@ -196,12 +197,12 @@ export class SSEManager {
    */
   disconnect(): void {
     this.stopHeartbeat();
-    
+
     if (this.eventSource) {
       this.eventSource.close();
       this.eventSource = null;
     }
-    
+
     this.isConnected = false;
     this.retryCount = 0;
   }
@@ -217,7 +218,7 @@ export class SSEManager {
     return {
       connected: this.isConnected,
       retryCount: this.retryCount,
-      readyState: this.eventSource?.readyState
+      readyState: this.eventSource?.readyState,
     };
   }
 }
@@ -238,7 +239,7 @@ export class PollingManager {
     this.config = {
       interval: 5000, // 5秒轮询间隔
       maxAttempts: 72, // 6分钟最大轮询次数
-      ...config
+      ...config,
     };
     this.baseDelay = config.interval || 5000;
     this.currentDelay = this.baseDelay;
@@ -248,7 +249,7 @@ export class PollingManager {
    * 开始轮询
    */
   startPolling(
-    taskId: string, 
+    taskId: string,
     onStatusUpdate: SSEEventHandler,
     onError: SSEErrorHandler,
     onComplete: () => void
@@ -259,7 +260,7 @@ export class PollingManager {
     const poll = async () => {
       try {
         this.attemptCount++;
-        
+
         const response = await fetch(`/api/v1/tasks/${taskId}/status`);
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -285,15 +286,16 @@ export class PollingManager {
         // 继续轮询 - 重置延迟
         this.currentDelay = this.baseDelay;
         this.pollTimer = window.setTimeout(poll, this.currentDelay);
-
       } catch (error) {
         console.error('轮询请求失败:', error);
         onError(error as Error);
-        
+
         // 指数退避重试 - Linus修复
         if (this.attemptCount < this.config.maxAttempts) {
           this.currentDelay = Math.min(this.currentDelay * 2, this.maxDelay);
-          console.log(`轮询失败，${this.currentDelay}ms后重试 (第${this.attemptCount}次)`);
+          console.log(
+            `轮询失败，${this.currentDelay}ms后重试 (第${this.attemptCount}次)`
+          );
           this.pollTimer = window.setTimeout(poll, this.currentDelay);
         } else {
           console.log('轮询达到最大次数，停止轮询');
@@ -324,7 +326,7 @@ export class PollingManager {
   getPollingState(): { isPolling: boolean; attemptCount: number } {
     return {
       isPolling: this.pollTimer !== null,
-      attemptCount: this.attemptCount
+      attemptCount: this.attemptCount,
     };
   }
 }
@@ -356,15 +358,15 @@ export class RealTimeTaskService {
 
     // 首先尝试SSE
     this.currentStrategy = 'sse';
-    
+
     this.sseManager.connect(
       taskId,
       onStatusUpdate,
-      (error) => {
+      error => {
         console.warn('SSE错误:', error.message);
         onError(error);
       },
-      (willRetry) => {
+      willRetry => {
         if (!willRetry) {
           console.log('SSE连接失败，切换到轮询模式');
           this.fallbackToPolling(taskId, onStatusUpdate, onError, onComplete);
@@ -383,7 +385,7 @@ export class RealTimeTaskService {
     onComplete: () => void
   ): void {
     this.currentStrategy = 'polling';
-    
+
     this.pollingManager.startPolling(
       taskId,
       onStatusUpdate,
@@ -412,7 +414,7 @@ export class RealTimeTaskService {
     return {
       strategy: this.currentStrategy,
       sse: this.sseManager.getConnectionState(),
-      polling: this.pollingManager.getPollingState()
+      polling: this.pollingManager.getPollingState(),
     };
   }
 }

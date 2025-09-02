@@ -1,9 +1,9 @@
 /**
  * 输入页面 - Reddit Signal Scanner起点 (增强版)
  * 基于 Linus 极简原则：一个文本框，一个按钮，零配置
- * 
+ *
  * 用户体验目标：30秒内完成产品描述输入并启动分析
- * 
+ *
  * 技术债务消除：
  * - 从占位符变成完整功能实现
  * - 实时输入验证和安全检查
@@ -18,9 +18,9 @@ import HttpClient from '@/utils/httpClient';
 // 输入状态枚举
 enum InputState {
   IDLE = 'idle',
-  VALIDATING = 'validating', 
+  VALIDATING = 'validating',
   SUBMITTING = 'submitting',
-  ERROR = 'error'
+  ERROR = 'error',
 }
 
 /**
@@ -37,14 +37,14 @@ const InputPage: React.FC = () => {
   // 实时输入验证
   const validateInput = useCallback((value: string) => {
     setCharacterCount(value.length);
-    
+
     if (!value.trim()) {
       setError('');
       return;
     }
 
     setInputState(InputState.VALIDATING);
-    
+
     // 防抖动验证
     const timer = setTimeout(() => {
       const validation = InputValidator.validateProductDescription(value);
@@ -64,7 +64,7 @@ const InputPage: React.FC = () => {
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const value = e.target.value;
     setDescription(value);
-    
+
     // 实时验证清理
     const cleanup = validateInput(value);
     return cleanup;
@@ -73,7 +73,7 @@ const InputPage: React.FC = () => {
   // 提交分析请求
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!description.trim()) {
       setError('请输入产品描述');
       return;
@@ -92,10 +92,13 @@ const InputPage: React.FC = () => {
       }
 
       // 简化的API调用
-      const result = await HttpClient.post<{ task_id: string }>('/api/v1/analyze', {
-        product_description: validation.sanitized || description.trim(),
-        timestamp: Date.now()
-      });
+      const result = await HttpClient.post<{ task_id: string }>(
+        '/api/v1/analyze',
+        {
+          product_description: validation.sanitized || description.trim(),
+          timestamp: Date.now(),
+        }
+      );
 
       const taskId = result.task_id;
       if (!taskId) {
@@ -104,12 +107,12 @@ const InputPage: React.FC = () => {
 
       // 跳转到分析页面
       navigate(`/analysis/${taskId}`);
-
     } catch (error) {
       console.error('Submit failed:', error);
-      
+
       // 简化的错误处理 - 遵循Linus原则
-      const errorMessage = error instanceof Error ? error.message : '提交失败，请稍后重试';
+      const errorMessage =
+        error instanceof Error ? error.message : '提交失败，请稍后重试';
       setError(errorMessage);
       setInputState(InputState.ERROR);
     }
@@ -117,8 +120,9 @@ const InputPage: React.FC = () => {
 
   // 获取输入框样式
   const getInputClassName = () => {
-    const baseClass = "w-full min-h-[120px] p-4 text-base border-2 rounded-lg resize-vertical font-mono transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50";
-    
+    const baseClass =
+      'w-full min-h-[120px] p-4 text-base border-2 rounded-lg resize-vertical font-mono transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50';
+
     switch (inputState) {
       case InputState.ERROR:
         return `${baseClass} border-red-300 bg-red-50 focus:border-red-500`;
@@ -143,10 +147,11 @@ const InputPage: React.FC = () => {
     }
   };
 
-  const canSubmit = description.trim().length >= 10 && 
-                   inputState !== InputState.SUBMITTING && 
-                   inputState !== InputState.VALIDATING &&
-                   !error;
+  const canSubmit =
+    description.trim().length >= 10 &&
+    inputState !== InputState.SUBMITTING &&
+    inputState !== InputState.VALIDATING &&
+    !error;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center px-4">
@@ -166,13 +171,13 @@ const InputPage: React.FC = () => {
         <div className="bg-white rounded-xl shadow-xl p-8">
           <form onSubmit={handleSubmit}>
             <div className="mb-6">
-              <label 
+              <label
                 htmlFor="productDescription"
                 className="block text-lg font-semibold text-gray-900 mb-3"
               >
                 描述你的产品或服务
               </label>
-              
+
               <textarea
                 id="productDescription"
                 value={description}
@@ -184,17 +189,22 @@ const InputPage: React.FC = () => {
                 maxLength={2000}
                 spellCheck={false}
               />
-              
+
               {/* 字符计数和状态 */}
               <div className="flex justify-between items-center mt-3">
                 <div className="flex items-center space-x-4">
-                  <span className={`text-sm ${
-                    characterCount > 1800 ? 'text-red-600' : 
-                    characterCount > 1500 ? 'text-yellow-600' : 'text-gray-500'
-                  }`}>
+                  <span
+                    className={`text-sm ${
+                      characterCount > 1800
+                        ? 'text-red-600'
+                        : characterCount > 1500
+                          ? 'text-yellow-600'
+                          : 'text-gray-500'
+                    }`}
+                  >
                     {characterCount}/2000 字符
                   </span>
-                  
+
                   {inputState === InputState.VALIDATING && (
                     <div className="flex items-center text-yellow-600">
                       <div className="animate-spin rounded-full h-4 w-4 border-2 border-yellow-600 border-t-transparent mr-2"></div>
@@ -202,10 +212,8 @@ const InputPage: React.FC = () => {
                     </div>
                   )}
                 </div>
-                
-                <div className="text-sm text-gray-500">
-                  最少10字符
-                </div>
+
+                <div className="text-sm text-gray-500">最少10字符</div>
               </div>
             </div>
 
@@ -226,9 +234,10 @@ const InputPage: React.FC = () => {
                 disabled={!canSubmit}
                 className={`
                   px-8 py-3 text-lg font-semibold rounded-lg transition-all duration-200
-                  ${canSubmit
-                    ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg hover:shadow-xl transform hover:-translate-y-0.5'
-                    : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                  ${
+                    canSubmit
+                      ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg hover:shadow-xl transform hover:-translate-y-0.5'
+                      : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                   }
                   ${inputState === InputState.SUBMITTING ? 'animate-pulse' : ''}
                 `}

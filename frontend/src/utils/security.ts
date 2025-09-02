@@ -1,10 +1,10 @@
 /**
  * 安全工具类 - 消灭安全技术债务
  * 基于 Linus 安全第一原则：Never trust user input
- * 
+ *
  * 解决问题：
  * 1. XSS防护 - HTML转义
- * 2. 输入验证 - 长度和内容检查  
+ * 2. 输入验证 - 长度和内容检查
  * 3. 请求频率限制 - 防止滥用
  * 4. CSRF防护 - 请求头验证
  */
@@ -43,21 +43,21 @@ export class SecurityUtils {
     if (!input || input.trim().length === 0) {
       return {
         valid: false,
-        error: '产品描述不能为空'
+        error: '产品描述不能为空',
       };
     }
 
     if (input.length < 10) {
       return {
         valid: false,
-        error: '产品描述至少需要10个字符'
+        error: '产品描述至少需要10个字符',
       };
     }
 
     if (input.length > 2000) {
       return {
         valid: false,
-        error: '产品描述不能超过2000个字符'
+        error: '产品描述不能超过2000个字符',
       };
     }
 
@@ -68,14 +68,14 @@ export class SecurityUtils {
       /on\w+\s*=/gi,
       /<iframe\b/gi,
       /<object\b/gi,
-      /<embed\b/gi
+      /<embed\b/gi,
     ];
 
     for (const pattern of dangerousPatterns) {
       if (pattern.test(input)) {
         return {
           valid: false,
-          error: '输入内容包含不安全的代码，请重新输入'
+          error: '输入内容包含不安全的代码，请重新输入',
         };
       }
     }
@@ -84,13 +84,13 @@ export class SecurityUtils {
     const cleanInput = input.trim();
     // 对于中文，按字符长度检查；对于英文，按单词数检查
     const hasChineseChars = /[\u4e00-\u9fff]/.test(cleanInput);
-    
+
     if (hasChineseChars) {
       // 中文内容：至少8个汉字才算有意义
       if (cleanInput.length < 8) {
         return {
           valid: false,
-          error: '产品描述内容过于简单，请提供更详细的描述'
+          error: '产品描述内容过于简单，请提供更详细的描述',
         };
       }
     } else {
@@ -99,24 +99,24 @@ export class SecurityUtils {
       if (wordCount < 3) {
         return {
           valid: false,
-          error: '产品描述应该包含至少3个有意义的词汇'
+          error: '产品描述应该包含至少3个有意义的词汇',
         };
       }
     }
 
     // 输入清理并返回
     const sanitized = this.escapeHtml(input.trim());
-    
+
     return {
       valid: true,
-      sanitized
+      sanitized,
     };
   }
 
   // 请求频率限制 - 防止API滥用
   static checkRateLimit(
-    key: string, 
-    maxRequests: number = 10, 
+    key: string,
+    maxRequests: number = 10,
     timeWindow: number = 60000 // 1分钟
   ): boolean {
     const now = Date.now();
@@ -126,7 +126,7 @@ export class SecurityUtils {
       // 重置或创建新记录
       rateLimitStore.set(key, {
         count: 1,
-        resetTime: now + timeWindow
+        resetTime: now + timeWindow,
       });
       return true;
     }
@@ -146,23 +146,23 @@ export class SecurityUtils {
     ctx!.textBaseline = 'top';
     ctx!.font = '14px Arial';
     ctx!.fillText('Browser fingerprint', 2, 2);
-    
+
     const fingerprint = [
       navigator.userAgent,
       navigator.language,
       screen.width + 'x' + screen.height,
       new Date().getTimezoneOffset(),
-      canvas.toDataURL()
+      canvas.toDataURL(),
     ].join('|');
-    
+
     // 简单hash
     let hash = 0;
     for (let i = 0; i < fingerprint.length; i++) {
       const char = fingerprint.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
+      hash = (hash << 5) - hash + char;
       hash = hash & hash; // 转换为32位整数
     }
-    
+
     return Math.abs(hash).toString(16);
   }
 
@@ -170,13 +170,16 @@ export class SecurityUtils {
   static generateCSRFToken(): string {
     const array = new Uint8Array(32);
     crypto.getRandomValues(array);
-    return Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
+    return Array.from(array, byte => byte.toString(16).padStart(2, '0')).join(
+      ''
+    );
   }
 
   // 验证输入是否为有效的任务ID
   static validateTaskId(taskId: string): boolean {
     // UUID v4格式验证
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    const uuidRegex =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
     return uuidRegex.test(taskId);
   }
 
@@ -200,11 +203,11 @@ export class SecurityUtils {
  * 自动添加安全头部，处理CSRF保护
  */
 export const secureApiFetch = async (
-  url: string, 
+  url: string,
   options: RequestInit = {}
 ): Promise<Response> => {
   const clientFingerprint = SecurityUtils.getClientFingerprint();
-  
+
   // 检查频率限制
   if (!SecurityUtils.checkRateLimit(clientFingerprint, 20, 60000)) {
     throw new Error('请求过于频繁，请稍后再试');
@@ -215,12 +218,16 @@ export const secureApiFetch = async (
     'Content-Type': 'application/json',
     'X-Requested-With': 'XMLHttpRequest', // CSRF防护
     'X-Client-Fingerprint': clientFingerprint,
-    ...options.headers
+    ...options.headers,
   };
 
   // 添加CSRF token (如果是POST/PUT/DELETE请求)
-  if (options.method && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(options.method.toUpperCase())) {
-    const csrfToken = sessionStorage.getItem('csrf_token') || SecurityUtils.generateCSRFToken();
+  if (
+    options.method &&
+    ['POST', 'PUT', 'DELETE', 'PATCH'].includes(options.method.toUpperCase())
+  ) {
+    const csrfToken =
+      sessionStorage.getItem('csrf_token') || SecurityUtils.generateCSRFToken();
     sessionStorage.setItem('csrf_token', csrfToken);
     (secureHeaders as Record<string, string>)['X-CSRF-Token'] = csrfToken;
   }
@@ -233,29 +240,29 @@ export const secureApiFetch = async (
 
   try {
     const response = await fetch(url, secureOptions);
-    
+
     // 检查响应安全性
     if (!response.ok) {
       // 详细的错误处理
       let errorMessage = `HTTP ${response.status}`;
-      
+
       try {
         const errorData = await response.json();
         errorMessage = errorData.message || errorMessage;
       } catch {
         // JSON解析失败，使用默认错误消息
       }
-      
+
       throw new Error(errorMessage);
     }
-    
+
     return response;
   } catch (error) {
     // 网络错误分类处理
     if (error instanceof TypeError) {
       throw new Error('网络连接失败，请检查网络设置');
     }
-    
+
     throw error;
   }
 };
@@ -270,12 +277,12 @@ export class SecureStorage {
   private static encrypt(text: string): string {
     const key = this.SECRET_KEY;
     let result = '';
-    
+
     for (let i = 0; i < text.length; i++) {
       const charCode = text.charCodeAt(i) ^ key.charCodeAt(i % key.length);
       result += String.fromCharCode(charCode);
     }
-    
+
     return btoa(result);
   }
 
@@ -284,12 +291,12 @@ export class SecureStorage {
       const text = atob(encrypted);
       const key = this.SECRET_KEY;
       let result = '';
-      
+
       for (let i = 0; i < text.length; i++) {
         const charCode = text.charCodeAt(i) ^ key.charCodeAt(i % key.length);
         result += String.fromCharCode(charCode);
       }
-      
+
       return result;
     } catch {
       return '';
@@ -309,7 +316,7 @@ export class SecureStorage {
     try {
       const encrypted = localStorage.getItem(key);
       if (!encrypted) return null;
-      
+
       return this.decrypt(encrypted);
     } catch (error) {
       console.error('Failed to retrieve encrypted data:', error);

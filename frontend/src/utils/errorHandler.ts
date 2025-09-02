@@ -1,7 +1,7 @@
 /**
  * 智能错误处理系统 - 消灭代码质量技术债务
  * 基于 Linus 错误处理原则：Fail fast, fail clear
- * 
+ *
  * 解决问题：
  * 1. 错误分类和用户友好消息
  * 2. 边缘情况完整处理
@@ -12,21 +12,21 @@
 // 错误类型枚举
 export enum ErrorType {
   NETWORK = 'network',
-  VALIDATION = 'validation', 
+  VALIDATION = 'validation',
   AUTHENTICATION = 'authentication',
   PERMISSION = 'permission',
   RATE_LIMIT = 'rate_limit',
   SERVER_ERROR = 'server_error',
   CLIENT_ERROR = 'client_error',
-  UNKNOWN = 'unknown'
+  UNKNOWN = 'unknown',
 }
 
 // 错误严重级别
 export enum ErrorSeverity {
-  LOW = 'low',       // 可忽略的警告
+  LOW = 'low', // 可忽略的警告
   MEDIUM = 'medium', // 影响功能但不阻塞
-  HIGH = 'high',     // 阻塞用户操作
-  CRITICAL = 'critical' // 系统级错误
+  HIGH = 'high', // 阻塞用户操作
+  CRITICAL = 'critical', // 系统级错误
 }
 
 // 错误信息接口
@@ -62,14 +62,14 @@ export class ErrorClassifier {
       /connection.*refused/i,
       /timeout/i,
       /dns.*error/i,
-      /no.*internet/i
+      /no.*internet/i,
     ],
     [ErrorType.VALIDATION]: [
       /validation.*failed/i,
       /invalid.*input/i,
       /required.*field/i,
       /格式.*错误/i,
-      /输入.*无效/i
+      /输入.*无效/i,
     ],
     [ErrorType.AUTHENTICATION]: [
       /unauthorized/i,
@@ -77,39 +77,36 @@ export class ErrorClassifier {
       /authentication.*failed/i,
       /invalid.*credentials/i,
       /登录.*失败/i,
-      /身份.*验证/i
+      /身份.*验证/i,
     ],
     [ErrorType.PERMISSION]: [
       /forbidden/i,
       /403/,
       /permission.*denied/i,
       /access.*denied/i,
-      /权限.*不足/i
+      /权限.*不足/i,
     ],
     [ErrorType.RATE_LIMIT]: [
       /rate.*limit/i,
       /429/,
       /too.*many.*requests/i,
       /请求.*频繁/i,
-      /限流/i
+      /限流/i,
     ],
     [ErrorType.SERVER_ERROR]: [
       /5\d{2}/,
       /internal.*server.*error/i,
       /service.*unavailable/i,
       /服务器.*错误/i,
-      /系统.*维护/i
+      /系统.*维护/i,
     ],
     [ErrorType.CLIENT_ERROR]: [
       /4\d{2}/,
       /bad.*request/i,
       /not.*found/i,
-      /客户端.*错误/i
+      /客户端.*错误/i,
     ],
-    [ErrorType.UNKNOWN]: [
-      /unknown/i,
-      /unexpected/i
-    ]
+    [ErrorType.UNKNOWN]: [/unknown/i, /unexpected/i],
   };
 
   /**
@@ -117,7 +114,7 @@ export class ErrorClassifier {
    */
   static classify(error: Error | string): ErrorType {
     const message = typeof error === 'string' ? error : error.message;
-    
+
     for (const [type, patterns] of Object.entries(this.ERROR_PATTERNS)) {
       for (const pattern of patterns) {
         if (pattern.test(message)) {
@@ -125,7 +122,7 @@ export class ErrorClassifier {
         }
       }
     }
-    
+
     return ErrorType.UNKNOWN;
   }
 
@@ -153,7 +150,10 @@ export class ErrorClassifier {
   /**
    * 获取用户友好的错误消息
    */
-  static getUserFriendlyMessage(errorType: ErrorType, _originalMessage?: string): string {
+  static getUserFriendlyMessage(
+    errorType: ErrorType,
+    _originalMessage?: string
+  ): string {
     const messages: Record<ErrorType, string> = {
       [ErrorType.NETWORK]: '网络连接失败，请检查网络设置后重试',
       [ErrorType.VALIDATION]: '输入信息有误，请检查后重新提交',
@@ -162,7 +162,7 @@ export class ErrorClassifier {
       [ErrorType.RATE_LIMIT]: '操作过于频繁，请稍后再试',
       [ErrorType.SERVER_ERROR]: '服务暂时不可用，请稍后重试',
       [ErrorType.CLIENT_ERROR]: '请求格式错误，请刷新页面重试',
-      [ErrorType.UNKNOWN]: '操作失败，请稍后重试'
+      [ErrorType.UNKNOWN]: '操作失败，请稍后重试',
     };
 
     return messages[errorType] || messages[ErrorType.UNKNOWN];
@@ -176,9 +176,9 @@ export class ErrorClassifier {
       ErrorType.NETWORK,
       ErrorType.RATE_LIMIT,
       ErrorType.SERVER_ERROR,
-      ErrorType.UNKNOWN
+      ErrorType.UNKNOWN,
     ];
-    
+
     return retryableTypes.includes(errorType);
   }
 
@@ -194,11 +194,11 @@ export class ErrorClassifier {
       [ErrorType.VALIDATION]: 0,
       [ErrorType.AUTHENTICATION]: 0,
       [ErrorType.PERMISSION]: 0,
-      [ErrorType.CLIENT_ERROR]: 0
+      [ErrorType.CLIENT_ERROR]: 0,
     };
 
     const baseDelay = baseDelays[errorType] || 1000;
-    
+
     // 指数退避策略
     return Math.min(baseDelay * Math.pow(2, attemptCount - 1), 30000);
   }
@@ -208,46 +208,18 @@ export class ErrorClassifier {
    */
   static getRecoveryActions(errorType: ErrorType): string[] {
     const actions: Record<ErrorType, string[]> = {
-      [ErrorType.NETWORK]: [
-        '检查网络连接',
-        '刷新页面重试',
-        '切换到移动网络'
-      ],
-      [ErrorType.VALIDATION]: [
-        '检查输入格式',
-        '填写必填字段',
-        '减少输入长度'
-      ],
-      [ErrorType.AUTHENTICATION]: [
-        '重新登录',
-        '清除浏览器缓存',
-        '联系管理员'
-      ],
+      [ErrorType.NETWORK]: ['检查网络连接', '刷新页面重试', '切换到移动网络'],
+      [ErrorType.VALIDATION]: ['检查输入格式', '填写必填字段', '减少输入长度'],
+      [ErrorType.AUTHENTICATION]: ['重新登录', '清除浏览器缓存', '联系管理员'],
       [ErrorType.PERMISSION]: [
         '联系管理员获取权限',
         '切换到有权限的账号',
-        '返回上一页'
+        '返回上一页',
       ],
-      [ErrorType.RATE_LIMIT]: [
-        '等待片刻后重试',
-        '减少操作频率',
-        '稍后再试'
-      ],
-      [ErrorType.SERVER_ERROR]: [
-        '稍后重试',
-        '刷新页面',
-        '联系技术支持'
-      ],
-      [ErrorType.CLIENT_ERROR]: [
-        '刷新页面',
-        '清除浏览器缓存',
-        '检查URL地址'
-      ],
-      [ErrorType.UNKNOWN]: [
-        '刷新页面重试',
-        '检查网络连接',
-        '联系技术支持'
-      ]
+      [ErrorType.RATE_LIMIT]: ['等待片刻后重试', '减少操作频率', '稍后再试'],
+      [ErrorType.SERVER_ERROR]: ['稍后重试', '刷新页面', '联系技术支持'],
+      [ErrorType.CLIENT_ERROR]: ['刷新页面', '清除浏览器缓存', '检查URL地址'],
+      [ErrorType.UNKNOWN]: ['刷新页面重试', '检查网络连接', '联系技术支持'],
     };
 
     return actions[errorType] || actions[ErrorType.UNKNOWN];
@@ -279,9 +251,14 @@ export class GlobalErrorHandler {
     const errorType = ErrorClassifier.classify(error);
     const severity = ErrorClassifier.getSeverity(errorType);
     const message = typeof error === 'string' ? error : error.message;
-    const userMessage = ErrorClassifier.getUserFriendlyMessage(errorType, message);
+    const userMessage = ErrorClassifier.getUserFriendlyMessage(
+      errorType,
+      message
+    );
     const canRetry = ErrorClassifier.canRetry(errorType);
-    const retryDelay = canRetry ? ErrorClassifier.getRetryDelay(errorType, 1) : undefined;
+    const retryDelay = canRetry
+      ? ErrorClassifier.getRetryDelay(errorType, 1)
+      : undefined;
     const recoveryActions = ErrorClassifier.getRecoveryActions(errorType);
 
     const errorInfo: ErrorInfo = {
@@ -291,7 +268,7 @@ export class GlobalErrorHandler {
       userMessage,
       canRetry,
       retryDelay,
-      recoveryActions
+      recoveryActions,
     };
 
     // 记录错误上下文
@@ -299,14 +276,17 @@ export class GlobalErrorHandler {
       timestamp: Date.now(),
       userAgent: navigator.userAgent,
       url: window.location.href,
-      ...context
+      ...context,
     };
 
     // 添加到错误日志
     this.addToErrorLog(errorInfo, fullContext);
 
     // 严重错误自动上报
-    if (severity === ErrorSeverity.CRITICAL || severity === ErrorSeverity.HIGH) {
+    if (
+      severity === ErrorSeverity.CRITICAL ||
+      severity === ErrorSeverity.HIGH
+    ) {
       this.reportError(errorInfo, fullContext);
     }
 
@@ -318,7 +298,7 @@ export class GlobalErrorHandler {
    */
   private addToErrorLog(errorInfo: ErrorInfo, context: ErrorContext): void {
     this.errorLog.push({ ...errorInfo, ...context });
-    
+
     // 保持日志大小限制
     if (this.errorLog.length > this.MAX_LOG_SIZE) {
       this.errorLog.shift();
@@ -328,14 +308,17 @@ export class GlobalErrorHandler {
   /**
    * 上报错误到监控服务
    */
-  private async reportError(errorInfo: ErrorInfo, context: ErrorContext): Promise<void> {
+  private async reportError(
+    errorInfo: ErrorInfo,
+    context: ErrorContext
+  ): Promise<void> {
     try {
       // TODO: 实际项目中发送到错误监控服务
       console.group('🚨 Error Report');
       console.error('Error:', errorInfo);
       console.log('Context:', context);
       console.groupEnd();
-      
+
       // 模拟上报API调用
       // await fetch('/api/errors', {
       //   method: 'POST',
@@ -351,17 +334,17 @@ export class GlobalErrorHandler {
    */
   getErrorStats(): Record<ErrorType, number> {
     const stats: Record<ErrorType, number> = {} as Record<ErrorType, number>;
-    
+
     // 初始化统计
     Object.values(ErrorType).forEach(type => {
       stats[type] = 0;
     });
-    
+
     // 计算统计
     this.errorLog.forEach(error => {
       stats[error.type]++;
     });
-    
+
     return stats;
   }
 
@@ -404,7 +387,7 @@ export function withErrorHandling<T extends (...args: any[]) => Promise<any>>(
       const errorInfo = handleError(error as Error, {
         component: fn.name,
         action: 'async_operation',
-        ...context
+        ...context,
       });
       throw new Error(errorInfo.userMessage);
     }

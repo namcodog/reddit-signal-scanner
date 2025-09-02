@@ -17,7 +17,7 @@ export class HttpClient {
     if (!this.csrfToken) {
       const array = new Uint8Array(16);
       crypto.getRandomValues(array);
-      this.csrfToken = Array.from(array, byte => 
+      this.csrfToken = Array.from(array, byte =>
         byte.toString(16).padStart(2, '0')
       ).join('');
       sessionStorage.setItem('csrf_token', this.csrfToken);
@@ -37,7 +37,7 @@ export class HttpClient {
         'X-CSRF-Token': this.getCSRFToken(),
       },
       credentials: 'same-origin',
-      body: JSON.stringify(data)
+      body: JSON.stringify(data),
     });
 
     if (!response.ok) {
@@ -56,7 +56,7 @@ export class HttpClient {
       headers: {
         'X-Requested-With': 'XMLHttpRequest',
       },
-      credentials: 'same-origin'
+      credentials: 'same-origin',
     });
 
     if (!response.ok) {

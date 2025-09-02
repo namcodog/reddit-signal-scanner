@@ -2,7 +2,7 @@
  * 分析等待页面 - SSE实时进度显示
  * Linus: "用户不关心技术实现，只关心能否完成任务"
  * 基于 URL驱动状态，支持页面刷新恢复
- * 
+ *
  * PRD-05核心功能：
  * - SSE实时通信，降级到轮询
  * - 状态自动恢复
@@ -21,9 +21,17 @@ import FallbackUI from '@/components/FallbackUI';
 const AnalysisPage: React.FC = () => {
   const { taskId } = useParams<{ taskId: string }>();
   const navigate = useNavigate();
-  
+
   // 使用SSE Hook进行实时通信
-  const { status, error, isConnected, strategy, retry, disconnect, connectionAttempts } = useTaskProgress(taskId);
+  const {
+    status,
+    error,
+    isConnected,
+    strategy,
+    retry,
+    disconnect,
+    connectionAttempts,
+  } = useTaskProgress(taskId);
 
   // 任务ID验证
   if (!taskId) {
@@ -33,12 +41,12 @@ const AnalysisPage: React.FC = () => {
 
   // 降级条件：多次连接失败且无有效状态
   const shouldFallback = connectionAttempts >= 3 && !isConnected && !status;
-  
+
   if (shouldFallback) {
     return (
-      <FallbackUI 
-        taskId={taskId} 
-        error={error || '无法建立连接'} 
+      <FallbackUI
+        taskId={taskId}
+        error={error || '无法建立连接'}
         onRetry={retry}
       />
     );
@@ -49,15 +57,18 @@ const AnalysisPage: React.FC = () => {
     if (!status) {
       return {
         step: '正在连接服务器...',
-        progress: 0
+        progress: 0,
       };
     }
 
     const statusMap = {
       pending: { step: '任务排队中...', progress: 10 },
-      processing: { step: status.message || '分析进行中...', progress: status.progress || 50 },
+      processing: {
+        step: status.message || '分析进行中...',
+        progress: status.progress || 50,
+      },
       completed: { step: '分析完成！', progress: 100 },
-      failed: { step: '分析失败', progress: 0 }
+      failed: { step: '分析失败', progress: 0 },
     };
 
     return statusMap[status.status] || { step: '未知状态', progress: 0 };
@@ -92,17 +103,21 @@ const AnalysisPage: React.FC = () => {
             Reddit 信号分析进行中
           </h1>
           <p className="text-gray-600 mb-2">
-            任务ID: <code className="bg-gray-100 px-2 py-1 rounded text-sm">{taskId}</code>
+            任务ID:{' '}
+            <code className="bg-gray-100 px-2 py-1 rounded text-sm">
+              {taskId}
+            </code>
           </p>
-          
+
           {/* 连接状态指示 */}
           <div className="flex items-center justify-center space-x-2 text-sm">
-            <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}></div>
+            <div
+              className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}
+            ></div>
             <span className={isConnected ? 'text-green-600' : 'text-red-600'}>
-              {isConnected 
-                ? `实时连接 (${strategy === 'sse' ? 'SSE' : '轮询'})` 
-                : '连接断开'
-              }
+              {isConnected
+                ? `实时连接 (${strategy === 'sse' ? 'SSE' : '轮询'})`
+                : '连接断开'}
             </span>
           </div>
         </div>
@@ -112,11 +127,13 @@ const AnalysisPage: React.FC = () => {
           <div className="mb-8">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-lg font-semibold">分析进度</h2>
-              <span className="text-sm text-gray-500">{Math.round(progress)}%</span>
+              <span className="text-sm text-gray-500">
+                {Math.round(progress)}%
+              </span>
             </div>
-            
+
             <div className="w-full bg-gray-200 rounded-full h-4 mb-4">
-              <div 
+              <div
                 className="bg-blue-600 h-4 rounded-full transition-all duration-1000 ease-out flex items-center justify-end pr-2"
                 style={{ width: `${Math.max(progress, 5)}%` }}
               >
@@ -127,7 +144,7 @@ const AnalysisPage: React.FC = () => {
                 )}
               </div>
             </div>
-            
+
             <div className="text-center">
               <p className="text-gray-700 mb-2">{step}</p>
               {status?.created_at && (
@@ -217,7 +234,7 @@ const AnalysisPage: React.FC = () => {
             >
               取消分析
             </button>
-            
+
             {!isConnected && (
               <button
                 onClick={handleRetry}
