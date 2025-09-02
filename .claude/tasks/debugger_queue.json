@@ -1,0 +1,14 @@
+{
+  "agent_type": "debugger",
+  "error_signature": "1dc8eb7fc713",
+  "escalation_level": 3,
+  "forced_intervention": true,
+  "task_description": "系统化调试，彻底解决问题",
+  "required_actions": [
+    "停止所有修复尝试",
+    "保存完整状态",
+    "建立调试基线",
+    "系统化根因分析",
+    "制定彻底解决方案"
+  ]
+}

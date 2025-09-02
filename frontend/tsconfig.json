@@ -17,11 +17,11 @@
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
 
-    /* Linting - 临时放宽以减少错误 */
-    "strict": false,
-    "noUnusedLocals": false,
-    "noUnusedParameters": false,
-    "noFallthroughCasesInSwitch": false,
+    /* Linting - 符合PRD严格模式要求 */
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
 
     /* Path mapping */
     "baseUrl": ".",

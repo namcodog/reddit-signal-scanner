@@ -1,0 +1,26 @@
+{
+  "analysis_timeout_seconds": 300,
+  "parallel_analysis_enabled": true,
+  "cache_enabled": true,
+  "cache_expiry_hours": 24,
+  "complexity_thresholds": {
+    "simple": 2,
+    "moderate": 3,
+    "complex": 4,
+    "very_complex": 5
+  },
+  "analysis_templates": {
+    "quick": {
+      "duration_minutes": 2,
+      "depth": "basic"
+    },
+    "standard": {
+      "duration_minutes": 4,
+      "depth": "comprehensive"
+    },
+    "deep": {
+      "duration_minutes": 6,
+      "depth": "exhaustive"
+    }
+  }
+}

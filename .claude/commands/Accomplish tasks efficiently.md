@@ -1,0 +1,1 @@
+Follow the 7-step architecture enhancement process in claude.md, adhere to code style constraints, utilize our professional agents as much as possible, and complete tasks efficiently.

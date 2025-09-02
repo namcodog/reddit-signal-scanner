@@ -1,0 +1,22 @@
+{
+  "issues": [
+    {
+      "id": "bcb6d44b4cf8",
+      "task_id": "test-task",
+      "agent_name": "quality-gate",
+      "severity": "high",
+      "status": "verified",
+      "title": "代码风格问题",
+      "description": "发现flake8风格问题",
+      "file_path": "test_quality.py",
+      "line_number": 7,
+      "created_at": "2025-09-02T07:47:31.258160+00:00",
+      "updated_at": "2025-09-02T07:48:27.407280+00:00",
+      "fixed_at": null,
+      "verified_at": "2025-09-02T07:48:27.407280+00:00",
+      "metadata": {}
+    }
+  ],
+  "last_updated": "2025-09-02T07:48:27.407617+00:00",
+  "total_count": 1
+}

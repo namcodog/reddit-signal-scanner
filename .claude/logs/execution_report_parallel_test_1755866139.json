@@ -1,0 +1,56 @@
+{
+  "task_id": "parallel_test",
+  "execution_time": 0.0004730224609375,
+  "plan": {
+    "parallel_agents": [
+      "signal-validator"
+    ],
+    "sequential_agents": [
+      "task-analyzer"
+    ],
+    "estimated_total_time": 540,
+    "critical_path": [
+      "task-analyzer",
+      "signal-validator"
+    ]
+  },
+  "results_summary": {
+    "total_agents": 2,
+    "successful": 2,
+    "failed": 0,
+    "success_rate": 1.0
+  },
+  "agent_results": {
+    "task-analyzer": {
+      "agent_name": "task-analyzer",
+      "success": true,
+      "execution_time": 1.5020370483398438e-05,
+      "result_data": {
+        "status": "completed",
+        "agent": "task-analyzer"
+      },
+      "error_message": null,
+      "suggestions": [
+        "task-analyzer执行建议"
+      ]
+    },
+    "signal-validator": {
+      "agent_name": "signal-validator",
+      "success": true,
+      "execution_time": 1.4066696166992188e-05,
+      "result_data": {
+        "status": "completed",
+        "agent": "signal-validator"
+      },
+      "error_message": null,
+      "suggestions": [
+        "signal-validator执行建议"
+      ]
+    }
+  },
+  "recommendations": [
+    "task-analyzer执行建议",
+    "signal-validator执行建议"
+  ],
+  "next_steps": []
+}

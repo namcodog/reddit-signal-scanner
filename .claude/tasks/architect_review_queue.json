@@ -1,0 +1,12 @@
+{
+  "agent_type": "linus-architect",
+  "error_signature": "1dc8eb7fc713",
+  "escalation_trigger": "repeated_failure",
+  "task_description": "架构级问题分析",
+  "review_scope": [
+    "数据结构设计",
+    "系统架构合理性",
+    "复杂度分析",
+    "设计哲学审查"
+  ]
+}

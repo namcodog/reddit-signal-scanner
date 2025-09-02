@@ -10,15 +10,17 @@ sqlalchemy==2.0.23
 alembic==1.12.1
 asyncpg==0.29.0
 psycopg2-binary==2.9.7
+greenlet==3.2.4
 
 # Redis & Celery
 redis==5.0.1
 celery==5.3.4
 
 # Authentication
-python-jose[cryptography]==3.3.0
+PyJWT[cryptography]==2.8.0
 passlib[bcrypt]==1.7.4
 python-multipart==0.0.6
+cryptography==41.0.7
 
 # HTTP Client & Data Processing  
 httpx==0.25.2
@@ -38,6 +40,9 @@ pytest-cov==4.1.0
 black==23.10.1
 flake8==6.1.0
 mypy==1.7.0
+
+# Security & Validation
+bleach==6.0.0
 
 # Utilities
 python-dotenv==1.0.0

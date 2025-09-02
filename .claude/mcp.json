@@ -8,21 +8,24 @@
       ],
       "env": {
         "TAVILY_API_KEY": "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"
-      }
+      },
+      "enabled": true
     },
     "context7": {
       "command": "/Users/hujia/.nvm/versions/node/v24.2.0/bin/npx",
       "args": [
         "-y",
         "@upstash/context7-mcp@latest"
-      ]
+      ],
+      "enabled": true
     },
     "sequential-thinking": {
       "command": "/Users/hujia/.nvm/versions/node/v24.2.0/bin/npx",
       "args": [
         "-y",
         "@modelcontextprotocol/server-sequential-thinking"
-      ]
+      ],
+      "enabled": true
     },
     "mcp-feedback-enhanced": {
       "command": "/Users/hujia/.local/bin/uv",
@@ -35,7 +38,8 @@
       "timeout": 600,
       "autoApprove": [
         "interactive_feedback"
-      ]
+      ],
+      "enabled": true
     },
     "devcontext": {
       "command": "/Users/hujia/.nvm/versions/node/v24.2.0/bin/npx",
@@ -56,7 +60,8 @@
         "supergateway@3.4.0",
         "--sse",
         "http://localhost:8765/mcp/cursor/sse/hujia"
-      ]
+      ],
+      "enabled": true
     },
     "serena": {
       "command": "/Users/hujia/.local/bin/uvx",
@@ -82,6 +87,39 @@
       ],
       "timeout": 300,
       "enabled": true
+    },
+    "filesystem": {
+      "command": "/Users/hujia/.nvm/versions/node/v24.2.0/bin/npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "/Users/hujia/Desktop/最小化Navigator"
+      ],
+      "enabled": true,
+      "timeout": 300
+    },
+    "postgres": {
+      "command": "/Users/hujia/.nvm/versions/node/v24.2.0/bin/npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-postgres"
+      ],
+      "env": {
+        "POSTGRES_CONNECTION_STRING": "postgresql://user:password@localhost:5432/reddit_navigator_dev"
+      },
+      "enabled": false,
+      "timeout": 300
+    },
+    "git": {
+      "command": "/Users/hujia/.nvm/versions/node/v24.2.0/bin/npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-git",
+        "--repository",
+        "/Users/hujia/Desktop/最小化Navigator"
+      ],
+      "enabled": true,
+      "timeout": 300
     }
   }
 }

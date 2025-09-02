@@ -1,7 +1,8 @@
 ---
 name: quality-gate
 description: 代码质量门控系统，在代码编辑和文件写入前进行自动化质检，确保代码符合项目标准
-tools: Read, Grep, Bash, Edit, MultiEdit
+model: claude-sonnet-4-20250514
+tools: Read, Grep, Bash, Edit, MultiEdit, mcp__context7__get-library-docs, mcp__serena__find_symbol, mcp__sequential-thinking__sequentialthinking
 priority: critical
 timeout: 30s
 ---

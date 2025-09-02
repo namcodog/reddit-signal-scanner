@@ -4,7 +4,7 @@
 version: '3.8'
 
 services:
-  # PostgreSQL 数据库
+  # PostgreSQL 数据库 - prd01-08优化配置
   postgres:
     image: postgres:15
     environment:
@@ -16,6 +16,14 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./infrastructure/docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+      # 挂载优化配置文件 - prd01-08任务添加
+      - ./docker/postgres/postgresql.conf:/etc/postgresql/postgresql.conf
+    command: >
+      postgres 
+        -c config_file=/etc/postgresql/postgresql.conf
+        -c log_statement=ddl
+        -c log_destination=stderr
+        -c logging_collector=off
 
   # Redis 缓存和消息队列
   redis:
@@ -44,7 +52,7 @@ services:
       - redis
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
-  # Celery Worker
+  # Celery Worker - 使用统一的Celery架构
   worker:
     build:
       context: ./backend
@@ -57,7 +65,38 @@ services:
     depends_on:
       - postgres
       - redis
-    command: celery -A app.tasks.celery_app worker --loglevel=info
+    command: celery -A app.core.celery_app worker --loglevel=info --queues=analysis_queue,maintenance_queue,cleanup_queue,monitoring_queue
+
+  # Celery Beat - 定时任务调度
+  scheduler:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./backend:/app
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/reddit_signal_scanner  
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - postgres
+      - redis
+    command: celery -A app.core.celery_app beat --loglevel=info
+
+  # Flower - Celery监控界面
+  flower:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    ports:
+      - "5555:5555"
+    volumes:
+      - ./backend:/app
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/reddit_signal_scanner
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - redis
+    command: celery -A app.core.celery_app flower --port=5555
 
   # 前端开发服务器
   frontend:

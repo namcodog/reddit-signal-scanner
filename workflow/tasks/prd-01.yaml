@@ -27,7 +27,7 @@ tasks:
     deps: ["prd01-01"]
     files:
       - backend/database/tables/users.sql
-      - backend/models/user.py
+      - backend/app/models/user.py
       - backend/alembic/versions/002_create_users.py
     context: |
       创建users表结构：
@@ -49,7 +49,7 @@ tasks:
     deps: ["prd01-01", "prd01-02"]
     files:
       - backend/database/tables/tasks.sql
-      - backend/models/task.py
+      - backend/app/models/task.py
       - backend/alembic/versions/003_create_tasks.py
     context: |
       创建tasks表结构：
@@ -103,7 +103,7 @@ tasks:
     deps: ["prd01-03", "prd01-04"]
     files:
       - backend/database/tables/analyses.sql
-      - backend/models/analysis.py
+      - backend/app/models/analysis.py
       - backend/alembic/versions/004_create_analyses.py
     context: |
       创建analyses表结构：
@@ -128,7 +128,7 @@ tasks:
     deps: ["prd01-05"]
     files:
       - backend/database/tables/reports.sql
-      - backend/models/report.py
+      - backend/app/models/report.py
       - backend/alembic/versions/005_create_reports.py
     context: |
       创建reports表结构：
@@ -151,7 +151,7 @@ tasks:
     deps: ["prd01-01"]
     files:
       - backend/database/tables/community_cache.sql
-      - backend/models/community_cache.py
+      - backend/app/models/community_cache.py
       - backend/alembic/versions/006_create_community_cache.py
     context: |
       创建community_cache表结构：
@@ -176,7 +176,7 @@ tasks:
     files:
       - backend/config/database.yml
       - docker/postgres/postgresql.conf
-      - backend/core/database.py
+      - backend/app/core/database.py
     context: |
       配置PostgreSQL性能参数：
       - shared_buffers: 512MB (支持JSONB索引)
@@ -198,8 +198,8 @@ tasks:
     deps: ["prd01-06", "prd01-07"]
     files:
       - backend/database/maintenance/cleanup.sql
-      - backend/tasks/data_cleanup.py
-      - backend/core/scheduler.py
+      - backend/app/tasks/data_cleanup.py
+      - backend/app/core/scheduler.py
     context: |
       实现数据清理策略：
       - 完成的任务：保留30天

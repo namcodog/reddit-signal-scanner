@@ -1,6 +1,7 @@
 ---
 name: perf-monitor
 description: 系统性能实时监控专家，跟踪API响应时间、Redis缓存命中率和资源使用，确保系统高效运行
+model: claude-sonnet-4-20250514
 tools: Bash, Read, WebFetch, Grep
 priority: medium
 timeout: 10s

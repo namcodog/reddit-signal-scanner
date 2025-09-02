@@ -1,0 +1,74 @@
+{
+  "task_id": "test_task",
+  "execution_time": 0.6236600875854492,
+  "plan": {
+    "parallel_agents": [],
+    "sequential_agents": [
+      "task-analyzer",
+      "error-detective"
+    ],
+    "estimated_total_time": 900,
+    "critical_path": [
+      "task-analyzer",
+      "error-detective"
+    ]
+  },
+  "results_summary": {
+    "total_agents": 2,
+    "successful": 1,
+    "failed": 1,
+    "success_rate": 0.5
+  },
+  "agent_results": {
+    "task-analyzer": {
+      "agent_name": "task-analyzer",
+      "success": true,
+      "execution_time": 0.563291072845459,
+      "result_data": {
+        "agent": "task-analyzer",
+        "status": "completed",
+        "task_id": "test_task",
+        "analysis_result": {
+          "complexity_score": 4,
+          "confidence_level": 0.82,
+          "estimated_hours": 4,
+          "technical_risk": "medium",
+          "priority": 1
+        },
+        "suggestions": [
+          "分析完成",
+          "建议优先处理高风险项目"
+        ],
+        "execution_time": 0.5017180442810059
+      },
+      "error_message": null,
+      "suggestions": [
+        "需求清晰度: 85.0%",
+        "功能范围: 主要功能, 辅助功能, 边界功能",
+        "验收标准: 功能正常运行, 性能满足要求, 通过所有测试",
+        "关键约束: 时间约束, 资源约束, 技术约束",
+        "推荐方法: 采用迭代开发，测试驱动开发(TDD)，持续集成/持续部署(CI/CD)"
+      ]
+    },
+    "error-detective": {
+      "agent_name": "error-detective",
+      "success": false,
+      "execution_time": 0.05944395065307617,
+      "result_data": null,
+      "error_message": "usage: error_escalation_manager.py [-h] [--error-message ERROR_MESSAGE]\n                                   [--file-path FILE_PATH]\n                                   [--function-name FUNCTION_NAME]\n                                   {test,stats,process}\nerror_escalation_manager.py: error: argument action: invalid choice: 'test_task' (choose from 'test', 'stats', 'process')\n",
+      "suggestions": []
+    }
+  },
+  "recommendations": [
+    "检查失败的Agent: error-detective",
+    "需求清晰度: 85.0%",
+    "功能范围: 主要功能, 辅助功能, 边界功能",
+    "验收标准: 功能正常运行, 性能满足要求, 通过所有测试",
+    "关键约束: 时间约束, 资源约束, 技术约束",
+    "推荐方法: 采用迭代开发，测试驱动开发(TDD)，持续集成/持续部署(CI/CD)"
+  ],
+  "next_steps": [
+    "解决已识别的错误问题",
+    "重新执行失败的Agent"
+  ]
+}

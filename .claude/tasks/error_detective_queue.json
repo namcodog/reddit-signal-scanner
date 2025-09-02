@@ -1,0 +1,11 @@
+{
+  "agent_type": "error-detective",
+  "error_signature": "1dc8eb7fc713",
+  "task_description": "深度分析错误模式，找出根本原因",
+  "required_analysis": [
+    "错误模式识别",
+    "根因分析",
+    "上下文线索收集",
+    "解决方案生成"
+  ]
+}

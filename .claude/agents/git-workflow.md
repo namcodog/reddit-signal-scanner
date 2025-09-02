@@ -1,6 +1,7 @@
 ---
 name: git-workflow  
 description: Git工作流专家，确保版本控制质量、分支策略执行和代码历史清晰，自动化git最佳实践
+model: claude-sonnet-4-20250514
 tools: Bash, Read, Grep, Edit, Write
 priority: high
 timeout: 30s

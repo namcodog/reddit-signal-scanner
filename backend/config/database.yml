@@ -1,0 +1,188 @@
+# Reddit Signal Scanner - 数据库配置
+# Linus原则: "数据结构决定一切" - 统一配置，消除特殊情况
+
+# 通用基础配置
+common: &common
+  # JSONB性能优化核心参数
+  jsonb_optimization:
+    gin_pending_list_limit: "4MB"        # GIN索引批量插入优化
+    gin_fuzzy_search_limit: 0            # 禁用模糊搜索限制
+    gin_work_mem: "8MB"                  # GIN索引构建内存
+
+  # 查询执行优化
+  query_optimization:
+    random_page_cost: 1.1                # SSD环境优化
+    effective_io_concurrency: 200        # 并发IO能力
+    max_parallel_workers_per_gather: 2   # 并行查询worker数
+    max_parallel_workers: 8              # 系统最大并行worker
+    
+  # 多租户查询优化
+  multi_tenant:
+    enable_partition_pruning: "on"       # 分区裁剪优化
+    constraint_exclusion: "partition"    # 约束排除策略
+    enable_partitionwise_join: "on"      # 分区感知连接
+    enable_partitionwise_aggregate: "on" # 分区感知聚合
+
+  # WAL和检查点配置  
+  reliability:
+    wal_compression: "on"                # WAL压缩
+    wal_level: "replica"                 # 复制级别WAL
+    checkpoint_completion_target: 0.9    # 检查点完成目标
+    checkpoint_timeout: "15min"          # 检查点超时
+
+  # 连接和超时设置
+  connections:
+    statement_timeout: "30s"             # 语句超时
+    idle_in_transaction_session_timeout: "60s"  # 事务空闲超时
+    lock_timeout: "10s"                  # 锁超时
+    tcp_keepalives_idle: 7200            # TCP保活
+
+# 开发环境 - 较小资源分配，更多调试信息
+development:
+  <<: *common
+  
+  # 内存配置 - 适合开发机器
+  memory:
+    shared_buffers: "256MB"              # 共享缓冲区
+    effective_cache_size: "1GB"          # 有效缓存大小
+    work_mem: "4MB"                      # 工作内存
+    maintenance_work_mem: "64MB"         # 维护工作内存
+    
+  # 连接数配置
+  connection_limits:
+    max_connections: 50                  # 最大连接数
+    superuser_reserved_connections: 3    # 超级用户保留连接
+    
+  # 日志配置 - 开发环境详细日志
+  logging:
+    log_statement: "all"                 # 记录所有语句
+    log_duration: "on"                   # 记录执行时间
+    log_slow_queries: "100ms"            # 慢查询阈值
+    log_checkpoints: "on"                # 记录检查点
+    log_connections: "on"                # 记录连接
+    log_disconnections: "on"             # 记录断开连接
+    
+  # 开发环境特定优化
+  development_specific:
+    fsync: "off"                         # 开发环境可关闭fsync提升性能
+    synchronous_commit: "off"            # 异步提交
+    full_page_writes: "off"              # 关闭全页写入
+
+# 测试环境 - 接近生产的配置，但资源较小
+testing:
+  <<: *common
+  
+  # 内存配置 - 中等资源
+  memory:
+    shared_buffers: "384MB"
+    effective_cache_size: "1.5GB"
+    work_mem: "6MB"
+    maintenance_work_mem: "128MB"
+    
+  # 连接数配置
+  connection_limits:
+    max_connections: 75
+    superuser_reserved_connections: 3
+    
+  # 日志配置 - 适度日志
+  logging:
+    log_statement: "ddl"                 # 只记录DDL语句
+    log_duration: "off"
+    log_slow_queries: "200ms"
+    log_checkpoints: "on"
+    log_connections: "off"
+    log_disconnections: "off"
+    
+  # 测试环境优化
+  testing_specific:
+    fsync: "on"                          # 测试环境保持数据安全
+    synchronous_commit: "on"
+    full_page_writes: "on"
+
+# 生产环境 - 最大性能和稳定性配置
+production:
+  <<: *common
+  
+  # 内存配置 - 生产级资源分配
+  memory:
+    shared_buffers: "512MB"              # 任务要求的配置
+    effective_cache_size: "2GB"          # 任务要求的配置
+    work_mem: "8MB"                      # 任务要求的配置，支持复杂查询
+    maintenance_work_mem: "256MB"        # 大型维护操作
+    
+  # 连接数配置
+  connection_limits:
+    max_connections: 100                 # 任务要求的配置
+    superuser_reserved_connections: 3
+    
+  # 日志配置 - 生产环境精简日志
+  logging:
+    log_statement: "none"                # 不记录普通语句
+    log_duration: "off"
+    log_slow_queries: "500ms"            # 只记录严重慢查询
+    log_checkpoints: "on"
+    log_connections: "off"
+    log_disconnections: "off"
+    log_lock_waits: "on"                 # 记录锁等待
+    
+  # 生产环境严格配置
+  production_specific:
+    fsync: "on"                          # 必须保证数据安全
+    synchronous_commit: "on"             # 同步提交
+    full_page_writes: "on"               # 全页写入保护
+    wal_sync_method: "fdatasync"         # 最佳WAL同步方法
+    
+  # 性能监控
+  monitoring:
+    track_activities: "on"               # 跟踪活动
+    track_counts: "on"                   # 跟踪统计
+    track_io_timing: "on"                # 跟踪IO时间
+    track_functions: "all"               # 跟踪函数调用
+    
+  # 自动清理优化
+  autovacuum:
+    autovacuum: "on"
+    autovacuum_max_workers: 3
+    autovacuum_naptime: "1min"
+    autovacuum_vacuum_threshold: 50
+    autovacuum_analyze_threshold: 50
+    autovacuum_vacuum_scale_factor: 0.1
+    autovacuum_analyze_scale_factor: 0.05
+
+# 特定优化策略
+optimization_profiles:
+  # JSONB密集型工作负载
+  jsonb_heavy:
+    gin_pending_list_limit: "8MB"        # 增加GIN索引内存
+    work_mem: "16MB"                     # 增加复杂查询内存
+    random_page_cost: 1.0                # SSD环境进一步优化
+    
+  # 多租户高并发
+  multi_tenant_high_concurrency:
+    max_connections: 200
+    shared_buffers: "768MB"
+    effective_cache_size: "3GB"
+    max_parallel_workers_per_gather: 4
+    
+  # 分析型工作负载
+  analytical_workload:
+    work_mem: "32MB"
+    maintenance_work_mem: "512MB"
+    max_parallel_workers_per_gather: 4
+    enable_hashjoin: "on"
+    enable_mergejoin: "on"
+
+# 性能基准目标
+performance_targets:
+  development:
+    jsonb_query_max_time: "100ms"
+    concurrent_connections: 25
+    
+  testing:
+    jsonb_query_max_time: "75ms" 
+    concurrent_connections: 50
+    
+  production:
+    jsonb_query_max_time: "50ms"         # Agent分析建议的目标
+    concurrent_connections: 100          # 任务要求
+    multi_tenant_query_max_time: "100ms" # Agent分析建议的目标

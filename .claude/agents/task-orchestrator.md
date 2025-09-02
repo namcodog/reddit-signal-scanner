@@ -1,7 +1,8 @@
 ---
 name: task-orchestrator  
 description: 智能任务流程管控专家，自动分析依赖关系、处理阻塞任务、动态调整优先级，确保开发流程高效有序
-tools: TodoWrite, Read, Grep, mcp__serena__find_symbol, Bash
+model: claude-sonnet-4-20250514
+tools: TodoWrite, Read, Grep, mcp__serena__find_symbol, mcp__context7__get-library-docs, mcp__sequential-thinking__sequentialthinking, mcp__tavily-mcp__tavily-search, Bash
 priority: high
 timeout: 20s
 ---

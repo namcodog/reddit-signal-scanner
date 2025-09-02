@@ -1,0 +1,58 @@
+{
+  "task_id": "test_workflow_optimization",
+  "execution_time": 0.000492095947265625,
+  "plan": {
+    "parallel_agents": [
+      "quality-gate"
+    ],
+    "sequential_agents": [
+      "task-analyzer"
+    ],
+    "estimated_total_time": 480,
+    "critical_path": [
+      "task-analyzer",
+      "quality-gate"
+    ]
+  },
+  "results_summary": {
+    "total_agents": 2,
+    "successful": 2,
+    "failed": 0,
+    "success_rate": 1.0
+  },
+  "agent_results": {
+    "task-analyzer": {
+      "agent_name": "task-analyzer",
+      "success": true,
+      "execution_time": 1.4781951904296875e-05,
+      "result_data": {
+        "status": "completed",
+        "agent": "task-analyzer"
+      },
+      "error_message": null,
+      "suggestions": [
+        "task-analyzer执行建议"
+      ]
+    },
+    "quality-gate": {
+      "agent_name": "quality-gate",
+      "success": true,
+      "execution_time": 1.2874603271484375e-05,
+      "result_data": {
+        "status": "completed",
+        "agent": "quality-gate"
+      },
+      "error_message": null,
+      "suggestions": [
+        "quality-gate执行建议"
+      ]
+    }
+  },
+  "recommendations": [
+    "task-analyzer执行建议",
+    "quality-gate执行建议"
+  ],
+  "next_steps": [
+    "运行测试验证代码质量"
+  ]
+}

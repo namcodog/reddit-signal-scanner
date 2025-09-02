@@ -1,6 +1,7 @@
 ---
 name: config-sync
 description: 配置文件一致性管理专家，确保YAML配置验证、环境间同步、版本控制和回滚机制的可靠性
+model: claude-sonnet-4-20250514
 tools: Read, Edit, Bash, Grep, Write
 priority: medium  
 timeout: 15s

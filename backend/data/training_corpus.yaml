@@ -1,0 +1,62 @@
+# TF-IDF训练语料配置 - 智能社区发现算法
+# 用于训练关键词提取的预定义产品描述模式
+
+version: "1.0.0"
+description: "预定义的产品描述模式，用于TF-IDF向量化器训练"
+
+training_samples:
+  # SaaS产品类
+  - "ai powered note taking app for researchers and students"
+  - "social media management platform for businesses"  
+  - "project management software with team collaboration"
+  - "customer support helpdesk solution with ai chatbot"
+  - "marketing automation platform for email campaigns"
+  
+  # 电商类
+  - "e-commerce platform for small businesses"
+  - "inventory management system for retail stores"
+  - "dropshipping automation tool for online sellers"
+  
+  # 生产力工具类
+  - "cloud storage solution for file sharing"
+  - "video conferencing tool for remote work"
+  - "accounting software for freelancers"
+  - "task management app with team coordination"
+  
+  # 开发工具类
+  - "code editor with ai assistance for developers"
+  - "api testing tool for backend development"
+  - "database management system for enterprises"
+  
+  # 移动应用类  
+  - "mobile app for fitness tracking and health"
+  - "language learning application with gamification"
+  - "food delivery app with restaurant marketplace"
+  
+  # AI/ML类
+  - "machine learning platform for data scientists"
+  - "computer vision api for image recognition"
+  - "natural language processing service"
+  
+  # 金融科技类
+  - "digital banking platform for millennials"
+  - "cryptocurrency trading application" 
+  - "personal finance budgeting tool"
+  
+  # 教育类
+  - "learning management system for education"
+  - "online course platform with certification"
+  - "virtual classroom software for schools"
+  
+  # 数据分析类
+  - "data analytics dashboard for insights"
+  - "business intelligence reporting tool"
+  - "real-time monitoring system for operations"
+
+# 训练参数配置
+training_config:
+  max_features: 1000
+  min_df: 1
+  max_df: 0.95
+  ngram_range: [1, 2]
+  stop_words: "english"

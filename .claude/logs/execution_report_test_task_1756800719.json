@@ -1,0 +1,39 @@
+{
+  "task_id": "test_task",
+  "execution_time": 0.06138801574707031,
+  "plan": {
+    "parallel_agents": [],
+    "sequential_agents": [
+      "task-analyzer",
+      "error-detective"
+    ],
+    "estimated_total_time": 900,
+    "critical_path": [
+      "task-analyzer",
+      "error-detective"
+    ]
+  },
+  "results_summary": {
+    "total_agents": 1,
+    "successful": 0,
+    "failed": 1,
+    "success_rate": 0.0
+  },
+  "agent_results": {
+    "task-analyzer": {
+      "agent_name": "task-analyzer",
+      "success": false,
+      "execution_time": 0.06087017059326172,
+      "result_data": null,
+      "error_message": "usage: task_analysis_engine.py [-h] [--task TASK] [--priority PRIORITY]\n                               [--template {quick,standard,deep}]\n                               {analyze,test}\ntask_analysis_engine.py: error: argument action: invalid choice: 'test_task' (choose from 'analyze', 'test')\n",
+      "suggestions": []
+    }
+  },
+  "recommendations": [
+    "检查失败的Agent: task-analyzer"
+  ],
+  "next_steps": [
+    "解决已识别的错误问题",
+    "重新执行失败的Agent"
+  ]
+}

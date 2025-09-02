@@ -1,0 +1,266 @@
+# Reddit Signal Scanner - Agent统一配置文件
+# 基于Linus Torvalds哲学：统一配置，简化管理
+
+# 默认配置
+defaults:
+  model: Sonnet 4        # 默认使用最快的模型
+  timeout: 30s                 # 默认超时时间
+  priority: medium             # 默认优先级
+  max_retries: 2               # 最大重试次数
+  log_level: info              # 日志级别
+
+# Agent模型选择策略
+model_strategy:
+  fast_tasks:     Sonnet 4           # 快速任务：语法检查、性能监控、配置验证
+  complex_tasks:  Opus 4.1       # 复杂任务：数据分析、任务编排、信号验证  
+  deep_analysis:  Opus 4.1                  # 深度分析：架构审查、设计决策
+
+# 各Agent专门配置
+agents:
+  # 代码质量门控 - 快速语法和风格检查
+  quality-gate:
+    model: Sonnet 4
+    timeout: 30s
+    priority: critical
+    description: "代码质量门控系统，在代码编辑和文件写入前进行自动化质检"
+    triggers:
+      - tool: Edit
+      - tool: Write  
+      - tool: MultiEdit
+    checks:
+      - syntax_validation    # 语法检查
+      - type_checking       # 类型检查
+      - style_compliance    # 风格规范
+      - security_scan       # 安全扫描
+    
+  # Linus总架构师 - 深度架构分析和设计决策
+  linus-architect:
+    model: Opus 4.1
+    timeout: 45s
+    priority: critical
+    description: "项目总架构师，以Linus Torvalds的视角进行架构决策"
+    triggers:
+      - tool: MultiEdit     # 多文件编辑时触发
+    focus_areas:
+      - data_structure_design    # 数据结构设计
+      - system_architecture      # 系统架构
+      - complexity_reduction     # 复杂度控制
+      - design_philosophy        # 设计哲学
+
+  # 信号验证专家 - 数据质量和商业信号分析
+  signal-validator:
+    model: Sonnet 4
+    timeout: 60s
+    priority: high
+    description: "Reddit信号验证专家，分析数据质量和商业信号可信度"
+    triggers:
+      - tool: WebFetch
+    validation_criteria:
+      - statistical_significance  # 统计显著性
+      - source_credibility        # 数据源可信度
+      - business_relevance        # 商业相关性
+      - noise_filtering           # 噪音过滤
+    
+  # 性能监控专家 - 系统性能实时监控
+  perf-monitor:
+    model: Sonnet 4
+    timeout: 10s
+    priority: medium
+    description: "系统性能实时监控专家，跟踪关键指标"
+    triggers:
+      - tool: WebFetch
+      - tool: Bash
+    metrics:
+      - api_response_time     # API响应时间
+      - cache_hit_rate        # 缓存命中率
+      - memory_usage          # 内存使用
+      - cpu_utilization       # CPU利用率
+    thresholds:
+      api_response_critical: 2000ms
+      api_response_warning: 500ms
+      cache_hit_critical: 50%
+      cache_hit_warning: 60%
+
+  # 任务编排专家 - 智能任务流程管控
+  task-orchestrator:
+    model: Sonnet 4
+    timeout: 20s
+    priority: high
+    description: "智能任务流程管控专家，自动分析依赖关系"
+    triggers:
+      - tool: TodoWrite
+    capabilities:
+      - dependency_analysis     # 依赖关系分析
+      - bottleneck_detection    # 瓶颈检测
+      - parallel_optimization   # 并行优化
+      - priority_adjustment     # 优先级调整
+
+  # 配置同步专家 - 配置文件一致性管理
+  config-sync:
+    model: Sonnet 4
+    timeout: 15s
+    priority: medium
+    description: "配置文件一致性管理专家，确保配置可靠性"
+    triggers:
+      - session_end          # 会话结束时
+    validations:
+      - yaml_syntax          # YAML语法检查
+      - schema_validation    # 结构验证
+      - environment_sync     # 环境间同步
+      - security_audit       # 安全审计
+
+  # Git工作流专家 - 版本控制质量管理
+  git-workflow:
+    model: Sonnet 4
+    timeout: 30s
+    priority: high
+    description: "Git工作流专家，确保版本控制质量"
+    triggers:
+      - session_end          # 会话结束时
+    features:
+      - commit_quality       # 提交质量检查
+      - branch_strategy      # 分支策略验证
+      - merge_conflict       # 冲突预防
+      - history_cleanup      # 历史清理
+
+  # 错误侦探专家 - 深度错误模式分析
+  error-detective:
+    model: Sonnet 4
+    timeout: 60s
+    priority: high
+    description: "错误侦探专家，深度分析错误模式和根本原因"
+    triggers:
+      - error_count: 2       # 第2次相同错误时触发
+    tools:
+      - mcp__context7__get-library-docs
+      - mcp__context7__resolve-library-id
+      - mcp__serena__search_for_pattern
+      - mcp__sequential-thinking__sequentialthinking
+      - mcp__tavily-mcp__tavily-search
+      - mcp__openmemory-local__search_memory
+    capabilities:
+      - error_pattern_recognition    # 错误模式识别
+      - root_cause_analysis         # 根因分析
+      - context_clue_collection     # 上下文线索收集
+      - solution_generation         # 解决方案生成
+
+  # 专业调试器 - 系统化调试
+  debugger:
+    model: Sonnet 4
+    timeout: 120s
+    priority: critical
+    description: "专业调试器，第3次错误时强制介入系统化调试"
+    triggers:
+      - error_count: 3       # 第3次相同错误时强制触发
+    tools:
+      - mcp__context7__resolve-library-id
+      - mcp__context7__get-library-docs
+      - mcp__serena__find_symbol
+      - mcp__serena__find_referencing_symbols
+      - mcp__sequential-thinking__sequentialthinking
+      - mcp__tavily-mcp__tavily-search
+      - mcp__openmemory-local__search_memory
+    capabilities:
+      - systematic_debugging        # 系统化调试
+      - deep_code_analysis         # 深度代码分析
+      - interactive_debugging      # 交互式调试会话
+      - comprehensive_solution     # 彻底解决方案
+
+  # 任务分析专家 - 强制预分析
+  task-analyzer:
+    model: Opus 4.1
+    timeout: 300s
+    priority: critical
+    description: "任务分析专家，每个新任务开始前强制深度分析"
+    triggers:
+      - task_start: always   # 每个新任务都触发
+    tools:
+      - mcp__context7__resolve-library-id
+      - mcp__context7__get-library-docs
+      - mcp__serena__get_symbols_overview
+      - mcp__serena__find_symbol
+      - mcp__sequential-thinking__sequentialthinking
+      - mcp__tavily-mcp__tavily-search
+      - mcp__openmemory-local__search_memory
+      - mcp__openmemory-local__add_memories
+    capabilities:
+      - requirement_analysis       # 需求分析
+      - technology_assessment      # 技术评估
+      - risk_prediction           # 风险预测
+      - implementation_planning    # 实施规划
+
+  # 架构预审专家 - 快速架构方向验证 (v7.0新增)
+  pre-linus-check:
+    model: Opus 4.1
+    timeout: 60s
+    priority: high
+    description: "Linus架构预审专家，实现前60秒快速架构方向检查"
+    triggers:
+      - after_task_analyzer        # task-analyzer完成后触发
+      - complexity_score: ">6"     # 复杂度评分>6分时触发
+    tools:
+      - mcp__sequential-thinking__sequentialthinking
+      - mcp__serena__find_symbol
+      - Read
+    capabilities:
+      - architecture_precheck      # 架构方向预审
+      - complexity_assessment      # 复杂度评估
+      - data_structure_validation  # 数据结构验证
+      - linus_principles_check     # Linus原则检查
+
+# 环境配置
+environments:
+  development:
+    log_level: debug
+    timeout_multiplier: 1.5    # 开发环境超时时间延长50%
+    
+  testing:
+    log_level: info
+    strict_mode: true          # 测试环境启用严格模式
+    
+  production:
+    log_level: warn
+    timeout_multiplier: 0.8    # 生产环境超时时间缩短20%
+    error_tolerance: low       # 低错误容忍度
+
+# 成本控制策略
+cost_optimization:
+  # 模型使用优先级（按成本从低到高）
+  model_preference:
+    1: claude-3-haiku
+    2: claude-3-sonnet  
+    3: claude-3-opus
+    
+  # 智能降级策略
+  auto_downgrade:
+    enabled: true
+    conditions:
+      - high_request_volume    # 高请求量时自动降级
+      - non_critical_tasks     # 非关键任务使用便宜模型
+      
+  # 并发限制
+  concurrency:
+    max_parallel_agents: 3     # 最大并行Agent数量
+    queue_strategy: priority   # 按优先级排队
+
+# 监控和日志
+monitoring:
+  metrics_collection:
+    enabled: true
+    retention_days: 30
+    
+  performance_tracking:
+    - agent_execution_time
+    - model_response_time
+    - success_rate
+    - cost_per_execution
+    
+  alerting:
+    high_failure_rate: 20%     # 失败率超过20%时告警
+    slow_response: 60s         # 响应时间超过60秒时告警
+
+# 版本信息
+version: "1.0"
+created: "2025-08-23"
+last_updated: "2025-08-23"
+maintainer: "开发团队"

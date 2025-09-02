@@ -2,34 +2,53 @@
   "PreToolUse": [
     {
       "script": "$CLAUDE_PROJECT_DIR/.claude/scripts/quality_check.py",
+      "args": ["$FILE_PATH", "--task-id", "$CURRENT_TASK_ID"],
       "matchers": [
         {"tool": "Edit"},
         {"tool": "Write"},
         {"tool": "MultiEdit"}
-      ]
+      ],
+      "description": "质量门控 - 文件修改前强制质量检查和问题修复循环"
     },
     {
-      "script": "$CLAUDE_PROJECT_DIR/.claude/scripts/linus_architect.py",
+      "script": "$CLAUDE_PROJECT_DIR/.claude/scripts/task_orchestrator.py",
+      "args": ["--analyze-todo"],
       "matchers": [
-        {"tool": "MultiEdit"}
-      ]
+        {"tool": "TodoWrite"}
+      ],
+      "description": "任务编排专家 - TodoWrite时分析任务依赖和优先级，推荐合适的subagent"
     }
   ],
   "PostToolUse": [
     {
-      "script": "$CLAUDE_PROJECT_DIR/.claude/scripts/perf_metrics.py",
+      "script": "$CLAUDE_PROJECT_DIR/.claude/scripts/intelligent_error_router.py",
+      "args": ["--action", "route"],
       "matchers": [
-        {"tool": "WebFetch"},
-        {"tool": "Bash"}
-      ]
-    }
-  ],
-  "Stop": [
-    {
-      "script": "$CLAUDE_PROJECT_DIR/.claude/scripts/git_workflow.py"
+        {"pattern": "Error"},
+        {"pattern": "Exception"},
+        {"pattern": "失败"},
+        {"pattern": "错误"},
+        {"pattern": "Failed"}
+      ],
+      "description": "智能错误路由 - 基于错误类型选择最佳Agent，替代复杂的计数升级"
     },
     {
-      "script": "$CLAUDE_PROJECT_DIR/.claude/scripts/config_sync.py"
+      "script": "$CLAUDE_PROJECT_DIR/.claude/scripts/agent_audit_logger.py",
+      "args": ["--tool-name", "$TOOL_NAME", "--tool-result", "$TOOL_RESULT", "--debug"],
+      "matchers": [
+        {"tool": "Task"}
+      ],
+      "description": "Agent审核日志器 - 增强版解析，自动将Task工具的agent调用结果记录到workflow系统"
+    },
+    {
+      "script": "$CLAUDE_PROJECT_DIR/.claude/scripts/issue_tracker.py",
+      "args": ["check", "--task", "$CURRENT_TASK_ID"],
+      "matchers": [
+        {"pattern": "任务完成"},
+        {"pattern": "task complete"},
+        {"pattern": "workflow complete"}
+      ],
+      "description": "问题跟踪检查 - 任务完成前检查是否有未解决的阻塞性问题"
     }
   ]
 }

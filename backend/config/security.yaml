@@ -1,0 +1,200 @@
+# Reddit Signal Scanner - 安全配置
+# 
+# Linus原则: 配置即代码，版本控制管理
+# - 所有安全参数集中配置
+# - 环境差异化支持
+# - 向后兼容保证
+
+# JWT认证配置
+jwt:
+  # 算法配置 - 支持渐进迁移
+  algorithms:
+    preferred: "RS256"        # 优先算法
+    supported: ["RS256", "HS256"]  # 支持的算法列表
+    fallback: "HS256"        # 降级算法
+  
+  # Token过期策略  
+  expiration:
+    access_token_minutes: 1440    # 24小时
+    refresh_token_days: 7         # 7天
+    remember_me_days: 30          # 记住我：30天
+    
+  # RS256密钥配置
+  rsa:
+    key_size: 2048               # RSA密钥长度
+    private_key_path: "./keys/jwt_private.pem"
+    public_key_path: "./keys/jwt_public.pem"
+    key_id: "rss-key-1"         # 密钥标识符
+    
+  # 密钥轮换策略
+  rotation:
+    enabled: false              # 开发环境关闭
+    interval_days: 90           # 90天轮换周期
+    grace_period_days: 7        # 旧密钥宽限期
+    
+  # Token结构
+  claims:
+    issuer: "reddit-scanner"
+    audience: "api" 
+    include_jti: true           # JWT ID防重放
+    include_tenant_id: true     # 租户隔离
+    include_permissions: true   # 权限声明
+
+# 密码安全配置  
+password:
+  # BCrypt配置
+  bcrypt:
+    rounds: 12                  # 哈希轮次（平衡安全性和性能）
+    max_length: 128            # 最大密码长度
+    min_length: 8              # 最小密码长度
+    
+  # 密码策略
+  policy:
+    require_uppercase: true     # 必须包含大写字母
+    require_lowercase: true     # 必须包含小写字母  
+    require_numbers: true       # 必须包含数字
+    require_symbols: false      # 符号可选（用户友好）
+    forbidden_patterns:        # 禁止的模式
+      - "123456"
+      - "password"
+      - "qwerty"
+      
+  # 暴力破解防护
+  brute_force:
+    max_attempts: 5            # 最大尝试次数
+    lockout_minutes: 15        # 锁定时间
+    progressive_delay: true    # 渐进延迟
+
+# 会话管理
+session:
+  # 并发会话控制
+  concurrent_sessions:
+    max_per_user: 3            # 每用户最大并发会话
+    strategy: "kick_oldest"    # 超出策略：踢出最旧的
+    
+  # 会话安全
+  security:
+    bind_to_ip: false         # IP绑定（移动友好）
+    detect_device_change: true # 设备变更检测
+    require_reauth_minutes: 480 # 8小时后需要重新认证
+
+# 多租户安全
+multi_tenant:
+  # 租户隔离
+  isolation:
+    strict_mode: true          # 严格模式：禁止跨租户访问
+    validate_on_every_request: true
+    audit_cross_tenant_attempts: true
+    
+  # 默认租户
+  default:
+    tenant_id: "default"       # 默认租户ID
+    auto_create: true          # 自动创建租户
+
+# API安全配置
+api:
+  # 限流配置
+  rate_limiting:
+    enabled: true
+    strategies:
+      global: "1000/hour"      # 全局限制
+      per_user: "100/minute"   # 单用户限制
+      per_tenant: "500/minute" # 单租户限制
+      
+  # CORS配置
+  cors:
+    allow_origins: 
+      - "http://localhost:3000"   # React开发服务器
+      - "http://127.0.0.1:3000"
+    allow_methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+    allow_headers: ["Authorization", "Content-Type", "X-Tenant-ID"]
+    allow_credentials: true
+    max_age: 86400             # 预检请求缓存时间
+    
+  # 安全头配置  
+  security_headers:
+    x_content_type_options: "nosniff"
+    x_frame_options: "DENY"
+    x_xss_protection: "1; mode=block"
+    strict_transport_security: "max-age=31536000; includeSubDomains"
+    content_security_policy: "default-src 'self'"
+    referrer_policy: "strict-origin-when-cross-origin"
+
+# 审计和监控
+audit:
+  # 记录配置
+  logging:
+    enabled: true
+    log_level: "INFO"          # DEBUG, INFO, WARNING, ERROR
+    include_request_body: false # 性能考虑
+    include_response_body: false
+    
+  # 关键事件记录
+  events:
+    login_success: true
+    login_failure: true        
+    password_change: true
+    permission_change: true
+    cross_tenant_attempt: true
+    token_refresh: false       # 太频繁，默认关闭
+    
+  # 数据保留
+  retention:
+    login_logs_days: 90
+    error_logs_days: 30  
+    audit_logs_days: 365
+
+# 环境特定配置
+environments:
+  development:
+    jwt:
+      algorithms:
+        preferred: "HS256"     # 开发环境使用HS256简化
+      rotation:
+        enabled: false
+    password:
+      policy:
+        require_uppercase: false
+        require_numbers: false # 开发友好
+    api:
+      rate_limiting:
+        enabled: false
+      security_headers:
+        strict_transport_security: null  # 开发环境关闭HTTPS强制
+        
+  testing:  
+    jwt:
+      expiration:
+        access_token_minutes: 5   # 测试时短过期时间
+    password:
+      bcrypt:
+        rounds: 4               # 测试时降低计算成本
+    audit:
+      logging:
+        enabled: false          # 测试时关闭审计
+        
+  production:
+    jwt:
+      algorithms: 
+        preferred: "RS256"      # 生产环境强制RS256
+        supported: ["RS256"]    # 仅支持RS256
+      rotation:
+        enabled: true           # 启用密钥轮换
+    password:
+      policy:
+        require_symbols: true   # 生产环境严格密码策略
+    session:
+      security:
+        bind_to_ip: true        # 生产环境IP绑定
+    api:
+      rate_limiting:
+        enabled: true
+      security_headers:
+        strict_transport_security: "max-age=63072000; includeSubDomains; preload"
+
+# 版本和兼容性
+metadata:
+  config_version: "1.0"
+  compatible_app_versions: ["0.1.0", "0.2.0"]
+  last_updated: "2025-08-22"
+  maintained_by: "security-team"

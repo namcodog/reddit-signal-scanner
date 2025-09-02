@@ -1,0 +1,39 @@
+{
+  "task_id": "test_task",
+  "execution_time": 0.5650959014892578,
+  "plan": {
+    "parallel_agents": [],
+    "sequential_agents": [
+      "task-analyzer",
+      "error-detective"
+    ],
+    "estimated_total_time": 900,
+    "critical_path": [
+      "task-analyzer",
+      "error-detective"
+    ]
+  },
+  "results_summary": {
+    "total_agents": 1,
+    "successful": 0,
+    "failed": 1,
+    "success_rate": 0.0
+  },
+  "agent_results": {
+    "task-analyzer": {
+      "agent_name": "task-analyzer",
+      "success": false,
+      "execution_time": 0.5645899772644043,
+      "result_data": null,
+      "error_message": "2025-09-02 16:13:13,289 - INFO - 任务分析引擎初始化完成\n2025-09-02 16:13:13,290 - INFO - 🚀 开始分析任务 #91230190: 优化workflow调用路径，修复频繁错误问题\n2025-09-02 16:13:13,290 - INFO - 📝 使用 quick 分析模板 (预计 2 分钟)\n2025-09-02 16:13:13,290 - INFO - 🔍 开始并行信息收集...\n2025-09-02 16:13:13,790 - INFO - ✅ 信息收集完成，用时 0.50s\n2025-09-02 16:13:13,790 - INFO - 🧠 开始深度需求理解...\n2025-09-02 16:13:13,790 - INFO - ✅ 需求理解完成，用时 0.00s\n2025-09-02 16:13:13,791 - INFO - 🏗️ 开始技术方案设计...\n2025-09-02 16:13:13,791 - INFO - ✅ 技术方案设计完成，用时 0.00s\n2025-09-02 16:13:13,791 - INFO - 📋 开始实施计划制定...\n2025-09-02 16:13:13,791 - INFO - 💾 保存分析结果到项目记忆\n2025-09-02 16:13:13,791 - INFO - ✅ 实施计划制定完成，用时 0.00s\n2025-09-02 16:13:13,791 - INFO - ✅ 分析结果已缓存: .claude/cache/task_analysis/91230190.json\n2025-09-02 16:13:13,791 - INFO - 🎯 任务分析完成！总用时 0.50s，置信度 0.82\nTraceback (most recent call last):\n  File \"/Users/hujia/Desktop/最小化Navigator/.claude/scripts/task_analysis_engine.py\", line 874, in <module>\n    asyncio.run(main())\n  File \"/opt/homebrew/Cellar/python@3.11/3.11.13/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py\", line 190, in run\n    return runner.run(main)\n           ^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.11/3.11.13/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py\", line 118, in run\n    return self._loop.run_until_complete(task)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.11/3.11.13/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py\", line 654, in run_until_complete\n    return future.result()\n           ^^^^^^^^^^^^^^^\n  File \"/Users/hujia/Desktop/最小化Navigator/.claude/scripts/task_analysis_engine.py\", line 867, in main\n    'suggestions': result.recommendations[:3],  # 前3个建议\n                   ^^^^^^^^^^^^^^^^^^^^^^\nAttributeError: 'AnalysisResult' object has no attribute 'recommendations'\n",
+      "suggestions": []
+    }
+  },
+  "recommendations": [
+    "检查失败的Agent: task-analyzer"
+  ],
+  "next_steps": [
+    "解决已识别的错误问题",
+    "重新执行失败的Agent"
+  ]
+}

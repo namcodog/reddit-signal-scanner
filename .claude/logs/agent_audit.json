@@ -1,0 +1,122 @@
+{
+  "prd02-02": {
+    "task-analyzer": {
+      "status": "passed",
+      "timestamp": "2025-01-24T10:30:00Z",
+      "details": {
+        "score": 85,
+        "analysis": "任务需求清晰，技术方案合理"
+      }
+    },
+    "quality-gate": {
+      "status": "passed",
+      "timestamp": "2025-01-24T11:00:00Z",
+      "details": {
+        "issues_found": 3,
+        "issues_fixed": 3,
+        "final_score": 79
+      }
+    },
+    "signal-validator": {
+      "status": "passed",
+      "timestamp": "2025-01-24T11:30:00Z",
+      "details": {
+        "confidence": 0.85,
+        "data_quality_score": 42
+      }
+    },
+    "linus-architect": {
+      "status": "passed",
+      "timestamp": "2025-01-24T12:00:00Z",
+      "details": {
+        "final_score": 86,
+        "verdict": "有条件通过"
+      }
+    }
+  },
+  "prd04-01": {
+    "task-analyzer": {
+      "status": "passed",
+      "timestamp": "2025-09-02T04:10:41.943391+00:00",
+      "details": {}
+    },
+    "quality-gate": {
+      "status": "passed",
+      "timestamp": "2025-09-02T04:10:41.944340+00:00",
+      "details": {
+        "score": 91,
+        "flake8_pass": true,
+        "mypy_pass": true,
+        "conclusion": "PASS - 已达到生产部署标准！**"
+      }
+    },
+    "signal-validator": {
+      "status": "passed",
+      "timestamp": "2025-01-15T15:20:00Z",
+      "details": {
+        "confidence": 0.95,
+        "data_quality_score": 91
+      }
+    },
+    "linus-architect": {
+      "status": "passed",
+      "timestamp": "2025-01-15T15:30:00Z",
+      "details": {
+        "final_score": 91,
+        "verdict": "批准合并",
+        "architecture_rating": "A-级别"
+      }
+    }
+  },
+  "prd04-02": {
+    "task-analyzer": {
+      "status": "passed",
+      "timestamp": "2025-09-02T12:15:00Z",
+      "details": {
+        "score": 88,
+        "analysis": "任务需求明确，技术方案基于Linus设计哲学，架构合理"
+      }
+    },
+    "pre-linus-check": {
+      "status": "passed",
+      "timestamp": "2025-09-02T12:20:00Z", 
+      "details": {
+        "score": 85,
+        "architecture_direction": "正确",
+        "quick_validation": "通过预审"
+      }
+    },
+    "quality-gate": {
+      "status": "passed",
+      "timestamp": "2025-09-02T12:45:00Z",
+      "details": {
+        "score": 72,
+        "issues_found": 8,
+        "issues_fixed": 8,
+        "conclusion": "P0/P1问题已修复，达到生产标准"
+      }
+    },
+    "signal-validator": {
+      "status": "passed", 
+      "timestamp": "2025-09-02T12:50:00Z",
+      "details": {
+        "confidence": 0.82,
+        "data_quality_score": 82,
+        "grade": "B+",
+        "security_issues_found": 1,
+        "security_issues_fixed": 1
+      }
+    },
+    "linus-architect": {
+      "status": "passed",
+      "timestamp": "2025-09-02T13:30:00Z",
+      "details": {
+        "final_score": 92,
+        "code_taste_rating": "9.2/10", 
+        "verdict": "批准生产部署",
+        "architecture_rating": "接近Linux内核标准",
+        "deployment_approved": true
+      }
+    }
+  }
+}

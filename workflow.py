@@ -25,6 +25,10 @@ from dataclasses import dataclass
 from datetime import datetime
 
 
+class WorkflowError(Exception):
+    """工作流相关错误的自定义异常类"""
+    pass
+
 @dataclass
 class Task:
     """任务数据结构 - 核心抽象"""
@@ -46,10 +50,14 @@ class WorkflowManager:
     """工作流管理器 - Linus式极简设计"""
     
     def __init__(self):
-        self.project_root = Path(__file__).parent
+        # 使用绝对路径，避免工作目录依赖
+        self.project_root = Path(__file__).resolve().parent
         self.workflow_dir = self.project_root / "workflow"
         self.tasks_dir = self.workflow_dir / "tasks"
         self.state_file = self.workflow_dir / "state.yaml"
+        
+        # 路径验证机制
+        self._validate_paths()
         
         # 确保目录存在
         self.workflow_dir.mkdir(exist_ok=True)
@@ -84,6 +92,37 @@ class WorkflowManager:
             except Exception as e:
                 print(f"⚠️ 加载任务文件 {yaml_file} 失败: {e}")
     
+    def _validate_paths(self):
+        """验证所有必需路径的有效性和权限"""
+        required_paths = [
+            (self.project_root, "项目根目录"),
+            (self.workflow_dir, "工作流目录"),
+            (self.tasks_dir, "任务目录")
+        ]
+        
+        for path, description in required_paths:
+            # 检查路径是否存在
+            if not path.exists() and path != self.workflow_dir and path != self.tasks_dir:
+                raise WorkflowError(f"{description}不存在: {path}")
+            
+            # 检查父目录权限
+            parent = path.parent if not path.exists() else path
+            if not os.access(parent, os.R_OK | os.W_OK):
+                raise WorkflowError(f"{description}权限不足: {parent}")
+        
+        # 验证文件路径有效性
+        if self.state_file.parent != self.workflow_dir:
+            raise WorkflowError(f"状态文件路径不在工作流目录内: {self.state_file}")
+        
+        # 检查中文路径支持
+        try:
+            test_file = self.workflow_dir / "测试.tmp"
+            if self.workflow_dir.exists():
+                test_file.touch()
+                test_file.unlink()
+        except Exception as e:
+            print(f"⚠️ 中文路径可能不被支持: {e}")
+
     def _load_state(self):
         """加载项目状态"""
         if self.state_file.exists():
@@ -294,7 +333,21 @@ class WorkflowManager:
             print(f"❌ 无法完成 {task_id} - 缺少依赖: {missing_deps}")
             return
         
-        # 简单验证（检查相关文件是否存在）
+        # Agent审核检查（强制7步流程验证）
+        if verify:
+            agent_audit_passed = self._check_agent_audit(task_id)
+            if not agent_audit_passed:
+                print("❌ 任务未通过必需的Agent审核流程")
+                print("请确保已完成以下步骤:")
+                print("  1. task-analyzer分析")
+                print("  2. quality-gate质量检查") 
+                print("  3. signal-validator验证")
+                print("  4. linus-architect最终审核")
+                response = input("是否强制完成（不推荐）？(y/N): ")
+                if response.lower() != 'y':
+                    return
+        
+        # 文件验证（检查相关文件是否存在）
         if verify and task.files:
             missing_files = []
             for file_path in task.files:
@@ -511,6 +564,233 @@ class WorkflowManager:
             'blocked_tasks': len(blocked),
             'completion_rate': len(completed) / len(self.tasks) * 100 if self.tasks else 0
         }
+    
+    def _check_agent_audit(self, task_id: str) -> bool:
+        """
+        检查任务是否通过必需的Agent审核流程 - 集成问题跟踪系统
+        
+        Args:
+            task_id: 任务ID
+            
+        Returns:
+            bool: True如果通过所有必需审核，False否则
+        """
+        import json
+        from pathlib import Path
+        
+        # 集成问题跟踪系统检查
+        try:
+            from .claude.scripts.issue_tracker import IssueTracker
+            
+            issue_tracker = IssueTracker(str(self.project_root))
+            
+            # 检查是否有阻塞性问题
+            blocking_issues = issue_tracker.get_blocking_issues(task_id)
+            if blocking_issues:
+                print(f"⚠️ 任务 {task_id} 有 {len(blocking_issues)} 个阻塞性问题需要解决")
+                for issue in blocking_issues[:3]:  # 只显示前3个
+                    print(f"  🔴 {issue.title} [{issue.severity.value}]")
+                if len(blocking_issues) > 3:
+                    print(f"  ... 还有 {len(blocking_issues)-3} 个问题")
+                
+                print("💡 使用以下命令管理问题:")
+                print(f"   python .claude/scripts/issue_tracker.py list --task {task_id}")
+                print(f"   python .claude/scripts/quality_check.py [file] --verify-fixes --task-id {task_id}")
+                return False
+                
+        except ImportError:
+            print("⚠️ 问题跟踪器不可用，使用传统审核检查")
+        
+        # 审核日志文件路径
+        audit_log_file = self.project_root / ".claude" / "logs" / "agent_audit.json"
+        
+        # 必需的Agent审核步骤
+        required_agents = [
+            'task-analyzer',
+            'quality-gate', 
+            'signal-validator',
+            'linus-architect'
+        ]
+        
+        try:
+            if not audit_log_file.exists():
+                # 如果没有审核日志文件，检查是否为已完成的旧任务
+                completed_tasks = set(self.state.get('completed', []))
+                if task_id in completed_tasks:
+                    # 对于已完成的任务，不强制要求审核日志
+                    return True
+                print(f"⚠️ 任务 {task_id} 缺少Agent审核记录")
+                return False
+            
+            with open(audit_log_file, 'r', encoding='utf-8') as f:
+                audit_data = json.load(f)
+            
+            task_audits = audit_data.get(task_id, {})
+            
+            if not task_audits:
+                print(f"⚠️ 任务 {task_id} 没有找到审核记录")
+                return False
+            
+            # 检查每个必需的Agent是否都有通过记录
+            missing_agents = []
+            failed_agents = []
+            
+            for agent in required_agents:
+                agent_record = task_audits.get(agent, {})
+                if not agent_record:
+                    missing_agents.append(agent)
+                elif agent_record.get('status') != 'passed':
+                    failed_agents.append(agent)
+            
+            if missing_agents:
+                print(f"⚠️ 任务 {task_id} 缺少以下Agent审核: {', '.join(missing_agents)}")
+            
+            if failed_agents:
+                print(f"⚠️ 任务 {task_id} 以下Agent审核未通过: {', '.join(failed_agents)}")
+            
+            return len(missing_agents) == 0 and len(failed_agents) == 0
+            
+        except (json.JSONDecodeError, KeyError, IOError) as e:
+            # 如果读取审核日志失败，默认允许但给出警告
+            print(f"⚠️ 无法读取Agent审核日志: {e}")
+            return True  # 兼容性：不阻塞现有流程
+    
+    def record_agent_audit(self, task_id: str, agent_name: str, status: str, details: dict = None):
+        """
+        记录Agent审核结果
+        
+        Args:
+            task_id: 任务ID
+            agent_name: Agent名称
+            status: 审核状态 ('passed', 'failed', 'in_progress')
+            details: 审核详细信息
+        """
+        import json
+        from pathlib import Path
+        from datetime import datetime
+        
+        # 确保日志目录存在
+        log_dir = self.project_root / ".claude" / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        
+        audit_log_file = log_dir / "agent_audit.json"
+        
+        # 读取现有数据
+        audit_data = {}
+        if audit_log_file.exists():
+            try:
+                with open(audit_log_file, 'r', encoding='utf-8') as f:
+                    audit_data = json.load(f)
+            except (json.JSONDecodeError, IOError):
+                audit_data = {}
+        
+        # 更新审核记录
+        if task_id not in audit_data:
+            audit_data[task_id] = {}
+        
+        audit_data[task_id][agent_name] = {
+            'status': status,
+            'timestamp': datetime.now().isoformat(),
+            'details': details or {}
+        }
+        
+        # 保存数据
+        try:
+            with open(audit_log_file, 'w', encoding='utf-8') as f:
+                json.dump(audit_data, f, indent=2, ensure_ascii=False)
+        except IOError as e:
+            print(f"⚠️ 无法保存Agent审核日志: {e}")
+    
+    def manage_issues(self, task_id: str = None, list_issues: bool = False, 
+                     check_blocking: bool = False, show_stats: bool = False):
+        """管理任务问题"""
+        try:
+            from .claude.scripts.issue_tracker import IssueTracker
+            
+            issue_tracker = IssueTracker(str(self.project_root))
+            
+            if show_stats:
+                # 显示统计信息
+                stats = issue_tracker.get_statistics()
+                print(f"\n📊 问题统计:")
+                print(f"=" * 50)
+                print(f"总问题数: {stats['total']}")
+                print(f"阻塞性问题: {stats['blocking_count']}")
+                
+                if stats['by_status']:
+                    print(f"\n按状态分布:")
+                    for status, count in stats['by_status'].items():
+                        icon = "🔴" if status == "discovered" else "🟡" if status == "fixing" else "🟢"
+                        print(f"  {icon} {status}: {count}")
+                
+                if stats['by_severity']:
+                    print(f"\n按严重程度分布:")
+                    for severity, count in stats['by_severity'].items():
+                        icon = "🔥" if severity == "critical" else "⚠️" if severity == "high" else "📝"
+                        print(f"  {icon} {severity}: {count}")
+                
+            elif check_blocking:
+                # 检查阻塞性问题
+                if task_id:
+                    blocking_issues = issue_tracker.get_blocking_issues(task_id)
+                    print(f"\n🔍 任务 {task_id} 的阻塞性问题:")
+                else:
+                    blocking_issues = issue_tracker.get_blocking_issues()
+                    print(f"\n🔍 所有阻塞性问题:")
+                
+                if not blocking_issues:
+                    print("✅ 无阻塞性问题")
+                    return
+                
+                print(f"🔴 发现 {len(blocking_issues)} 个阻塞性问题:")
+                for issue in blocking_issues:
+                    severity_icon = "🔥" if issue.severity.value == "critical" else "⚠️"
+                    print(f"  {severity_icon} {issue.id}: {issue.title}")
+                    print(f"      任务: {issue.task_id}")
+                    print(f"      文件: {issue.file_path}")
+                    print(f"      描述: {issue.description}")
+                    print()
+                
+            elif list_issues:
+                # 列出问题
+                if task_id:
+                    issues = issue_tracker.get_task_issues(task_id)
+                    print(f"\n📋 任务 {task_id} 的所有问题:")
+                else:
+                    issues = list(issue_tracker.issues.values())
+                    print(f"\n📋 所有问题:")
+                
+                if not issues:
+                    print("✅ 无问题记录")
+                    return
+                
+                for issue in issues:
+                    status_icon = ("🔴" if issue.is_blocking() else 
+                                 "🟡" if issue.status.value == "fixing" else "🟢")
+                    print(f"  {status_icon} {issue.id}: {issue.title}")
+                    print(f"      状态: {issue.status.value}")
+                    print(f"      严重程度: {issue.severity.value}")
+                    print(f"      创建时间: {issue.created_at}")
+                    print()
+                
+                print(f"\n💡 使用命令:")
+                print(f"   python .claude/scripts/issue_tracker.py update <issue_id> <status>")
+                print(f"   python .claude/scripts/quality_check.py [file] --verify-fixes")
+                
+            else:
+                # 默认显示帮助
+                print("\n🔧 问题管理命令:")
+                print("  --list     列出问题")
+                print("  --check    检查阻塞性问题")  
+                print("  --stats    显示统计信息")
+                print(f"\n例如:")
+                print(f"  python workflow.py issues --stats")
+                print(f"  python workflow.py issues prd04-01 --list")
+                print(f"  python workflow.py issues --check")
+                
+        except ImportError:
+            print("❌ 问题跟踪器不可用")
+            print("请检查 .claude/scripts/issue_tracker.py 是否存在")
 
 
 def main():
@@ -546,6 +826,13 @@ def main():
     list_parser.add_argument('--completed', action='store_true', help='只显示已完成的任务')
     list_parser.add_argument('--prd', help='按PRD过滤任务')
     
+    # issues 命令
+    issues_parser = subparsers.add_parser('issues', help='管理任务问题')
+    issues_parser.add_argument('task_id', nargs='?', help='任务ID')
+    issues_parser.add_argument('--list', action='store_true', help='列出问题')
+    issues_parser.add_argument('--check', action='store_true', help='检查阻塞性问题')
+    issues_parser.add_argument('--stats', action='store_true', help='显示问题统计')
+    
     args = parser.parse_args()
     
     if not args.command:
@@ -567,6 +854,9 @@ def main():
             manager.verify_integrity(auto_fix=args.fix)
         elif args.command == 'list':
             manager.list_tasks(ready_only=args.ready, completed_only=args.completed, prd_filter=args.prd)
+        elif args.command == 'issues':
+            manager.manage_issues(task_id=args.task_id, list_issues=args.list, 
+                                check_blocking=args.check, show_stats=args.stats)
     
     except KeyboardInterrupt:
         print("\n\n👋 操作已取消")

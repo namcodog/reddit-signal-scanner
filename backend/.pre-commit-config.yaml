@@ -1,0 +1,48 @@
+# Pre-commit Hook配置 - Reddit Signal Scanner
+# 确保每次提交都进行类型安全检查
+
+repos:
+  # MyPy类型检查
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.5.1
+    hooks:
+      - id: mypy
+        name: MyPy类型检查
+        entry: mypy
+        language: system
+        types: [python]
+        args: [--config-file=mypy.ini, --show-error-codes]
+        exclude: ^(tests/|migrations/|alembic/)
+        
+  # 代码格式化
+  - repo: https://github.com/psf/black
+    rev: 23.7.0
+    hooks:
+      - id: black
+        name: Black代码格式化
+        language_version: python3.11
+        
+  # 导入排序
+  - repo: https://github.com/pycqa/isort
+    rev: 5.12.0
+    hooks:
+      - id: isort
+        name: isort导入排序
+        args: ["--profile", "black"]
+        
+  # 代码规范检查
+  - repo: https://github.com/pycqa/flake8
+    rev: 6.0.0
+    hooks:
+      - id: flake8
+        name: Flake8代码规范
+        args: [--max-line-length=88, --extend-ignore=E203,W503]
+        
+  # 安全检查
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.7.5
+    hooks:
+      - id: bandit
+        name: Bandit安全检查
+        args: [-c, pyproject.toml]
+        exclude: ^tests/

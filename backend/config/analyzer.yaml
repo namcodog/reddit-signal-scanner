@@ -1,0 +1,44 @@
+# Reddit Signal Scanner 分析引擎配置
+analysis_engine:
+  # 全局设置
+  version: "v2.1"
+  max_total_duration: 270  # 4.5分钟上限
+  enable_parallel: true
+  
+  # 动态社区数量配置
+  community_discovery:
+    min_communities: 10
+    max_communities: 30  
+    max_duration: 30
+    cache_hit_thresholds:
+      high: 0.8    # 命中率>80% → 30个社区
+      medium: 0.6  # 命中率60-80% → 20个社区  
+      low: 0.0     # 命中率<60% → 10个社区
+    
+  # 数据采集配置
+  data_collection:
+    max_duration: 120
+    cache_priority: 0.9     # 90%优先使用缓存
+    api_rate_limit: 15      # 每分钟最多15次API调用
+    parallel_workers: 4     # 并行工作线程数
+    
+  # NLP处理配置  
+  signal_extraction:
+    max_duration: 90
+    models:
+      sentiment: "vader"
+      clustering: "kmeans"
+      similarity: "sentence-transformers"
+    thresholds:
+      min_pain_point_score: 0.7
+      min_competitor_mentions: 3
+      min_opportunity_urgency: 0.5
+      
+  # 结果排序配置
+  result_ranking:
+    max_duration: 30
+    weights:
+      business_value: 0.4
+      confidence: 0.3  
+      actionability: 0.2
+      novelty: 0.1
