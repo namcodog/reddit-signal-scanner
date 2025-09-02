@@ -36,11 +36,17 @@ fi
 if [ "$current_branch" = "main" ] || [ "$current_branch" = "master" ]; then
     echo -e "${RED}⚠️  WARNING: Pushing directly to main/master branch!${NC}"
     echo -e "${YELLOW}💡 Consider using feature branches and pull requests${NC}"
-    echo -n "Are you sure you want to continue? (y/N): "
-    read -r response
-    if [[ ! "$response" =~ ^[Yy]$ ]]; then
-        echo -e "${YELLOW}❌ Push cancelled${NC}"
-        exit 1
+    
+    # 在非交互环境下或设置了PUSH_BYPASS时自动允许
+    if [ -n "$PUSH_BYPASS" ] || [ ! -t 0 ]; then
+        echo -e "${YELLOW}⚠️  Auto-approving push in non-interactive mode${NC}"
+    else
+        echo -n "Are you sure you want to continue? (y/N): "
+        read -r response
+        if [[ ! "$response" =~ ^[Yy]$ ]]; then
+            echo -e "${YELLOW}❌ Push cancelled${NC}"
+            exit 1
+        fi
     fi
 fi
 
