@@ -4,16 +4,14 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import SecurityUtils, { 
-  SecureStorage 
-} from '@/utils/security';
+import SecurityUtils, { SecureStorage } from '@/utils/security';
 
 describe('SecurityUtils', () => {
   describe('HTML转义功能', () => {
     it('应该正确转义HTML特殊字符', () => {
       const maliciousInput = '<script>alert("XSS")</script>';
       const escaped = SecurityUtils.escapeHtml(maliciousInput);
-      
+
       expect(escaped).toBe('&lt;script&gt;alert("XSS")&lt;/script&gt;');
       expect(escaped).not.toContain('<script>');
     });
@@ -53,7 +51,7 @@ describe('SecurityUtils', () => {
         '<script>alert("XSS")</script>',
         'javascript:alert("XSS")',
         '<img onerror="alert(1)" src="x">',
-        '<iframe src="javascript:alert(1)"></iframe>'
+        '<iframe src="javascript:alert(1)"></iframe>',
       ];
 
       maliciousInputs.forEach(input => {
@@ -66,7 +64,7 @@ describe('SecurityUtils', () => {
     it('应该接受有效输入', () => {
       const validInput = '一款帮助用户管理任务的生产力应用，支持多设备同步';
       const result = SecurityUtils.validateProductDescription(validInput);
-      
+
       expect(result.valid).toBe(true);
       expect(result.sanitized).toBeDefined();
       expect(result.error).toBeUndefined();
@@ -75,7 +73,7 @@ describe('SecurityUtils', () => {
     it('应该清理并返回安全的输入', () => {
       const inputWithHtml = '我的产品 <em>很棒</em> 并且 <strong>有用</strong>';
       const result = SecurityUtils.validateProductDescription(inputWithHtml);
-      
+
       expect(result.valid).toBe(true);
       expect(result.sanitized).not.toContain('<em>');
       expect(result.sanitized).not.toContain('<strong>');
@@ -97,11 +95,11 @@ describe('SecurityUtils', () => {
     it('应该在超过限制时拒绝请求', () => {
       const key = 'test-user-2';
       const maxRequests = 2;
-      
+
       // 前两次请求应该成功
       expect(SecurityUtils.checkRateLimit(key, maxRequests, 60000)).toBe(true);
       expect(SecurityUtils.checkRateLimit(key, maxRequests, 60000)).toBe(true);
-      
+
       // 第三次请求应该被拒绝
       expect(SecurityUtils.checkRateLimit(key, maxRequests, 60000)).toBe(false);
     });
@@ -112,7 +110,7 @@ describe('SecurityUtils', () => {
       const validUuids = [
         '123e4567-e89b-42d3-a456-426614174000',
         'f47ac10b-58cc-4372-a567-0e02b2c3d479',
-        '550e8400-e29b-41d4-a716-446655440000'
+        '550e8400-e29b-41d4-a716-446655440000',
       ];
 
       validUuids.forEach(uuid => {
@@ -126,7 +124,7 @@ describe('SecurityUtils', () => {
         '123',
         '123e4567-e89b-12d3-a456-42661417400',
         '123e4567-e89b-12d3-a456-42661417400g',
-        ''
+        '',
       ];
 
       invalidUuids.forEach(uuid => {
@@ -139,7 +137,7 @@ describe('SecurityUtils', () => {
     it('应该生成一致的指纹', () => {
       const fingerprint1 = SecurityUtils.getClientFingerprint();
       const fingerprint2 = SecurityUtils.getClientFingerprint();
-      
+
       expect(fingerprint1).toBe(fingerprint2);
       expect(fingerprint1).toMatch(/^[a-f0-9]+$/);
     });
@@ -161,9 +159,9 @@ describe('SecureStorage', () => {
     it('应该加密存储数据', () => {
       const key = 'test-key';
       const value = 'sensitive-data';
-      
+
       SecureStorage.setItem(key, value);
-      
+
       // 直接从localStorage读取应该是加密的
       const rawStored = localStorage.getItem(key);
       expect(rawStored).not.toBe(value);
@@ -173,10 +171,10 @@ describe('SecureStorage', () => {
     it('应该正确解密数据', () => {
       const key = 'test-key';
       const value = 'sensitive-data';
-      
+
       SecureStorage.setItem(key, value);
       const retrieved = SecureStorage.getItem(key);
-      
+
       expect(retrieved).toBe(value);
     });
 
@@ -188,10 +186,10 @@ describe('SecureStorage', () => {
     it('应该正确删除项目', () => {
       const key = 'test-key';
       const value = 'test-value';
-      
+
       SecureStorage.setItem(key, value);
       expect(SecureStorage.getItem(key)).toBe(value);
-      
+
       SecureStorage.removeItem(key);
       expect(SecureStorage.getItem(key)).toBeNull();
     });
@@ -201,17 +199,17 @@ describe('SecureStorage', () => {
 describe('secureApiFetch', () => {
   // 注意：在实际测试中，需要mock fetch函数
   // 这里提供基本的接口测试结构
-  
+
   it('应该添加安全头部', async () => {
     // Mock fetch for testing
     // const mockFetch = vi.fn().mockResolvedValue({
     //   ok: true,
     //   json: () => Promise.resolve({ success: true })
     // });
-    
+
     // 在实际测试中需要mock全局fetch
     // global.fetch = mockFetch;
-    
+
     // 这个测试需要在实际环境中完善
     expect(true).toBe(true); // 占位符测试
   });

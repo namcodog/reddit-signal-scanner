@@ -3,12 +3,12 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { 
-  ErrorClassifier, 
-  ErrorType, 
-  ErrorSeverity, 
+import {
+  ErrorClassifier,
+  ErrorType,
+  ErrorSeverity,
   GlobalErrorHandler,
-  handleError 
+  handleError,
 } from '@/utils/errorHandler';
 
 describe('ErrorClassifier', () => {
@@ -19,7 +19,7 @@ describe('ErrorClassifier', () => {
         'Fetch failed',
         'Connection refused',
         'Request timeout',
-        'DNS error'
+        'DNS error',
       ];
 
       networkErrors.forEach(error => {
@@ -34,7 +34,7 @@ describe('ErrorClassifier', () => {
         'Invalid input provided',
         'Required field missing',
         '输入格式错误',
-        '输入内容无效'
+        '输入内容无效',
       ];
 
       validationErrors.forEach(error => {
@@ -50,7 +50,7 @@ describe('ErrorClassifier', () => {
         'Authentication failed',
         'Invalid credentials',
         '登录失败',
-        '身份验证失败'
+        '身份验证失败',
       ];
 
       authErrors.forEach(error => {
@@ -65,7 +65,7 @@ describe('ErrorClassifier', () => {
         'HTTP 429',
         'Too many requests',
         '请求过于频繁',
-        '限流'
+        '限流',
       ];
 
       rateLimitErrors.forEach(error => {
@@ -105,12 +105,16 @@ describe('ErrorClassifier', () => {
     });
 
     it('应该提供验证错误的友好消息', () => {
-      const message = ErrorClassifier.getUserFriendlyMessage(ErrorType.VALIDATION);
+      const message = ErrorClassifier.getUserFriendlyMessage(
+        ErrorType.VALIDATION
+      );
       expect(message).toContain('输入信息有误');
     });
 
     it('应该提供认证错误的友好消息', () => {
-      const message = ErrorClassifier.getUserFriendlyMessage(ErrorType.AUTHENTICATION);
+      const message = ErrorClassifier.getUserFriendlyMessage(
+        ErrorType.AUTHENTICATION
+      );
       expect(message).toContain('登录已过期');
     });
   });
@@ -197,7 +201,7 @@ describe('GlobalErrorHandler', () => {
       const context = {
         component: 'TestComponent',
         action: 'testAction',
-        userId: 'user123'
+        userId: 'user123',
       };
 
       errorHandler.handleError(error, context);
@@ -237,7 +241,7 @@ describe('GlobalErrorHandler', () => {
     it('应该返回同一个实例', () => {
       const instance1 = GlobalErrorHandler.getInstance();
       const instance2 = GlobalErrorHandler.getInstance();
-      
+
       expect(instance1).toBe(instance2);
     });
   });
@@ -248,9 +252,9 @@ describe('便捷函数', () => {
     it('应该作为GlobalErrorHandler的便捷接口', () => {
       const error = 'Test error';
       const context = { component: 'TestComponent' };
-      
+
       const result = handleError(error, context);
-      
+
       expect(result).toBeDefined();
       expect(result.message).toBe(error);
     });

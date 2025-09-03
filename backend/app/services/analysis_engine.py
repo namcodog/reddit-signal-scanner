@@ -48,7 +48,9 @@ class AnalysisEngine:
         # 具体的步骤实现将在后续PRD中完成
         from app.services.analysis.community_discovery import CommunityDiscoveryStep
         from app.services.analysis.data_collector import DataCollectionStep
-        from app.services.analysis.signal_extractor import SignalExtractionStep
+        from app.services.analysis.signal_extractor import (
+            RedditSignalExtractor as SignalExtractionStep,
+        )
         from app.services.analysis.result_ranker import ResultRankingStep
 
         self.steps = [

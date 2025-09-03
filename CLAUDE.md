@@ -124,6 +124,8 @@ npm run dev
 
 项目使用强化的7步架构优先开发流程，集成强制修复循环机制：
 
+先调用task-orchestrator agent作为项目管理，分派任务优先级
+
 ### 🔄 强制修复循环流程
 1. **质量门控触发**: Edit/Write工具自动触发质量检查
 2. **问题发现**: 质量检查发现代码问题（flake8、mypy、linting）
