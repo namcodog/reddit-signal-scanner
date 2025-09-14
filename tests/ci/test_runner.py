@@ -84,7 +84,10 @@ def cmd_test(args: argparse.Namespace) -> int:
         "--junitxml=reports/junit.xml",
     ]
     pytest_cmd = [c for c in pytest_cmd if c]
-    return run(pytest_cmd)
+    # Disable auto-loading third-party pytest plugins to avoid env mismatches
+    env = dict(os.environ)
+    env.setdefault("PYTEST_DISABLE_PLUGIN_AUTOLOAD", "1")
+    return run(pytest_cmd, env=env)
 
 
 def cmd_integration(_args: argparse.Namespace) -> int:
@@ -99,7 +102,9 @@ def cmd_integration(_args: argparse.Namespace) -> int:
         f"-m={labels}",
         "--junitxml=reports/junit.xml",
     ]
-    return run(pytest_cmd)
+    env = dict(os.environ)
+    env.setdefault("PYTEST_DISABLE_PLUGIN_AUTOLOAD", "1")
+    return run(pytest_cmd, env=env)
 
 
 def cmd_perf(_args: argparse.Namespace) -> int:
@@ -255,4 +260,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

@@ -99,10 +99,10 @@ class ErrorBoundaryEnhanced extends Component<ErrorBoundaryProps, ErrorBoundaryS
     this.setState({ error: enhancedError });
 
     // 记录错误（开发模式）
+    // 控制台分组（无论环境，用于测试与调试）
+    // eslint-disable-next-line no-console
+    console.group(`React组件错误 - ${this.errorId}`);
     if (process.env.NODE_ENV === 'development') {
-      // 控制台分组以便测试断言与开发调试
-      // eslint-disable-next-line no-console
-      console.group(`React组件错误 - ${this.errorId}`);
       // 源于开发模式的调试输出，使用统一logger
       import('@/utils/logger')
         .then(({ default: logger }) => {
@@ -118,6 +118,10 @@ class ErrorBoundaryEnhanced extends Component<ErrorBoundaryProps, ErrorBoundaryS
           // eslint-disable-next-line no-console
           console.groupEnd();
         });
+    } else {
+      // 非开发环境也结束分组，避免未关闭
+      // eslint-disable-next-line no-console
+      console.groupEnd();
     }
 
     // 调用外部错误处理器
