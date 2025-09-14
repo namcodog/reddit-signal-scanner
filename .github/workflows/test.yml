@@ -59,6 +59,7 @@ jobs:
           PGPASSWORD: postgres
         run: |
           psql -h localhost -U postgres -p 5432 -c "DO \$\$BEGIN IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'test') THEN CREATE ROLE test LOGIN PASSWORD 'test'; END IF; END\$\$;"
+          psql -h localhost -U postgres -p 5432 -c "ALTER ROLE test WITH LOGIN PASSWORD 'test';"
           psql -h localhost -U postgres -p 5432 -tc "SELECT 1 FROM pg_database WHERE datname = 'reddit_test'" | grep -q 1 || psql -h localhost -U postgres -p 5432 -c "CREATE DATABASE reddit_test OWNER test;"
           psql -h localhost -U postgres -p 5432 -d reddit_test -c "GRANT ALL PRIVILEGES ON DATABASE reddit_test TO test;"
 
