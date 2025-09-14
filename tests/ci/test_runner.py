@@ -80,7 +80,7 @@ def cmd_test(args: argparse.Namespace) -> int:
         "pytest",
         "-v",
         "--tb=short",
-        f"-m={labels}" if labels else "",
+        "-m", labels if labels else "",
         "--junitxml=reports/junit.xml",
     ]
     pytest_cmd = [c for c in pytest_cmd if c]
@@ -102,7 +102,7 @@ def cmd_integration(_args: argparse.Namespace) -> int:
         "pytest",
         "-v",
         "--tb=short",
-        f"-m={labels}",
+        "-m", labels,
         "--junitxml=reports/junit.xml",
     ]
     # Optional parallelism via pytest-xdist
