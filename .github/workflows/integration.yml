@@ -1,5 +1,9 @@
 name: Integration Tests
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   pull_request:
     branches: [ main, develop ]
@@ -38,6 +42,14 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('backend/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
       - name: Install system tools
         run: |
           sudo apt-get update
@@ -64,7 +76,8 @@ jobs:
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r backend/requirements.txt
+          pip install --prefer-binary -r backend/requirements.txt
+          pip install pytest-xdist
 
       - name: Run integration/system tests
         env:
@@ -72,6 +85,8 @@ jobs:
           TEST_USE_REAL_DB: 'false'
           LOG_LEVEL: INFO
           DEBUG_SQL: 'false'
+          PYTEST_XDIST: '1'
+          PYTEST_XDIST_WORKERS: 'auto'
         run: |
           python tests/ci/test_runner.py integration
 

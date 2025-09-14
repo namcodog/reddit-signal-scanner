@@ -84,6 +84,9 @@ def cmd_test(args: argparse.Namespace) -> int:
         "--junitxml=reports/junit.xml",
     ]
     pytest_cmd = [c for c in pytest_cmd if c]
+    # Optional parallelism via pytest-xdist
+    if os.environ.get("PYTEST_XDIST") == "1":
+        pytest_cmd.extend(["-n", os.environ.get("PYTEST_XDIST_WORKERS", "auto")])
     # Disable auto-loading third-party pytest plugins to avoid env mismatches
     env = dict(os.environ)
     env.setdefault("PYTEST_DISABLE_PLUGIN_AUTOLOAD", "1")
@@ -102,6 +105,9 @@ def cmd_integration(_args: argparse.Namespace) -> int:
         f"-m={labels}",
         "--junitxml=reports/junit.xml",
     ]
+    # Optional parallelism via pytest-xdist
+    if os.environ.get("PYTEST_XDIST") == "1":
+        pytest_cmd.extend(["-n", os.environ.get("PYTEST_XDIST_WORKERS", "auto")])
     env = dict(os.environ)
     env.setdefault("PYTEST_DISABLE_PLUGIN_AUTOLOAD", "1")
     return run(pytest_cmd, env=env)
