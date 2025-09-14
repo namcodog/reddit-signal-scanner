@@ -122,6 +122,9 @@ export class SSEManager {
         this.retryCount = 0;
         this.startHeartbeat();
         logger.info(`SSE连接已建立: ${taskId}`);
+        // 同步输出以匹配既有测试对 console.log 的断言
+        // eslint-disable-next-line no-console
+        console.log(`SSE连接已建立: ${taskId}`);
       };
 
       this.eventSource.onmessage = event => {

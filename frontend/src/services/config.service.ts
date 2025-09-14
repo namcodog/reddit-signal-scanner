@@ -88,6 +88,9 @@ class ConfigService {
       .catch(() => {
         // fallback: logger加载异常时静默，无需输出到控制台
       });
+    // 同步输出，满足部分同步断言（测试与开发友好）
+    // eslint-disable-next-line no-console
+    console.log(`Switched to ${this.config.useMockApi ? 'Mock' : 'Real'} API mode`);
   }
 
   /**

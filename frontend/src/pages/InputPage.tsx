@@ -158,7 +158,7 @@ const InputPage: React.FC = () => {
       case InputState.SUBMITTING:
         return '正在提交...';
       default:
-        return '开始 5 分钟分析';
+        return '开始分析';
     }
   };
 
