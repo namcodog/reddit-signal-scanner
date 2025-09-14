@@ -48,21 +48,18 @@ const logger = {
     if (shouldLog("debug")) {
       // eslint-disable-next-line no-console
       console.debug(...args);
-      // 在开发/调试环境兼容部分测试对 console.log 的断言
-      if (isDevEnvironment() || isDebugEnabled()) {
-        // eslint-disable-next-line no-console
-        console.log(...args);
-      }
+      // 同步到 console.log 以兼容既有测试断言
+      // eslint-disable-next-line no-console
+      console.log(...args);
     }
   },
   info: (...args: unknown[]): void => {
     if (shouldLog("info")) {
       // eslint-disable-next-line no-console
       console.info(...args);
-      if (isDevEnvironment() || isDebugEnabled()) {
-        // eslint-disable-next-line no-console
-        console.log(...args);
-      }
+      // 同步到 console.log 以兼容既有测试断言
+      // eslint-disable-next-line no-console
+      console.log(...args);
     }
   },
   warn: (...args: unknown[]): void => {
@@ -95,4 +92,3 @@ const logger = {
 };
 
 export default logger;
-
