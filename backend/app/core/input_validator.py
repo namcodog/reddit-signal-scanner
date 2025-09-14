@@ -6,9 +6,9 @@ Reddit Signal Scanner - 输入验证模块
 """
 
 import re
-from typing import List, Optional, Set
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
+from typing import List, Optional, Set
 
 
 class ValidationError(Exception):
@@ -31,22 +31,20 @@ class ValidationConfig:
     max_community_name_length: int = 50
     max_communities_count: int = 100
     allowed_chars_pattern: str = r"^[a-zA-Z0-9_]+$"
-    blocked_names: Set[str] = None
-
-    def __post_init__(self):
-        if self.blocked_names is None:
-            self.blocked_names = {
-                "admin",
-                "api",
-                "www",
-                "mail",
-                "root",
-                "test",
-                "null",
-                "undefined",
-                "deleted",
-                "removed",
-            }
+    blocked_names: Set[str] = field(
+        default_factory=lambda: {
+            "admin",
+            "api",
+            "www",
+            "mail",
+            "root",
+            "test",
+            "null",
+            "undefined",
+            "deleted",
+            "removed",
+        }
+    )
 
 
 class RedditInputValidator:
@@ -59,7 +57,7 @@ class RedditInputValidator:
     - 恶意社区名称
     """
 
-    def __init__(self, config: Optional[ValidationConfig] = None):
+    def __init__(self, config: Optional[ValidationConfig] = None) -> None:
         self.config = config or ValidationConfig()
 
     def validate_community_name(
@@ -160,9 +158,7 @@ class RedditInputValidator:
             raise ValidationError("社区列表必须是list类型")
 
         if len(communities) > self.config.max_communities_count:
-            raise ValidationError(
-                f"社区数量超限，最大允许: {self.config.max_communities_count}"
-            )
+            raise ValidationError(f"社区数量超限，最大允许: {self.config.max_communities_count}")
 
         validated_communities = []
         seen_communities = set()
@@ -250,9 +246,7 @@ class RedditInputValidator:
             raise ValidationError(f"{field_name}必须是整数")
 
         if value < min_value or value > max_value:
-            raise ValidationError(
-                f"{field_name}必须在 {min_value} - {max_value} 范围内"
-            )
+            raise ValidationError(f"{field_name}必须在 {min_value} - {max_value} 范围内")
 
         return value
 

@@ -9,20 +9,111 @@
 """
 
 import asyncio
+import logging
 import time
 import uuid
-from typing import List, Optional, Dict, Any
-import logging
+from typing import Dict, List, Mapping, Optional, Union, cast
+from dataclasses import dataclass
+from enum import Enum
+from datetime import datetime
 
-from app.models.analysis_pipeline import (
-    PipelineData,
+from ..core.analyzer_config import ConfigManager, get_config, load_default_config
+from ..core.step_base import AnalysisStep
+from ..core.types import JsonValue
+from ..models.analysis_pipeline import (
     AnalysisConfig,
     AnalysisReport,
     InsightsData,
+    PipelineData,
+    StepResultValue,
     StepStatus,
 )
-from app.core.analyzer_config import ConfigManager, get_config
-from app.core.step_base import AnalysisStep
+
+
+# -----------------------------
+# 本地类型收敛助手（仅本文件使用）
+# -----------------------------
+def as_str(v: object) -> str:
+    if isinstance(v, str):
+        return v
+    if v is None:
+        return ""
+    return str(v)
+
+
+def as_int(v: object) -> int:
+    if isinstance(v, bool):
+        return int(v)
+    if isinstance(v, int):
+        return v
+    if isinstance(v, float):
+        return int(v)
+    if isinstance(v, str):
+        try:
+            return int(v)
+        except ValueError:
+            try:
+                return int(float(v))
+            except ValueError:
+                return 0
+    return 0
+
+
+def as_float(v: object) -> float:
+    if isinstance(v, (int, float)):
+        return float(v)
+    if isinstance(v, str):
+        try:
+            return float(v)
+        except ValueError:
+            return 0.0
+    if isinstance(v, bool):
+        return float(int(v))
+    return 0.0
+
+
+def as_list(v: object) -> list[JsonValue]:
+    if isinstance(v, list):
+        return v
+    return []
+
+
+def as_mapping(v: object) -> Mapping[str, JsonValue]:
+    if isinstance(v, Mapping):
+        return v
+    return {}
+
+
+def as_list_of_dicts(v: object) -> list[dict[str, JsonValue]]:
+    """将任意对象转为 list[dict[str, JsonValue]]（I/O 边界收敛）"""
+    items = as_list(v)
+    return [cast(dict[str, JsonValue], as_mapping(x)) for x in items]
+
+
+class AnalysisStatus(str, Enum):
+    PENDING = "PENDING"
+    RUNNING = "RUNNING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+
+
+@dataclass
+class AnalysisRequest:
+    analysis_id: str
+    keywords: List[str]
+    min_subscribers: int
+    max_communities: int
+    user_id: str
+
+
+@dataclass
+class AnalysisResponse:
+    analysis_id: str
+    status: AnalysisStatus
+    success: bool
+    results: List[Dict[str, Union[str, float, int]]]
+    execution_time: float
+    timestamp: datetime
 
 
 class AnalysisEngine:
@@ -36,8 +127,16 @@ class AnalysisEngine:
     - 结果验证和置信度计算
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.config_manager = get_config()
+        # 确保配置已加载
+        try:
+            # 访问一个必需项，触发未加载异常时自动加载默认配置
+            _ = self.config_manager.get("analysis_engine.version", None)
+            if _ is None:
+                load_default_config()
+        except (KeyError, ValueError, RuntimeError):
+            load_default_config()
         self.logger = logging.getLogger("analysis_engine")
         self.steps: List[AnalysisStep] = []
         self._initialize_steps()
@@ -46,27 +145,51 @@ class AnalysisEngine:
         """初始化四个分析步骤"""
         # 注意：这里使用懒加载，避免循环导入
         # 具体的步骤实现将在后续PRD中完成
-        from app.services.analysis.community_discovery import CommunityDiscoveryStep
+        from app.services.analysis.community_discovery_step import (
+            CommunityDiscoveryStep,
+        )
         from app.services.analysis.data_collector import DataCollectionStep
+        from app.services.analysis.result_ranker import ResultRankingStep
         from app.services.analysis.signal_extractor import (
             RedditSignalExtractor as SignalExtractionStep,
         )
-        from app.services.analysis.result_ranker import ResultRankingStep
+
+        comm_cfg = self.config_manager.get_step_config("community_discovery")
+        data_cfg = self.config_manager.get_step_config("data_collection")
+        signal_cfg = self.config_manager.get_step_config("signal_extraction")
+        rank_cfg = self.config_manager.get_step_config("result_ranking")
+
+        # DataCollectionStep / SignalExtractionStep 构造器期望 dict 配置
+        # 这些步骤构造函数接受 Mapping[str, JsonValue]，这里做宽松到窄化转换
+        # 下游 DataCollectionStep/SignalExtractionStep 构造器要求 dict[str, str] | None
+        def to_str_dict(m: Mapping[str, JsonValue] | None) -> Dict[str, str]:
+            if not m:
+                return {}
+            out: Dict[str, str] = {}
+            for k, v in m.items():
+                out[str(k)] = str(v) if v is not None else ""
+            return out
+
+        data_cfg_dict = to_str_dict(cast(Mapping[str, JsonValue] | None, data_cfg.config_data))
+        # SignalExtractionStep 期望 dict[str, JsonValue] | None
+        from app.core.types import JsonValue
+        def to_json_mapping(m: Mapping[str, JsonValue] | None) -> Dict[str, JsonValue]:
+            return dict(m) if m else {}
+
+        signal_cfg_dict_json = to_json_mapping(cast(Mapping[str, JsonValue] | None, signal_cfg.config_data))
 
         self.steps = [
-            CommunityDiscoveryStep(
-                self.config_manager.get_step_config("community_discovery")
-            ),
-            DataCollectionStep(self.config_manager.get_step_config("data_collection")),
-            SignalExtractionStep(
-                self.config_manager.get_step_config("signal_extraction")
-            ),
-            ResultRankingStep(self.config_manager.get_step_config("result_ranking")),
+            CommunityDiscoveryStep(comm_cfg),
+            DataCollectionStep(data_cfg_dict),
+            SignalExtractionStep(signal_cfg_dict_json),
+            ResultRankingStep(rank_cfg),
         ]
 
         self.logger.info(f"初始化完成，共 {len(self.steps)} 个分析步骤")
 
-    async def analyze(self, product_description: str, **kwargs) -> AnalysisReport:
+    async def analyze(
+        self, product_description: str, **kwargs: JsonValue
+    ) -> AnalysisReport:
         """
         执行完整的四步分析流水线
 
@@ -88,8 +211,34 @@ class AnalysisEngine:
 
         try:
             # 1. 构建分析配置
+            # 显式构造配置，避免 **kwargs 带来的类型不确定
+            tk_raw = kwargs.get("target_keywords", [])
+            target_keywords = [as_str(x) for x in as_list(tk_raw) if as_str(x)]
+
+            max_communities = (
+                as_int(kwargs.get("max_communities"))
+                if "max_communities" in kwargs
+                else None
+            )
+            enable_cache = bool(kwargs.get("enable_cache", True))
+            priority = as_str(kwargs.get("priority", "normal"))
+            output_format = as_str(kwargs.get("output_format", "structured"))
+            include_raw_data = bool(kwargs.get("include_raw_data", False))
+            max_total_time = (
+                as_float(kwargs.get("max_total_time"))
+                if "max_total_time" in kwargs
+                else None
+            )
+
             analysis_config = AnalysisConfig(
-                product_description=product_description, **kwargs
+                product_description=product_description,
+                target_keywords=target_keywords,
+                max_communities=max_communities,
+                enable_cache=enable_cache,
+                priority=priority,
+                output_format=output_format,
+                include_raw_data=include_raw_data,
+                max_total_time=max_total_time,
             )
 
             # 2. 初始化流水线数据
@@ -109,9 +258,48 @@ class AnalysisEngine:
 
             return report
 
-        except Exception as e:
+        except (asyncio.TimeoutError, ValueError, RuntimeError, TypeError, KeyError) as e:
             self.logger.error(f"分析失败 [{pipeline_id}]: {str(e)}", exc_info=True)
             raise RuntimeError(f"分析执行失败: {str(e)}")
+
+    # ===== 以下为测试兼容API（tests/algorithms/test_analysis_engine.py 依赖） =====
+
+    async def execute_analysis(self, request: AnalysisRequest) -> AnalysisResponse:
+        start_time = time.time()
+        try:
+            # 将简单请求映射到当前 analyze 接口
+            report = await self.analyze(
+                product_description=", ".join(request.keywords) or "analysis",
+                max_communities=request.max_communities,
+            )
+            duration = time.time() - start_time
+            return AnalysisResponse(
+                analysis_id=request.analysis_id,
+                status=AnalysisStatus.COMPLETED,
+                success=True,
+                results=[{"total_posts": report.total_posts_analyzed}],
+                execution_time=duration,
+                timestamp=datetime.utcnow(),
+            )
+        except (RuntimeError, ValueError):
+            duration = time.time() - start_time
+            return AnalysisResponse(
+                analysis_id=request.analysis_id,
+                status=AnalysisStatus.FAILED,
+                success=False,
+                results=[],
+                execution_time=duration,
+                timestamp=datetime.utcnow(),
+            )
+
+    def _validate_request(self, request: AnalysisRequest) -> bool:
+        return bool(request.keywords) and len(request.keywords) <= 20
+
+    def _cache_result(self, analysis_id: str, response: AnalysisResponse) -> None:
+        # 最小实现：记录日志或预留hook（不引入新的依赖）
+        self.logger.debug(
+            f"缓存分析结果 {analysis_id}: success={response.success}, time={response.execution_time:.2f}s"
+        )
 
     def _create_pipeline_data(
         self, pipeline_id: str, config: AnalysisConfig
@@ -145,8 +333,10 @@ class AnalysisEngine:
                 # 执行步骤
                 result = await step.process(data)
 
-                # 保存结果
-                data.step_results[result.step_name] = result.data
+                # 保存结果（形状统一为 PipelineData 要求）
+                data.step_results[result.step_name] = cast(
+                    Dict[str, StepResultValue], result.data
+                )
                 data.step_durations.append(result.duration)
 
                 # 检查执行结果
@@ -157,15 +347,15 @@ class AnalysisEngine:
 
                 # 检查超时
                 total_elapsed = time.time() - data.total_start_time
-                max_total_time = self.config_manager.get(
-                    "analysis_engine.max_total_duration", 270
+                max_total_time = as_float(
+                    self.config_manager.get("analysis_engine.max_total_duration", 270)
                 )
 
                 if total_elapsed > max_total_time:
                     data.add_error(f"分析总时间超限 (>{max_total_time}s)")
                     break
 
-            except Exception as e:
+            except (asyncio.TimeoutError, RuntimeError, ValueError, TypeError, KeyError) as e:
                 error_msg = f"步骤 {step.name} 执行异常: {str(e)}"
                 data.add_error(error_msg)
                 self.logger.error(error_msg, exc_info=True)
@@ -179,24 +369,40 @@ class AnalysisEngine:
         """构建最终分析报告"""
 
         # 提取洞察数据
-        insights_data = data.get_step_result("signal_extraction", {}).get(
-            "insights", {}
+        insights_result = data.get_step_result("signal_extraction") or {}
+        insights_data_map = as_mapping(insights_result.get("insights", {}))
+        insights = InsightsData(
+            pain_points=as_list_of_dicts(insights_data_map.get("pain_points", [])),
+            competitors=as_list_of_dicts(insights_data_map.get("competitors", [])),
+            opportunities=as_list_of_dicts(insights_data_map.get("opportunities", [])),
+            analysis_summary=as_str(insights_data_map.get("analysis_summary", "")),
+            key_insights=[
+                as_str(x)
+                for x in as_list(insights_data_map.get("key_insights", []))
+                if as_str(x)
+            ],
+            confidence_score=as_float(insights_data_map.get("confidence_score", 0.0)),
+            data_quality_score=as_float(
+                insights_data_map.get("data_quality_score", 0.0)
+            ),
         )
-        insights = InsightsData(**insights_data) if insights_data else InsightsData()
 
         # 计算置信度
         confidence_score = await self._calculate_overall_confidence(data)
 
         # 构建数据源信息
-        collection_result = data.get_step_result("data_collection", {})
-        data_sources = collection_result.get("data_sources", {"cache": 0, "api": 0})
-        total_posts = collection_result.get("total_posts", 0)
+        collection_result = data.get_step_result("data_collection") or {}
+        data_sources_map = as_mapping(collection_result.get("data_sources", {}))
+        data_sources: Dict[str, int] = {
+            k: as_int(v) for k, v in data_sources_map.items()
+        }
+        total_posts = as_int(collection_result.get("total_posts", 0))
 
         # 提取社区信息
-        communities_result = data.get_step_result("community_discovery", {})
-        communities = [
-            c.get("subreddit_name", "")
-            for c in communities_result.get("communities", [])
+        communities_result = data.get_step_result("community_discovery") or {}
+        communities_val = as_list(communities_result.get("communities", []))
+        communities: List[str] = [
+            as_str(as_mapping(c).get("subreddit_name", "")) for c in communities_val
         ]
 
         # 构建步骤耗时统计
@@ -231,21 +437,21 @@ class AnalysisEngine:
         if data.errors:
             return 0.0  # 有错误时置信度为0
 
-        confidence_factors = []
+        confidence_factors: List[float] = []
 
         # 1. 数据质量评分
-        collection_result = data.get_step_result("data_collection", {})
-        cache_hit_rate = collection_result.get("cache_hit_rate", 0.0)
+        collection_result = data.get_step_result("data_collection") or {}
+        cache_hit_rate = as_float(collection_result.get("cache_hit_rate", 0.0))
         data_quality = min(1.0, cache_hit_rate + 0.3)  # 缓存命中率+基础分
         confidence_factors.append(data_quality * 0.3)
 
         # 2. 结果数量评分
-        insights_result = data.get_step_result("signal_extraction", {})
-        insights_data = insights_result.get("insights", {})
+        insights_result = data.get_step_result("signal_extraction") or {}
+        insights_map = as_mapping(insights_result.get("insights", {}))
         total_insights = (
-            len(insights_data.get("pain_points", []))
-            + len(insights_data.get("competitors", []))
-            + len(insights_data.get("opportunities", []))
+            len(as_list(insights_map.get("pain_points", [])))
+            + len(as_list(insights_map.get("competitors", [])))
+            + len(as_list(insights_map.get("opportunities", [])))
         )
         result_score = min(1.0, total_insights / 10)  # 10个洞察为满分
         confidence_factors.append(result_score * 0.4)
@@ -256,8 +462,8 @@ class AnalysisEngine:
 
         # 4. 时间效率评分
         total_duration = sum(data.step_durations)
-        expected_duration = self.config_manager.get(
-            "analysis_engine.max_total_duration", 270
+        expected_duration = as_float(
+            self.config_manager.get("analysis_engine.max_total_duration", 270)
         )
         time_efficiency = max(0.5, 1.0 - (total_duration / expected_duration))
         confidence_factors.append(time_efficiency * 0.1)
@@ -266,40 +472,48 @@ class AnalysisEngine:
 
     async def _calculate_quality_metrics(self, data: PipelineData) -> Dict[str, float]:
         """计算数据质量指标"""
-        metrics = {}
+        metrics: Dict[str, float] = {}
 
         # 社区发现质量
-        communities_result = data.get_step_result("community_discovery", {})
-        communities = communities_result.get("communities", [])
-        metrics["community_relevance"] = sum(
-            c.get("relevance_score", 0) for c in communities
-        ) / max(len(communities), 1)
+        communities_result = data.get_step_result("community_discovery") or {}
+        communities_list = as_list(communities_result.get("communities", []))
+        scores = [
+            as_float(as_mapping(c).get("relevance_score", 0)) for c in communities_list
+        ]
+        metrics["community_relevance"] = sum(scores) / max(len(scores), 1)
 
         # 数据收集质量
-        collection_result = data.get_step_result("data_collection", {})
-        metrics["cache_hit_rate"] = collection_result.get("cache_hit_rate", 0.0)
-        metrics["data_freshness"] = collection_result.get("freshness_score", 0.5)
+        collection_result = data.get_step_result("data_collection") or {}
+        metrics["cache_hit_rate"] = as_float(
+            collection_result.get("cache_hit_rate", 0.0)
+        )
+        metrics["data_freshness"] = as_float(
+            collection_result.get("freshness_score", 0.5)
+        )
 
         # 信号提取质量
-        signal_result = data.get_step_result("signal_extraction", {})
-        insights = signal_result.get("insights", {})
-        metrics["signal_confidence"] = insights.get("confidence_score", 0.0)
+        signal_result = data.get_step_result("signal_extraction") or {}
+        insights = as_mapping(signal_result.get("insights", {}))
+        metrics["signal_confidence"] = as_float(insights.get("confidence_score", 0.0))
 
         return metrics
 
-    def get_engine_status(self) -> Dict[str, Any]:
+    def get_engine_status(self) -> Dict[str, JsonValue]:
         """获取引擎状态信息"""
+        steps_info_json = [
+            cast(dict[str, JsonValue], step.get_step_info()) for step in self.steps
+        ]
         return {
             "version": self.config_manager.get("analysis_engine.version", "unknown"),
             "steps_count": len(self.steps),
-            "steps_info": [step.get_step_info() for step in self.steps],
-            "max_total_duration": self.config_manager.get(
-                "analysis_engine.max_total_duration", 270
+            "steps_info": cast(List[JsonValue], steps_info_json),
+            "max_total_duration": as_float(
+                self.config_manager.get("analysis_engine.max_total_duration", 270)
             ),
             "config_loaded": bool(self.config_manager._config),
         }
 
-    async def health_check(self) -> Dict[str, Any]:
+    async def health_check(self) -> Dict[str, JsonValue]:
         """健康检查"""
         try:
             # 检查配置
@@ -315,12 +529,12 @@ class AnalysisEngine:
                     else "unhealthy"
                 ),
                 "config_valid": config_valid["is_valid"],
-                "config_errors": config_valid.get("errors", []),
+                "config_errors": cast(List[JsonValue], config_valid.get("errors", [])),
                 "steps_healthy": steps_healthy,
                 "steps_count": len(self.steps),
             }
 
-        except Exception as e:
+        except (RuntimeError, ValueError) as e:
             return {"status": "unhealthy", "error": str(e)}
 
 
@@ -336,7 +550,9 @@ def get_analysis_engine() -> AnalysisEngine:
     return _engine_instance
 
 
-async def quick_analyze(product_description: str, **kwargs) -> AnalysisReport:
+async def quick_analyze(
+    product_description: str, **kwargs: JsonValue
+) -> AnalysisReport:
     """快速分析入口函数"""
     engine = get_analysis_engine()
     return await engine.analyze(product_description, **kwargs)

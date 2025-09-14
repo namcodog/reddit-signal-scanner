@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 分析引擎模块 - Reddit Signal Scanner
 
@@ -14,10 +16,17 @@
 # 延迟导入：避免加载重量级AI依赖
 # from .community_discovery_step import CommunityDiscoveryStep
 
-__all__ = []
+__all__: list[str] = []
 
 
-def get_community_discovery_step():
+from typing import TYPE_CHECKING, Type
+
+if TYPE_CHECKING:
+    # 仅用于类型检查，避免运行时依赖
+    from .community_discovery_step import CommunityDiscoveryStep
+
+
+def get_community_discovery_step() -> Type["CommunityDiscoveryStep"]:
     """延迟加载社区发现步骤，避免启动时加载AI模型"""
     from .community_discovery_step import CommunityDiscoveryStep
 

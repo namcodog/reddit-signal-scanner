@@ -8,24 +8,22 @@ Linus原则：
 - 性能优先：密钥缓存+验证结果缓存
 """
 
+import logging
 import os
 import time
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Optional, Dict, Any, List, Union, cast
+from functools import lru_cache
 from pathlib import Path
+from typing import Any, Dict, List, Optional, TypedDict, Literal, cast
 
 import jwt
-from jwt.exceptions import (
-    InvalidTokenError,
-    ExpiredSignatureError,
-    InvalidSignatureError,
-    InvalidKeyError,
-)
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
+from jwt.exceptions import InvalidKeyError, InvalidTokenError
 from pydantic import BaseModel, Field
 
+from ..schemas.contracts.auth_contract import JWTPayload
+from .types import JsonValue
 from .config import get_settings
 
 
@@ -102,10 +100,8 @@ class JWTKeys:
 
     def _handle_key_load_failure(self, error: Exception) -> None:
         """处理密钥加载失败 - 统一错误处理"""
-        import logging
-
         logger = logging.getLogger(__name__)
-        logger.warning(f"RSA密钥加载失败，回退到HMAC模式: {error}")
+        logger.warning("RSA密钥加载失败，回退到HMAC模式: %s", error)
 
     def generate_rsa_keypair(self, key_size: int = 2048) -> tuple[bytes, bytes]:
         """生成RSA密钥对"""
@@ -248,78 +244,152 @@ class JWTHandler:
 
         return access_token, new_refresh_token
 
-    def _encode_token(self, payload: dict) -> str:
+    def _encode_token(self, payload: dict[str, Any]) -> str:
         """编码Token - 优先使用RS256"""
         algorithm = self.settings.jwt_algorithm
 
         # RS256优先策略
         if algorithm == "RS256" and self.keys.private_key:
-            return cast(
-                str,
-                jwt.encode(
-                    payload,
-                    self.keys.private_key,
-                    algorithm="RS256",
-                    headers={"kid": self.settings.jwt_key_id},
-                ),
+            return jwt.encode(
+                payload,
+                self.keys.private_key,
+                algorithm="RS256",
+                headers={"kid": self.settings.jwt_key_id},
             )
 
         # 回退到HS256
-        return cast(str, jwt.encode(payload, self.keys.hmac_key, algorithm="HS256"))
+        return jwt.encode(payload, self.keys.hmac_key, algorithm="HS256")
 
-    def _decode_token(self, token: str, algorithm: str) -> dict:
+    def _decode_token(self, token: str, algorithm: str) -> dict[str, Any]:
         """解码Token - 支持特定算法"""
         if algorithm == "RS256":
             if not self.keys.public_key:
                 raise InvalidKeyError("RS256公钥不可用")
 
-            return cast(
-                Dict[str, Any],
-                jwt.decode(
-                    token,
-                    self.keys.public_key,
-                    algorithms=["RS256"],
-                    audience="api",
-                    issuer="reddit-scanner",
-                ),
+            decoded_rs256: Any = jwt.decode(
+                token,
+                self.keys.public_key,
+                algorithms=["RS256"],
+                audience="api",
+                issuer="reddit-scanner",
             )
+            return cast(dict[str, Any], decoded_rs256)
 
         elif algorithm == "HS256":
-            return cast(
-                Dict[str, Any],
-                jwt.decode(
-                    token,
-                    self.keys.hmac_key,
-                    algorithms=["HS256"],
-                    audience="api",
-                    issuer="reddit-scanner",
-                ),
+            decoded_hs256: Any = jwt.decode(
+                token,
+                self.keys.hmac_key,
+                algorithms=["HS256"],
+                audience="api",
+                issuer="reddit-scanner",
             )
+            return cast(dict[str, Any], decoded_hs256)
 
         else:
             raise InvalidTokenError(f"不支持的算法: {algorithm}")
 
-    def get_token_info(self, token: str) -> dict:
+    def get_token_info(self, token: str) -> dict[str, JsonValue]:
         """获取Token信息（不验证签名）- 调试用"""
         try:
             # 不验证签名，只解析结构
-            payload = jwt.decode(token, options={"verify_signature": False})
+            decoded_any: Any = jwt.decode(token, options={"verify_signature": False})
+            payload: dict[str, JsonValue] = cast(dict[str, JsonValue], decoded_any)
 
             # 添加额外信息
-            payload["algorithm"] = jwt.get_unverified_header(token).get(
-                "alg", "unknown"
-            )
-            payload["key_id"] = jwt.get_unverified_header(token).get("kid")
+            header_any: Any = jwt.get_unverified_header(token)
+            header: dict[str, JsonValue] = cast(dict[str, JsonValue], header_any)
+            payload["algorithm"] = cast(str, header.get("alg", "unknown"))
+            kid_val: JsonValue = header.get("kid")
+            if kid_val is not None:
+                payload["key_id"] = str(kid_val)
 
-            return cast(Dict[str, Any], payload)
+            return payload
 
         except Exception as e:
             return {"error": str(e), "raw_token": token[:20] + "..."}
 
+    class Context7Subject(TypedDict):
+        user_id: str
+        tenant_id: str
+        email: str
+
+    class TokenPair(TypedDict):
+        access_token: str
+        refresh_token: str
+        token_type: Literal["bearer"]
+        expires_in: int
+
+    def create_context7_subject(
+        self, user_id: str, tenant_id: str, email: str
+    ) -> "JWTHandler.Context7Subject":
+        """创建符合Context7格式的token subject
+
+        遵循Context7简洁原则：使用简单dict作为subject
+
+        Args:
+            user_id: 用户ID
+            tenant_id: 租户ID
+            email: 用户邮箱
+
+        Returns:
+            Context7Subject: Context7兼容的简洁subject字典
+        """
+        return {
+            "user_id": user_id,
+            "tenant_id": tenant_id,
+            "email": email,
+        }
+
+    def create_token_pair_from_subject(self, subject: "JWTHandler.Context7Subject") -> "JWTHandler.TokenPair":
+        """从subject创建token对
+
+        符合Context7模式：接收subject dict，返回token对
+        用于刷新和登录场景
+
+        Args:
+            subject: Context7格式的subject字典
+
+        Returns:
+            TokenPair: 包含access_token和refresh_token的字典
+        """
+        user_id = str(subject["user_id"])
+        tenant_id = str(subject["tenant_id"])
+        email = str(subject["email"])
+
+        access_token = self.create_access_token(
+            user_id=user_id,
+            tenant_id=tenant_id,
+            email=email,
+            permissions=[],  # 权限从数据库获取
+        )
+
+        refresh_token = self.create_refresh_token(
+            user_id=user_id,
+            tenant_id=tenant_id,
+            email=email,
+        )
+
+        return {
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "token_type": "bearer",
+            "expires_in": self.settings.jwt_access_token_expire_seconds,
+        }
+
+    # ==== 合同化类型输出（P0：为多租户隔离提供明确载荷）====
+    def decode_token_to_contract(self, token: str) -> JWTPayload:
+        """验证并返回契约化的JWT载荷结构。"""
+        payload = self.verify_token(token)
+        return JWTPayload(
+            sub=payload.user_id,
+            tenant=payload.tenant_id,
+            exp=payload.exp,
+            iat=payload.iat,
+            permissions=payload.permissions,
+        )
+
 
 # ===== 全局实例 =====
-
-from functools import lru_cache
 
 
 @lru_cache(maxsize=1)
@@ -338,13 +408,10 @@ def setup_jwt_keys_if_needed() -> None:
         and settings.jwt_private_key_path
         and settings.jwt_public_key_path
     ):
-
         private_path = Path(settings.jwt_private_key_path)
         public_path = Path(settings.jwt_public_key_path)
 
         if not private_path.exists() or not public_path.exists():
-            import logging
-
             logger = logging.getLogger(__name__)
             logger.info("检测到RS256配置但密钥文件不存在，正在生成新密钥...")
 
@@ -352,9 +419,9 @@ def setup_jwt_keys_if_needed() -> None:
             private_key, public_key = keys.generate_rsa_keypair()
             keys.save_keys_to_files(private_key, public_key)
 
-            logger.info(f"RSA密钥对已生成:")
-            logger.info(f"  私钥: {private_path}")
-            logger.info(f"  公钥: {public_path}")
+            logger.info("RSA密钥对已生成:")
+            logger.info("  私钥: %s", private_path)
+            logger.info("  公钥: %s", public_path)
             logger.warning("请妥善保管私钥文件！")
 
 
@@ -362,8 +429,11 @@ def setup_jwt_keys_if_needed() -> None:
 
 
 def create_user_tokens(
-    user_id: str, tenant_id: str, email: str, permissions: Optional[List[str]] = None
-) -> dict:
+    user_id: str,
+    tenant_id: str,
+    email: str,
+    permissions: Optional[List[str]] = None,
+) -> JWTHandler.TokenPair:
     """创建用户Token对（访问+刷新）"""
     handler = get_jwt_handler()
 

@@ -8,17 +8,19 @@ Linus原则："提供fallback，永不破坏用户体验"
 - 真实数据库查询替代Mock实现
 """
 
-import time
 import hashlib
+import time
 from datetime import datetime, timezone
-from fastapi import APIRouter, HTTPException, Depends
-from typing import Dict, Union, List, Optional
+from typing import Dict, List, Optional, Union
+
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ...models import SuccessResponse, TaskInfo, TaskStatus, ResponseStatus
-from ...core.database import get_db
-from ...core.fallback import get_fallback_config, get_client_guidance
-from ...services.task_status_service import TaskStatusService
+from app.core.database import get_db
+from app.core.fallback import get_client_guidance, get_fallback_config
+from app.schemas.common.responses import ResponseStatus, SuccessResponse
+from app.schemas.task import TaskInfo, TaskStatus
+from app.services.task_status_service import TaskStatusService
 
 router = APIRouter(prefix="/status", tags=["任务状态"])
 
@@ -316,6 +318,4 @@ async def get_multiple_tasks_status(
             return _handle_batch_fallback(task_id_list, e)
         except Exception as batch_e:
             logger.error(f"批量fallback处理失败: {batch_e}")
-            raise HTTPException(
-                status_code=500, detail="批量查询服务暂时不可用，请稍后重试"
-            )
+            raise HTTPException(status_code=500, detail="批量查询服务暂时不可用，请稍后重试")

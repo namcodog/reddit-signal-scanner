@@ -15,7 +15,7 @@ class RedditNLP:
     实际功能由 RedditContextAdapter 提供
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.adapter = RedditContextAdapter()
 
     def normalize_text(self, text: str) -> str:
@@ -26,7 +26,7 @@ class RedditNLP:
         """讽刺检测"""
         return self.adapter.detect_sarcasm(text)
 
-    def extract_features(self, text: str):
+    def extract_features(self, text: str) -> dict[str, float]:
         """特征提取"""
         return self.adapter.extract_reddit_features(text)
 

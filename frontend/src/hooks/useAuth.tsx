@@ -21,6 +21,7 @@ import React, {
   ReactNode,
 } from 'react';
 import AuthService from '@/services/auth.service';
+import logger from '@/utils/logger';
 import { AuthState, AuthContextType, AuthError } from '@/types/auth.types';
 
 // 创建认证Context
@@ -76,7 +77,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         setAuthState(prev => ({ ...prev, isLoading: false }));
       }
     } catch (error) {
-      console.error('Failed to initialize auth:', error);
+      logger.error('Failed to initialize auth:', error as Error);
       clearAuthState();
     }
   };
@@ -99,7 +100,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       // 更新最后刷新时间
       AuthService.updateLastRefreshTime();
     } catch (error) {
-      console.error('Token refresh failed:', error);
+      logger.error('Token refresh failed:', error as Error);
       clearAuthState();
     }
   };

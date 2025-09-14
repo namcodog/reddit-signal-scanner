@@ -5,12 +5,24 @@ Linus式设计理念：
 - 统一数据结构消除特殊情况
 - 清晰的数据流：RedditPost → SignalPattern[] → Signal[]
 - 配置驱动替代硬编码逻辑
+
+Context7最佳实践：
+- 使用Pydantic dataclass实现类型安全
+- 保持原有API完全兼容
+- 零破坏性变更设计
 """
 
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from enum import Enum
-from typing import List, Dict, Any, Optional
-from datetime import datetime
+from typing import Any, Callable, Dict, List, Optional, Union
+
+from pydantic import Field, ValidationError
+
+# Pydantic integration for type safety (project dependency)
+from pydantic.dataclasses import dataclass as pyd_dataclass
+
+PYDANTIC_AVAILABLE = True
 
 
 class SignalType(Enum):
@@ -29,7 +41,7 @@ class SentimentType(Enum):
     POSITIVE = "positive"  # 正面情感（机会）
 
 
-@dataclass(frozen=True)
+@pyd_dataclass(frozen=True)
 class SignalPattern:
     """
     统一信号模式数据结构
@@ -41,29 +53,35 @@ class SignalPattern:
     """
 
     signal_type: SignalType
-    keywords: List[str]
-    sentiment_threshold: float  # 情感阈值 [-1.0, 1.0]
-    context_rules: List[str] = field(default_factory=list)
-    confidence_weight: float = 1.0  # 置信度权重
-    min_keyword_matches: int = 1  # 最少关键词匹配数
+    keywords: List[str] = Field(..., min_length=1, description="关键词列表，至少包含一个关键词")
+    sentiment_threshold: float = Field(
+        ..., ge=-1.0, le=1.0, description="情感阈值 [-1.0, 1.0]"
+    )
+    context_rules: List[str] = Field(default_factory=list, description="上下文规则列表")
+    confidence_weight: float = Field(
+        default=1.0, ge=0.0, le=1.0, description="置信度权重 [0.0, 1.0]"
+    )
+    min_keyword_matches: int = Field(default=1, ge=1, description="最少关键词匹配数，至少为1")
 
-    def __post_init__(self):
-        """数据验证"""
-        if not -1.0 <= self.sentiment_threshold <= 1.0:
-            raise ValueError(
-                f"sentiment_threshold must be in [-1.0, 1.0], got {self.sentiment_threshold}"
-            )
-        if not 0.0 <= self.confidence_weight <= 1.0:
-            raise ValueError(
-                f"confidence_weight must be in [0.0, 1.0], got {self.confidence_weight}"
-            )
-        if self.min_keyword_matches < 1:
-            raise ValueError(
-                f"min_keyword_matches must be >= 1, got {self.min_keyword_matches}"
-            )
+    def __post_init__(self) -> None:
+        """数据验证 - 保持向后兼容性"""
+        if not PYDANTIC_AVAILABLE:
+            # 如果没有Pydantic，使用原有验证逻辑
+            if not -1.0 <= self.sentiment_threshold <= 1.0:
+                raise ValueError(
+                    f"sentiment_threshold must be in [-1.0, 1.0], got {self.sentiment_threshold}"
+                )
+            if not 0.0 <= self.confidence_weight <= 1.0:
+                raise ValueError(
+                    f"confidence_weight must be in [0.0, 1.0], got {self.confidence_weight}"
+                )
+            if self.min_keyword_matches < 1:
+                raise ValueError(
+                    f"min_keyword_matches must be >= 1, got {self.min_keyword_matches}"
+                )
 
 
-@dataclass
+@pyd_dataclass
 class Signal:
     """
     提取的信号数据结构
@@ -72,14 +90,18 @@ class Signal:
     """
 
     signal_type: SignalType
-    content: str  # 原始Reddit文本内容
-    matched_keywords: List[str]  # 匹配的关键词
-    sentiment_score: float  # 情感分数 [-1.0, 1.0]
-    confidence: float  # 置信度 [0.0, 1.0]
-    context_metadata: Dict[str, Any] = field(default_factory=dict)
-    extracted_at: datetime = field(default_factory=datetime.utcnow)
-    source_post_id: Optional[str] = None
-    subreddit: Optional[str] = None
+    content: str = Field(..., description="原始Reddit文本内容")
+    sentiment_score: float = Field(..., ge=-1.0, le=1.0, description="情感分数 [-1.0, 1.0]")
+    confidence: float = Field(..., ge=0.0, le=1.0, description="置信度 [0.0, 1.0]")
+    matched_keywords: List[str] = Field(default_factory=list, description="匹配的关键词列表")
+    context_metadata: Dict[str, Union[str, int, float, Dict[str, float]]] = Field(
+        default_factory=dict, description="上下文元数据"
+    )
+    extracted_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc), description="信号提取时间"
+    )
+    source_post_id: Optional[str] = Field(default=None, description="源帖子ID")
+    subreddit: Optional[str] = Field(default=None, description="所属subreddit")
 
     @property
     def is_high_confidence(self) -> bool:
@@ -97,7 +119,7 @@ class Signal:
             return SentimentType.NEUTRAL
 
 
-@dataclass
+@pyd_dataclass
 class RedditPost:
     """
     Reddit帖子数据结构（用于信号检测输入）
@@ -105,13 +127,13 @@ class RedditPost:
     最小必要字段，专注信号提取需求
     """
 
-    id: str
-    title: str
-    content: str
-    subreddit: str
-    score: int = 0
-    comment_count: int = 0
-    created_at: Optional[datetime] = None
+    id: str = Field(..., description="帖子唯一标识符")
+    title: str = Field(..., description="帖子标题")
+    content: str = Field(..., description="帖子内容文本")
+    subreddit: str = Field(..., description="所属subreddit名称")
+    score: int = Field(default=0, description="帖子得分/点赞数")
+    comment_count: int = Field(default=0, ge=0, description="评论数量，非负整数")
+    created_at: Optional[datetime] = Field(default=None, description="帖子创建时间")
 
     @property
     def full_text(self) -> str:

@@ -1,0 +1,119 @@
+name: Tests
+
+on:
+  push:
+    branches: [ main, develop, feature/** ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  backend-unit:
+    name: Backend Unit/Smoke (cov gate)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:14
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install system tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Wait for Postgres
+        run: |
+          for i in {1..30}; do
+            if PGPASSWORD=postgres psql -h localhost -U postgres -p 5432 -c "SELECT 1" >/dev/null 2>&1; then
+              echo "Postgres is up"; break
+            fi
+            sleep 2
+          done
+
+      - name: Prepare test database
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -U postgres -p 5432 -c "DO $$BEGIN IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'test') THEN CREATE ROLE test LOGIN PASSWORD 'test'; END IF; END$$;"
+          psql -h localhost -U postgres -p 5432 -tc "SELECT 1 FROM pg_database WHERE datname = 'reddit_test'" | grep -q 1 || psql -h localhost -U postgres -p 5432 -c "CREATE DATABASE reddit_test OWNER test;"
+          psql -h localhost -U postgres -p 5432 -d reddit_test -c "GRANT ALL PRIVILEGES ON DATABASE reddit_test TO test;"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+
+      - name: Run tests with coverage (root config)
+        env:
+          TEST_DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/reddit_test
+          TEST_USE_REAL_DB: 'false'
+          LOG_LEVEL: INFO
+          DEBUG_SQL: 'false'
+        run: |
+          python tests/ci/test_runner.py test --labels "unit or security or system and not slow"
+
+      - name: Coverage summary
+        run: python tests/reports/coverage_report.py || true
+
+      - name: Upload test artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-artifacts
+          path: |
+            reports/junit.xml
+            reports/coverage_summary.md
+            coverage.xml
+            htmlcov
+
+  frontend-unit:
+    name: Frontend CI
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install & Type Check
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run type-check
+
+      - name: Lint
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Unit Tests
+        working-directory: frontend
+        run: npm test -- --run
+

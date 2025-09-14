@@ -1,0 +1,16 @@
+{
+  "insights": {
+    "pain_points": [
+      {"description": "integration pain"},
+      {"description": "export issues"}
+    ],
+    "competitors": [
+      {"name": "comp-a"}
+    ],
+    "opportunities": [
+      {"description": "teams feature"},
+      {"description": "api marketplace"}
+    ]
+  },
+  "confidence_min": 0.5
+}

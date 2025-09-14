@@ -15,6 +15,7 @@
  */
 
 import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios';
+import logger from '@/utils/logger';
 import { SecurityUtils, SecureStorage } from '@/utils/security';
 import { AUTH_STORAGE_KEYS } from '@/types/auth.types';
 
@@ -86,7 +87,7 @@ class ApiClient {
         return config;
       },
       error => {
-        console.error('Request interceptor error:', error);
+        logger.error('Request interceptor error:', error as Error);
         return Promise.reject(error);
       }
     );
@@ -194,7 +195,7 @@ class ApiClient {
       SecureStorage.setItem(AUTH_STORAGE_KEYS.REFRESH_TOKEN, newRefreshToken);
       SecureStorage.setItem(AUTH_STORAGE_KEYS.USER, JSON.stringify(user));
     } catch (error) {
-      console.error('Token refresh failed:', error);
+      logger.error('Token refresh failed:', error as Error);
       throw error;
     }
   }
@@ -264,6 +265,20 @@ class ApiClient {
   }
 
   /**
+   * 验证任务ID是否有效
+   */
+  async validateTaskId(taskId: string): Promise<boolean> {
+    try {
+      // 尝试获取任务状态来验证taskId
+      await this.get(`/api/tasks/${taskId}/status`);
+      return true;
+    } catch (error) {
+      // 如果请求失败，说明taskId无效
+      return false;
+    }
+  }
+
+  /**
    * 获取原始axios实例（用于需要完全控制的场景）
    */
   getAxiosInstance(): AxiosInstance {
@@ -273,6 +288,10 @@ class ApiClient {
 
 // 导出单例实例
 export const apiClient = new ApiClient();
+
+// 导出验证函数的便捷访问
+export const validateTaskId = (taskId: string): Promise<boolean> => 
+  apiClient.validateTaskId(taskId);
 
 // 导出类型，供其他模块使用
 export default apiClient;

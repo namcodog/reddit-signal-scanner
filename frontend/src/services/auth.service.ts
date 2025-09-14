@@ -14,6 +14,7 @@
  */
 
 import apiClient from './api.client';
+import logger from '@/utils/logger';
 import { SecureStorage } from '@/utils/security';
 import {
   User,
@@ -64,7 +65,7 @@ export class AuthService {
 
       return response;
     } catch (error) {
-      console.error('Login failed:', error);
+      logger.error('Login failed:', error as Error);
       throw error;
     }
   }
@@ -77,7 +78,7 @@ export class AuthService {
       // 通知服务端注销token
       await apiClient.post(AUTH_ENDPOINTS.LOGOUT).catch(() => {
         // 忽略服务端注销错误，确保客户端清理
-        console.warn('Server logout failed, proceeding with client cleanup');
+        logger.warn('Server logout failed, proceeding with client cleanup');
       });
     } finally {
       // 无论如何都要清除本地数据
@@ -99,7 +100,7 @@ export class AuthService {
 
       return response.valid;
     } catch (error) {
-      console.error('Token verification failed:', error);
+      logger.error('Token verification failed:', error as Error);
       return false;
     }
   }
@@ -128,7 +129,7 @@ export class AuthService {
 
       return response;
     } catch (error) {
-      console.error('Token refresh failed:', error);
+      logger.error('Token refresh failed:', error as Error);
       // 刷新失败，清除认证数据
       this.clearAuthData();
       throw error;
@@ -158,7 +159,7 @@ export class AuthService {
 
       return null;
     } catch (error) {
-      console.error('Failed to restore auth state:', error);
+      logger.error('Failed to restore auth state:', error as Error);
       // 数据损坏，清除存储
       this.clearAuthData();
       return null;
@@ -181,7 +182,7 @@ export class AuthService {
       SecureStorage.setItem(AUTH_STORAGE_KEYS.REFRESH_TOKEN, refreshToken);
       SecureStorage.setItem(AUTH_STORAGE_KEYS.USER, JSON.stringify(user));
     } catch (error) {
-      console.error('Failed to store auth data:', error);
+      logger.error('Failed to store auth data:', error as Error);
       throw new Error('认证数据存储失败');
     }
   }
@@ -211,7 +212,7 @@ export class AuthService {
 
       return now - lastRefresh > AUTH_CONFIG.TOKEN_REFRESH_THRESHOLD;
     } catch (error) {
-      console.error('Token parsing failed:', error);
+      logger.error('Token parsing failed:', error as Error);
       return true; // 解析失败时建议刷新
     }
   }
@@ -232,7 +233,7 @@ export class AuthService {
       const userJson = SecureStorage.getItem(AUTH_STORAGE_KEYS.USER);
       return userJson ? JSON.parse(userJson) : null;
     } catch (error) {
-      console.error('Failed to get current user:', error);
+      logger.error('Failed to get current user:', error as Error);
       return null;
     }
   }

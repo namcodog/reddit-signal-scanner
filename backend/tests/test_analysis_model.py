@@ -16,7 +16,16 @@ from typing import Dict, Any
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.exc import IntegrityError, CheckViolation
+from sqlalchemy.exc import IntegrityError
+
+try:
+    from sqlalchemy.exc import CheckViolation
+except Exception:  # 兼容旧版本SQLAlchemy无CheckViolation
+
+    class CheckViolation(Exception):
+        pass
+
+
 from pydantic import ValidationError
 
 from app.core.database import Base

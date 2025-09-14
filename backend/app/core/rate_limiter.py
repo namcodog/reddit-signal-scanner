@@ -12,15 +12,18 @@ PRD-03 缓存优先架构的API调用控制组件
 """
 
 import asyncio
-import time
-from typing import Optional, Dict, Any
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta
 import logging
+import time
+from dataclasses import dataclass
+from datetime import datetime
+from types import TracebackType
+from typing import Any, Dict, Optional, cast
 
-import redis.asyncio as redis
-from ..core.redis_client import get_redis_client
+from typing import Any
+from ..core.redis_client import _await_maybe
+
 from ..core.config import get_settings
+from ..core.redis_client import get_redis, get_redis_client
 
 logger = logging.getLogger(__name__)
 
@@ -58,9 +61,9 @@ class RedditRateLimiter:
     - 熔断保护：连续失败时暂停API调用
     """
 
-    def __init__(self, config: Optional[RateLimitConfig] = None):
+    def __init__(self, config: Optional[RateLimitConfig] = None) -> None:
         self.config = config or RateLimitConfig()
-        self.redis_client: Optional[redis.Redis] = None
+        self.redis_client: Optional[Any] = None
         self.settings = get_settings()
 
         # Redis键前缀
@@ -71,15 +74,33 @@ class RedditRateLimiter:
         self._local_status = RateLimitStatus()
         self._last_check_time = 0.0
 
-    async def __aenter__(self):
-        """异步上下文管理器入口"""
-        self.redis_client = await get_redis_client()
+    def _require_redis(self) -> Any:
+        """获取已初始化的 Redis 客户端，确保非空。"""
+        if self.redis_client is None:
+            raise RuntimeError("Redis 客户端未初始化")
+        return self.redis_client
+
+    async def __aenter__(self) -> "RedditRateLimiter":
+        """异步上下文管理器入口
+
+        通过 get_redis_client() 获取包装器后，获取其底层 AsyncRedis 客户端，
+        以便使用 pipeline/incr/expire 等原生方法。
+        """
+        # 直接获取非空的底层 AsyncRedis 客户端，避免可空链路
+        self.redis_client = await get_redis()
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        """异步上下文管理器出口"""
-        if self.redis_client:
-            await self.redis_client.close()
+    async def __aexit__(
+        self,
+        exc_type: Optional[type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType],
+    ) -> None:
+        """异步上下文管理器出口
+
+        注意：不在此处关闭全局 Redis 连接，避免影响共享连接池。
+        """
+        return None
 
     async def acquire_permit(self, timeout: float = 10.0) -> bool:
         """获取API调用许可
@@ -135,23 +156,25 @@ class RedditRateLimiter:
 
         raise RateLimitExceeded(f"在 {timeout}秒 内无法获取API调用许可")
 
-    async def record_success(self):
+    async def record_success(self) -> None:
         """记录API调用成功"""
         try:
             # 重置熔断器失败计数
-            await self.redis_client.delete(f"{self.circuit_breaker_key}:failures")
+            rc = self._require_redis()
+            await _await_maybe(rc.delete(f"{self.circuit_breaker_key}:failures"))
             logger.debug("API调用成功，重置熔断器计数")
         except Exception as e:
             logger.error(f"记录API成功失败: {e}")
 
-    async def record_failure(self):
+    async def record_failure(self) -> None:
         """记录API调用失败"""
         try:
             failure_key = f"{self.circuit_breaker_key}:failures"
 
             # 增加失败计数
-            failures = await self.redis_client.incr(failure_key)
-            await self.redis_client.expire(failure_key, 300)  # 5分钟过期
+            rc = self._require_redis()
+            failures = await _await_maybe(rc.incr(failure_key))
+            await _await_maybe(rc.expire(failure_key, 300))  # 5分钟过期
 
             logger.warning(f"API调用失败，失败计数: {failures}")
 
@@ -174,8 +197,9 @@ class RedditRateLimiter:
 
             # 获取当前窗口的请求计数
             window_key = self._get_window_key(current_time)
-            requests_made = await self.redis_client.get(window_key) or 0
-            requests_made = int(requests_made)
+            rc = self._require_redis()
+            raw_count = await _await_maybe(rc.get(window_key))
+            requests_made = int(raw_count) if raw_count is not None else 0
 
             # 计算剩余请求数
             requests_remaining = max(0, self.config.requests_per_minute - requests_made)
@@ -220,11 +244,12 @@ class RedditRateLimiter:
             deleted_count = 0
 
             while True:
-                cursor, keys = await self.redis_client.scan(
-                    cursor, match=pattern, count=100
+                rc = self._require_redis()
+                cursor, keys = await _await_maybe(
+                    rc.scan(cursor, match=pattern, count=100)
                 )
                 if keys:
-                    deleted_count += await self.redis_client.delete(*keys)
+                    deleted_count += await _await_maybe(rc.delete(*keys))
                 if cursor == 0:
                     break
 
@@ -244,7 +269,8 @@ class RedditRateLimiter:
             window_key = self._get_window_key(current_time)
 
             # 获取当前请求计数
-            current_count = await self.redis_client.get(window_key)
+            rc = self._require_redis()
+            current_count = await _await_maybe(rc.get(window_key))
             current_count = int(current_count) if current_count else 0
 
             # 检查是否超出限制
@@ -257,19 +283,18 @@ class RedditRateLimiter:
             logger.error(f"检查速率限制失败: {e}")
             return False  # 保守策略
 
-    async def _record_request(self):
+    async def _record_request(self) -> None:
         """记录API请求"""
         try:
             current_time = time.time()
             window_key = self._get_window_key(current_time)
 
             # 使用管道操作保证原子性
-            pipe = self.redis_client.pipeline()
+            rc = self._require_redis()
+            pipe = rc.pipeline()
             pipe.incr(window_key)
-            pipe.expire(
-                window_key, self.config.sliding_window_seconds + 10
-            )  # 额外10秒缓冲
-            await pipe.execute()
+            pipe.expire(window_key, self.config.sliding_window_seconds + 10)  # 额外10秒缓冲
+            await _await_maybe(pipe.execute())
 
             logger.debug(f"记录API请求: {window_key}")
 
@@ -280,18 +305,20 @@ class RedditRateLimiter:
         """检查熔断器是否开启"""
         try:
             breaker_key = f"{self.circuit_breaker_key}:open"
-            is_open = await self.redis_client.get(breaker_key)
+            rc = self._require_redis()
+            is_open = await _await_maybe(rc.get(breaker_key))
             return bool(is_open)
         except Exception as e:
             logger.error(f"检查熔断器状态失败: {e}")
             return False
 
-    async def _open_circuit_breaker(self):
+    async def _open_circuit_breaker(self) -> None:
         """开启熔断器"""
         try:
             breaker_key = f"{self.circuit_breaker_key}:open"
-            await self.redis_client.setex(
-                breaker_key, self.config.circuit_breaker_timeout, "1"
+            rc = self._require_redis()
+            await _await_maybe(
+                rc.setex(breaker_key, self.config.circuit_breaker_timeout, "1")
             )
             logger.warning(f"熔断器开启，持续 {self.config.circuit_breaker_timeout}秒")
         except Exception as e:

@@ -1,0 +1,123 @@
+{
+  "root": true,
+  "env": {
+    "browser": true,
+    "es2020": true,
+    "node": true
+  },
+  "extends": [
+    "eslint:recommended",
+    "@typescript-eslint/recommended",
+    "@typescript-eslint/recommended-requiring-type-checking",
+    "plugin:react-hooks/recommended",
+    "plugin:react/recommended",
+    "plugin:react/jsx-runtime"
+  ],
+  "ignorePatterns": [
+    "dist",
+    ".eslintrc.json",
+    "vite.config.ts",
+    "vitest.config.ts",
+    "src/__tests__/**"
+  ],
+  "parser": "@typescript-eslint/parser",
+  "parserOptions": {
+    "ecmaVersion": "latest",
+    "sourceType": "module",
+    "project": ["./tsconfig.json"],
+    "tsconfigRootDir": "."
+  },
+  "plugins": [
+    "react-refresh",
+    "@typescript-eslint",
+    "react",
+    "react-hooks"
+  ],
+  "settings": {
+    "react": {
+      "version": "detect"
+    }
+  },
+  "rules": {
+    "react-refresh/only-export-components": [
+      "warn",
+      { "allowConstantExport": true }
+    ],
+    
+    // ================================
+    // TypeScript严格规则 - 100%类型安全  
+    // ================================
+    "@typescript-eslint/no-explicit-any": "error",
+    "@typescript-eslint/no-unsafe-assignment": "error",
+    "@typescript-eslint/no-unsafe-call": "error",
+    "@typescript-eslint/no-unsafe-member-access": "error",
+    "@typescript-eslint/no-unsafe-return": "error",
+    "@typescript-eslint/no-unsafe-argument": "error",
+    
+    // 禁止未使用的变量和导入
+    "@typescript-eslint/no-unused-vars": ["error", { 
+      "argsIgnorePattern": "^_",
+      "varsIgnorePattern": "^_"
+    }],
+    "no-unused-vars": "off",
+    
+    // 强制类型注解
+    "@typescript-eslint/typedef": ["error", {
+      "arrayDestructuring": false,
+      "arrowParameter": true,
+      "memberVariableDeclaration": true,
+      "objectDestructuring": false,
+      "parameter": true,
+      "propertyDeclaration": true,
+      "variableDeclaration": false
+    }],
+    
+    // 禁止非空断言（除非确实需要）
+    "@typescript-eslint/no-non-null-assertion": "warn",
+    
+    // React特定规则
+    "react-hooks/rules-of-hooks": "error",
+    "react-hooks/exhaustive-deps": "warn",
+    "react/prop-types": "off",
+    "react/react-in-jsx-scope": "off",
+    
+    // 代码质量规则
+    "prefer-const": "error",
+    "no-var": "error",
+    "object-shorthand": "error",
+    "prefer-template": "error",
+    "no-console": [
+      "error",
+      { "allow": ["warn", "error"] }
+    ]
+  },
+  
+  // ================================
+  // 测试文件特殊配置 - 适度放宽
+  // ================================
+  "overrides": [
+    {
+      "files": ["**/*.test.ts", "**/*.test.tsx", "**/*.spec.ts", "**/*.spec.tsx"],
+      "env": {
+        "jest": true,
+        "vitest-globals/env": true
+      },
+      "extends": ["plugin:vitest-globals/recommended"],
+      "rules": {
+        // 测试文件可以使用any（但仅限Mock）
+        "@typescript-eslint/no-explicit-any": "off",
+        "@typescript-eslint/no-unsafe-assignment": "off",
+        "@typescript-eslint/no-unsafe-call": "off",
+        "@typescript-eslint/no-unsafe-member-access": "off",
+        "@typescript-eslint/no-unsafe-return": "off",
+        "@typescript-eslint/no-unsafe-argument": "off",
+        
+        // 测试文件允许非空断言（测试环境可控）
+        "@typescript-eslint/no-non-null-assertion": "off",
+        
+        // 测试文件不强制完整类型注解
+        "@typescript-eslint/typedef": "off"
+      }
+    }
+  ]
+}

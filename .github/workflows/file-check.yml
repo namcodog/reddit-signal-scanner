@@ -21,7 +21,7 @@ jobs:
     - name: 🐍 设置Python环境
       uses: actions/setup-python@v4
       with:
-        python-version: '3.9'
+        python-version: '3.11'
         
     - name: 📦 安装依赖
       run: |
@@ -92,6 +92,23 @@ jobs:
             forbidden_found=true
           fi
         done
+
+        # 检查可疑文件名（单独的连字符、以连字符开头的文件）
+        suspicious=$(find . -type f \( -name "-" -o -name "-*" \) -not -path "./.git/*" -not -path "./node_modules/*")
+        if [ -n "$suspicious" ]; then
+          echo "❌ 发现可疑文件名（可能为误提交或产物）："
+          echo "$suspicious"
+          forbidden_found=true
+        fi
+
+        # 检查不应被跟踪的前端产物（Cypress视频/截图）
+        tracked_cypress=$(git ls-files -- "frontend/cypress/videos" "frontend/cypress/screenshots" 2>/dev/null || true)
+        if [ -n "$tracked_cypress" ]; then
+          echo "❌ 发现被跟踪的E2E产物（应通过.gitignore忽略）："
+          echo "$tracked_cypress"
+          echo "💡 请将 frontend/cypress/{videos,screenshots}/ 加入 .gitignore 并清理已跟踪文件"
+          forbidden_found=true
+        fi
         
         if [ "$forbidden_found" = true ]; then
           echo ""
@@ -187,7 +204,7 @@ jobs:
     - name: 🐍 设置Python环境
       uses: actions/setup-python@v4
       with:
-        python-version: '3.9'
+        python-version: '3.11'
         
     - name: 📦 安装依赖
       run: |

@@ -5,11 +5,13 @@
 实际实现位置: backend/app/services/analysis/signal_extractor.py
 """
 
-from ..services.analysis.signal_extractor import UnifiedSignalDetector
+from typing import Any
+
 from ..models.signal_pattern import SignalType
+from ..services.analysis.signal_extractor import UnifiedSignalDetector
 
 
-def analyze_competitors(posts, patterns=None):
+def analyze_competitors(posts: Any, patterns: Any = None) -> Any:
     """
     竞品分析 - 重定向到统一检测器
     """

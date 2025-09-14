@@ -8,21 +8,34 @@
 - 避免死锁，确保释放
 """
 
+from __future__ import annotations
+
 import logging
 import threading
 import time
-from datetime import datetime, timedelta
 from contextlib import contextmanager
-from typing import Dict, Optional, Any, ContextManager
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from enum import Enum
+from typing import Any, ContextManager, Dict, Iterator, Mapping, Optional, cast
+
 import redis
 from sqlalchemy.orm import Session
 
-from ..core.config import settings
-from ..services.data_cleanup_service_v2 import CleanupCategory
+from ..core.config import get_settings
+from .types import JsonValue, LockStatusMap
 
 logger = logging.getLogger(__name__)
+
+
+class CleanupCategory(Enum):
+    """清理类别枚举（本地定义以消除循环依赖）"""
+
+    COMPLETED_TASKS = "completed_tasks"
+    FAILED_TASKS = "failed_tasks"
+    ORPHAN_ANALYSES = "orphan_analyses"
+    EXPIRED_CACHE = "expired_cache"
+    INACTIVE_USERS = "inactive_users"
 
 
 class LockStatus(Enum):
@@ -43,13 +56,13 @@ class LockInfo:
     owner_id: str
     acquired_at: datetime
     expires_at: datetime
-    metadata: Dict[str, Any]
+    metadata: dict[str, JsonValue]
 
 
 class CleanupLockError(Exception):
     """清理锁异常"""
 
-    pass
+    ...
 
 
 class CategoryLock:
@@ -57,18 +70,20 @@ class CategoryLock:
 
     def __init__(
         self,
-        category: CleanupCategory,
-        redis_client: redis.Redis,
+        category: "CleanupCategory",
+        redis_client: Any,
         ttl_seconds: int = 3600,
-    ):
+    ) -> None:
         self.category = category
         self.redis_client = redis_client
         self.ttl_seconds = ttl_seconds
         self.lock_key = f"cleanup_lock:{category.value}"
         self._local_acquired = False
-        self._owner_id = None
+        self._owner_id: Optional[str] = None
 
-    def acquire(self, timeout: int = 10, task_info: Optional[Dict] = None) -> bool:
+    def acquire(
+        self, timeout: int = 10, task_info: Optional[dict[str, JsonValue]] = None
+    ) -> bool:
         """
         获取锁 - 非阻塞实现，遵循Linus 3层嵌套原则
 
@@ -93,8 +108,8 @@ class CategoryLock:
         return False
 
     def _build_lock_metadata(
-        self, owner_id: str, task_info: Optional[Dict]
-    ) -> Dict[str, Any]:
+        self, owner_id: str, task_info: Optional[dict[str, JsonValue]]
+    ) -> dict[str, Any]:
         """构建锁元数据 - 提取方法减少嵌套"""
         return {
             "acquired_at": datetime.utcnow().isoformat(),
@@ -105,7 +120,7 @@ class CategoryLock:
             "thread_id": threading.current_thread().ident,
         }
 
-    def _try_acquire_lock(self, owner_id: str, metadata: Dict[str, Any]) -> bool:
+    def _try_acquire_lock(self, owner_id: str, metadata: dict[str, Any]) -> bool:
         """尝试获取锁 - 提取方法减少嵌套"""
         # 使用Redis SET NX EX 原子操作
         acquired = self.redis_client.set(
@@ -114,7 +129,14 @@ class CategoryLock:
 
         if acquired:
             # 存储锁的元数据
-            self.redis_client.hset(f"{self.lock_key}:meta", mapping=metadata)
+            # 将所有值转换为字符串，满足 Redis Hash 映射类型
+            str_mapping: Dict[str, str] = {
+                k: (v if isinstance(v, str) else str(v)) for k, v in metadata.items()
+            }
+            # 将 dict[str, str] 以 Mapping[str, RedisValue] 形式传入，满足类型系统
+            self.redis_client.hset(
+                f"{self.lock_key}:meta", mapping=cast(Mapping[str, Any], str_mapping)
+            )
             self.redis_client.expire(f"{self.lock_key}:meta", self.ttl_seconds)
 
             self._owner_id = owner_id
@@ -165,7 +187,7 @@ class CategoryLock:
 
     def is_locked(self) -> bool:
         """检查锁是否被持有"""
-        return self.redis_client.exists(self.lock_key)
+        return bool(self.redis_client.exists(self.lock_key))
 
     def get_lock_info(self) -> Optional[LockInfo]:
         """获取锁信息"""
@@ -191,7 +213,9 @@ class CategoryLock:
         )
 
     @contextmanager
-    def acquire_context(self, timeout: int = 10, task_info: Optional[Dict] = None):
+    def acquire_context(
+        self, timeout: int = 10, task_info: Optional[dict[str, JsonValue]] = None
+    ) -> Iterator[bool]:
         """
         上下文管理器方式获取锁
 
@@ -227,12 +251,13 @@ class CleanupLockManager:
     4. 故障恢复 - 锁会自动释放
     """
 
-    def __init__(self, redis_url: Optional[str] = None):
-        self.redis_client = redis.Redis.from_url(redis_url or settings.REDIS_URL)
+    def __init__(self, redis_url: Optional[str] = None) -> None:
+        settings = get_settings()
+        self.redis_client: Any = redis.Redis.from_url(redis_url or settings.redis_url)
         self.category_locks: Dict[CleanupCategory, CategoryLock] = {}
         self._init_category_locks()
 
-    def _init_category_locks(self):
+    def _init_category_locks(self) -> None:
         """初始化各类别锁"""
         lock_configs = {
             CleanupCategory.COMPLETED_TASKS: 1800,  # 30分钟 - 数据量大
@@ -247,7 +272,7 @@ class CleanupLockManager:
                 category=category, redis_client=self.redis_client, ttl_seconds=ttl
             )
 
-    def get_lock(self, category: CleanupCategory) -> CategoryLock:
+    def get_lock(self, category: "CleanupCategory") -> "CategoryLock":
         """
         获取指定类别的锁
 
@@ -267,7 +292,7 @@ class CleanupLockManager:
         self,
         categories: list[CleanupCategory],
         timeout: int = 10,
-        task_info: Optional[Dict] = None,
+        task_info: Optional[dict[str, JsonValue]] = None,
     ) -> Dict[CleanupCategory, bool]:
         """
         批量获取多个类别的锁 - 避免死锁的顺序获取
@@ -282,8 +307,8 @@ class CleanupLockManager:
         """
         # 按类别名排序，避免死锁
         sorted_categories = sorted(categories, key=lambda x: x.value)
-        acquired_locks = {}
-        failed_categories = []
+        acquired_locks: Dict[CleanupCategory, bool] = {}
+        failed_categories: list[CleanupCategory] = []
 
         try:
             for category in sorted_categories:
@@ -311,8 +336,10 @@ class CleanupLockManager:
                 if acquired_locks[category]:
                     try:
                         self.get_lock(category).release()
-                    except Exception:
-                        pass
+                    except Exception as release_error:
+                        logger.warning(
+                            "释放已获取的锁失败: %s (%s)", category.value, release_error
+                        )
 
             raise CleanupLockError(f"批量获取锁异常: {e}")
 
@@ -328,7 +355,7 @@ class CleanupLockManager:
         Returns:
             Dict: 各类别锁的释放结果
         """
-        results = {}
+        results: Dict[CleanupCategory, bool] = {}
 
         for category in categories:
             try:
@@ -340,9 +367,9 @@ class CleanupLockManager:
 
         return results
 
-    def get_all_lock_status(self) -> Dict[str, Dict[str, Any]]:
+    def get_all_lock_status(self) -> LockStatusMap:
         """获取所有锁的状态"""
-        status = {}
+        status: LockStatusMap = {}
 
         for category, lock in self.category_locks.items():
             lock_info = lock.get_lock_info()
@@ -368,7 +395,7 @@ class CleanupLockManager:
 
     def cleanup_expired_locks(self) -> Dict[str, bool]:
         """清理过期锁（Redis会自动处理，此方法用于监控）"""
-        results = {}
+        results: Dict[str, bool] = {}
         current_time = datetime.utcnow()
 
         for category, lock in self.category_locks.items():
@@ -391,10 +418,10 @@ class CleanupLockManager:
     @contextmanager
     def acquire_category_lock(
         self,
-        category: CleanupCategory,
+        category: "CleanupCategory",
         timeout: int = 10,
-        task_info: Optional[Dict] = None,
-    ):
+        task_info: Optional[dict[str, JsonValue]] = None,
+    ) -> Iterator[CategoryLock]:
         """
         上下文管理器方式获取单个类别锁
 
@@ -431,14 +458,16 @@ def get_cleanup_lock_manager() -> CleanupLockManager:
 
 # 便捷函数
 def acquire_cleanup_lock(
-    category: CleanupCategory, timeout: int = 10, task_info: Optional[Dict] = None
+    category: CleanupCategory,
+    timeout: int = 10,
+    task_info: Optional[dict[str, JsonValue]] = None,
 ) -> ContextManager[CategoryLock]:
     """获取清理锁的便捷函数"""
     manager = get_cleanup_lock_manager()
     return manager.acquire_category_lock(category, timeout, task_info)
 
 
-def get_cleanup_lock_status() -> Dict[str, Dict[str, Any]]:
+def get_cleanup_lock_status() -> LockStatusMap:
     """获取所有清理锁状态的便捷函数"""
     manager = get_cleanup_lock_manager()
     return manager.get_all_lock_status()
@@ -451,6 +480,7 @@ __all__ = [
     "CleanupLockError",
     "LockInfo",
     "LockStatus",
+    "CleanupCategory",
     "get_cleanup_lock_manager",
     "acquire_cleanup_lock",
     "get_cleanup_lock_status",

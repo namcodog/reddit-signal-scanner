@@ -8,11 +8,12 @@ Linus原则: "数据结构决定一切"
 - 消除所有特殊情况
 """
 
+import os
 from functools import lru_cache
-from typing import Optional
+from typing import Annotated, Any, Optional
+
 from pydantic import Field
 from pydantic_settings import BaseSettings
-import os
 
 
 class Settings(BaseSettings):
@@ -21,86 +22,96 @@ class Settings(BaseSettings):
     # 应用基础配置
     app_name: str = "Reddit Signal Scanner"
     app_version: str = "0.1.0"
-    debug: bool = Field(default=True, env="DEBUG")  # 开发环境默认DEBUG=True
-    environment: str = Field(default="development", env="ENVIRONMENT")
+    debug: Annotated[bool, Field(env="DEBUG")] = False  # 默认关闭DEBUG，需通过环境变量开启
+    environment: Annotated[str, Field(env="ENVIRONMENT")] = "development"
 
     # 数据库配置
-    database_url: str = Field(
-        default="postgresql+asyncpg://postgres:postgres@localhost:5432/reddit_scanner",
-        env="DATABASE_URL",
-    )
-    database_pool_size: int = Field(default=10, env="DB_POOL_SIZE")
-    database_max_overflow: int = Field(default=20, env="DB_MAX_OVERFLOW")
-    database_pool_timeout: int = Field(default=30, env="DB_POOL_TIMEOUT")
+    database_url: Annotated[
+        str, Field(env="DATABASE_URL")
+    ] = "postgresql+asyncpg://postgres:postgres@localhost:5432/reddit_signal_scanner"
+    database_pool_size: Annotated[int, Field(env="DB_POOL_SIZE")] = 10
+    database_max_overflow: Annotated[int, Field(env="DB_MAX_OVERFLOW")] = 20
+    database_pool_timeout: Annotated[int, Field(env="DB_POOL_TIMEOUT")] = 30
 
     # Redis配置
-    redis_url: str = Field(default="redis://localhost:6379/0", env="REDIS_URL")
+    redis_url: Annotated[str, Field(env="REDIS_URL")] = "redis://localhost:6379/0"
+
+    # Mock开关（开发阶段默认启用）
+    use_mocks: Annotated[bool, Field(env="USE_MOCKS")] = True
+
+    # API版本与前缀
+    api_version: Annotated[str, Field(env="API_VERSION")] = "v1"
+    api_base: Annotated[str, Field(env="API_BASE")] = "/api"
 
     # Celery配置
-    celery_broker_url: str = Field(
-        default="redis://localhost:6379/1", env="CELERY_BROKER_URL"
-    )
-    celery_result_backend: str = Field(
-        default="redis://localhost:6379/2", env="CELERY_RESULT_BACKEND"
-    )
+    celery_broker_url: Annotated[
+        str, Field(env="CELERY_BROKER_URL")
+    ] = "redis://localhost:6379/1"
+    celery_result_backend: Annotated[
+        str, Field(env="CELERY_RESULT_BACKEND")
+    ] = "redis://localhost:6379/2"
 
     # Reddit API配置
-    reddit_client_id: Optional[str] = Field(default=None, env="REDDIT_CLIENT_ID")
-    reddit_client_secret: Optional[str] = Field(
-        default=None, env="REDDIT_CLIENT_SECRET"
-    )
-    reddit_user_agent: str = Field(
-        default="RedditSignalScanner/0.1.0", env="REDDIT_USER_AGENT"
-    )
-    reddit_rate_limit: int = Field(default=60, env="REDDIT_RATE_LIMIT")
+    reddit_client_id: Annotated[Optional[str], Field(env="REDDIT_CLIENT_ID")] = None
+    reddit_client_secret: Annotated[
+        Optional[str], Field(env="REDDIT_CLIENT_SECRET")
+    ] = None
+    reddit_user_agent: Annotated[
+        str, Field(env="REDDIT_USER_AGENT")
+    ] = "RedditSignalScanner/0.1.0"
+    reddit_rate_limit: Annotated[int, Field(env="REDDIT_RATE_LIMIT")] = 60
 
     # JWT配置 - 支持RS256/HS256双算法架构
-    jwt_secret_key: str = Field(
-        default="dev-secret-key-change-in-production", env="JWT_SECRET_KEY"
-    )
-    jwt_algorithm: str = Field(default="HS256", env="JWT_ALGORITHM")
-    jwt_algorithms: str = Field(
-        default="RS256,HS256", env="JWT_ALGORITHMS"
-    )  # 支持的算法列表
-    jwt_access_token_expire_minutes: int = Field(
-        default=1440, env="JWT_EXPIRE_MINUTES"
-    )  # 24小时
-    jwt_refresh_token_expire_days: int = Field(default=7, env="JWT_REFRESH_EXPIRE_DAYS")
+    jwt_secret_key: Annotated[
+        str, Field(env="JWT_SECRET_KEY")
+    ] = "dev-secret-key-change-in-production"
+    jwt_algorithm: Annotated[str, Field(env="JWT_ALGORITHM")] = "HS256"
+    jwt_algorithms: Annotated[
+        str, Field(env="JWT_ALGORITHMS")
+    ] = "RS256,HS256"  # 支持的算法列表
+    jwt_access_token_expire_minutes: Annotated[
+        int, Field(env="JWT_EXPIRE_MINUTES")
+    ] = 1440  # 24小时
+    jwt_refresh_token_expire_days: Annotated[
+        int, Field(env="JWT_REFRESH_EXPIRE_DAYS")
+    ] = 7
 
     # RS256密钥配置
-    jwt_private_key_path: Optional[str] = Field(
-        default=None, env="JWT_PRIVATE_KEY_PATH"
-    )
-    jwt_public_key_path: Optional[str] = Field(default=None, env="JWT_PUBLIC_KEY_PATH")
-    jwt_key_id: Optional[str] = Field(default="rss-key-1", env="JWT_KEY_ID")
+    jwt_private_key_path: Annotated[
+        Optional[str], Field(env="JWT_PRIVATE_KEY_PATH")
+    ] = None
+    jwt_public_key_path: Annotated[
+        Optional[str], Field(env="JWT_PUBLIC_KEY_PATH")
+    ] = None
+    jwt_key_id: Annotated[Optional[str], Field(env="JWT_KEY_ID")] = "rss-key-1"
 
     # 密钥轮换配置
-    jwt_key_rotation_enabled: bool = Field(
-        default=False, env="JWT_KEY_ROTATION_ENABLED"
-    )
-    jwt_key_rotation_days: int = Field(default=90, env="JWT_KEY_ROTATION_DAYS")
+    jwt_key_rotation_enabled: Annotated[
+        bool, Field(env="JWT_KEY_ROTATION_ENABLED")
+    ] = False
+    jwt_key_rotation_days: Annotated[int, Field(env="JWT_KEY_ROTATION_DAYS")] = 90
 
     # 文件上传配置
-    upload_max_size: int = Field(default=10485760, env="UPLOAD_MAX_SIZE")  # 10MB
-    upload_allowed_types: str = Field(
-        default="text/plain,application/json", env="UPLOAD_ALLOWED_TYPES"
-    )
+    upload_max_size: Annotated[int, Field(env="UPLOAD_MAX_SIZE")] = 10485760  # 10MB
+    upload_allowed_types: Annotated[
+        str, Field(env="UPLOAD_ALLOWED_TYPES")
+    ] = "text/plain,application/json"
 
     # 性能配置
-    max_concurrent_tasks: int = Field(default=5, env="MAX_CONCURRENT_TASKS")
-    analysis_timeout_seconds: int = Field(default=300, env="ANALYSIS_TIMEOUT")
-    cache_ttl_seconds: int = Field(default=3600, env="CACHE_TTL")
+    max_concurrent_tasks: Annotated[int, Field(env="MAX_CONCURRENT_TASKS")] = 5
+    analysis_timeout_seconds: Annotated[int, Field(env="ANALYSIS_TIMEOUT")] = 300
+    cache_ttl_seconds: Annotated[int, Field(env="CACHE_TTL")] = 3600
 
     # 清理配置
-    cleanup_interval_hours: int = Field(default=24, env="CLEANUP_INTERVAL")
-    keep_completed_tasks_days: int = Field(default=30, env="KEEP_COMPLETED_DAYS")
-    keep_failed_tasks_days: int = Field(default=7, env="KEEP_FAILED_DAYS")
+    cleanup_interval_hours: Annotated[int, Field(env="CLEANUP_INTERVAL")] = 24
+    keep_completed_tasks_days: Annotated[int, Field(env="KEEP_COMPLETED_DAYS")] = 30
+    keep_failed_tasks_days: Annotated[int, Field(env="KEEP_FAILED_DAYS")] = 7
 
     # 日志配置
-    log_level: str = Field(default="INFO", env="LOG_LEVEL")
-    log_format: str = Field(
-        default="%(asctime)s - %(name)s - %(levelname)s - %(message)s", env="LOG_FORMAT"
-    )
+    log_level: Annotated[str, Field(env="LOG_LEVEL")] = "INFO"
+    log_format: Annotated[
+        str, Field(env="LOG_FORMAT")
+    ] = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
     @property
     def database_url_sync(self) -> str:
@@ -126,6 +137,16 @@ class Settings(BaseSettings):
     def jwt_refresh_token_expire_seconds(self) -> int:
         """JWT刷新令牌过期时间（秒）"""
         return self.jwt_refresh_token_expire_days * 24 * 3600
+
+    @property
+    def api_prefix(self) -> str:
+        """统一的API前缀，如 /api/v1"""
+        return f"{self.api_base.rstrip('/')}/{self.api_version.lstrip('/')}"
+
+    @property
+    def API_PREFIX(self) -> str:
+        """兼容性别名，等同于 api_prefix"""
+        return self.api_prefix
 
     @property
     def is_production(self) -> bool:
@@ -176,7 +197,7 @@ def validate_production_config(settings: Settings) -> list[str]:
 
 def validate_config_connectivity(settings: Settings) -> list[str]:
     """连接性验证 - 可选的深度验证"""
-    issues = []
+    issues: list[str] = []
 
     # 这里可以添加实际的连接测试
     # 比如：尝试连接数据库、Redis等
@@ -207,7 +228,7 @@ def get_validated_settings() -> Settings:
     return settings
 
 
-def check_config_health() -> dict:
+def check_config_health() -> dict[str, Any]:
     """配置健康检查 - 诊断工具"""
     settings = get_settings()
 
@@ -216,5 +237,5 @@ def check_config_health() -> dict:
         "debug_mode": settings.debug,
         "production_issues": validate_production_config(settings),
         "connectivity_issues": validate_config_connectivity(settings),
-        "config_source": "environment" if os.getenv("DATABASE_URL") else "defaults",
+        "config_source": ("environment" if os.getenv("DATABASE_URL") else "defaults"),
     }

@@ -10,19 +10,53 @@
 """
 
 import logging
-from typing import Any, Dict, Optional, Tuple
-from datetime import datetime
 import traceback
+from datetime import datetime
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    ContextManager,
+    List,
+    Optional,
+    Tuple,
+    Type,
+)
 
 from celery import Task
 from sqlalchemy.exc import SQLAlchemyError
 
 from .celery_config import get_celery_config
+from .types import JsonValue
 
 logger = logging.getLogger(__name__)
 
 
-class BaseUnifiedTask(Task):
+# 为了通过类型检查：在类型检查时用最小协议替代 Celery Task，运行时仍使用真实类
+if TYPE_CHECKING:
+    # 在类型检查期间使用一个最小的具体基类，避免 Protocol/Any 带来的抽象与 Any 继承问题
+    class BaseTaskBase:
+        request: Any
+        name: str
+        autoretry_for: Any
+        retry_kwargs: dict[str, JsonValue]
+        retry_backoff: Any
+        retry_backoff_max: Any
+
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            ...
+
+        def retry(self, *args: Any, **kwargs: Any) -> Any:
+            ...
+
+        def apply_async(self, *args: Any, **kwargs: Any) -> Any:
+            ...
+
+else:
+    BaseTaskBase = Task  # 运行时仍为真实 Task
+
+
+class BaseUnifiedTask(BaseTaskBase):
     """
     统一任务基类 - 消除所有任务类型的特殊情况
 
@@ -45,9 +79,9 @@ class BaseUnifiedTask(Task):
         self.retry_backoff = self.config.retry.backoff
         self.retry_backoff_max = self.config.retry.backoff_max
 
-    def _get_exception_classes(self) -> list:
+    def _get_exception_classes(self) -> List[Type[BaseException]]:
         """从配置获取需要重试的异常类"""
-        exception_classes = []
+        exception_classes: List[Type[BaseException]] = []
         for exc_name in self.config.retry.autoretry_for:
             try:
                 module_name, class_name = exc_name.rsplit(".", 1)
@@ -61,7 +95,13 @@ class BaseUnifiedTask(Task):
         exception_classes.extend([SQLAlchemyError, ConnectionError])
         return exception_classes
 
-    def on_success(self, retval: Any, task_id: str, args: Tuple, kwargs: Dict) -> None:
+    def on_success(
+        self,
+        retval: Any,
+        task_id: str,
+        args: Tuple[Any, ...],
+        kwargs: dict[str, JsonValue],
+    ) -> None:
         """任务成功回调 - 统一的成功处理逻辑"""
         task_name = self.get_task_name()
         duration = self._get_task_duration()
@@ -81,7 +121,12 @@ class BaseUnifiedTask(Task):
         self._record_task_stats(task_id, task_name, "success", duration, retval)
 
     def on_failure(
-        self, exc: Exception, task_id: str, args: Tuple, kwargs: Dict, einfo: Any
+        self,
+        exc: Exception,
+        task_id: str,
+        args: Tuple[Any, ...],
+        kwargs: dict[str, JsonValue],
+        einfo: Any,
     ) -> None:
         """任务失败回调 - 统一的失败处理逻辑"""
         task_name = self.get_task_name()
@@ -110,7 +155,12 @@ class BaseUnifiedTask(Task):
             self._send_failure_alert(task_id, exc, task_name, args, kwargs)
 
     def on_retry(
-        self, exc: Exception, task_id: str, args: Tuple, kwargs: Dict, einfo: Any
+        self,
+        exc: Exception,
+        task_id: str,
+        args: Tuple[Any, ...],
+        kwargs: dict[str, JsonValue],
+        einfo: Any,
     ) -> None:
         """任务重试回调 - 统一的重试处理逻辑"""
         task_name = self.get_task_name()
@@ -132,8 +182,9 @@ class BaseUnifiedTask(Task):
 
     def get_task_name(self) -> str:
         """获取任务名称 - 统一命名规范"""
-        if hasattr(self, "name") and self.name:
-            return self.name
+        if hasattr(self, "name") and getattr(self, "name"):
+            name_val = getattr(self, "name")
+            return str(name_val)
         return self.__class__.__name__.replace("Task", "").lower()
 
     def _get_task_duration(self) -> float:
@@ -154,7 +205,12 @@ class BaseUnifiedTask(Task):
 
         # 指数退避算法
         delay = self.config.retry.countdown * (2**retry_count)
-        return min(delay, self.config.retry.backoff_max)
+        # backoff_max 来自配置，补全显式整型收敛，避免 Any 外溢
+        try:
+            backoff_max: int = int(self.config.retry.backoff_max)
+        except Exception:
+            backoff_max = self.config.retry.countdown
+        return int(min(delay, backoff_max))
 
     def _record_task_stats(
         self,
@@ -192,7 +248,12 @@ class BaseUnifiedTask(Task):
             logger.error(f"记录任务统计失败: {e}")
 
     def _send_failure_alert(
-        self, task_id: str, exc: Exception, task_name: str, args: Tuple, kwargs: Dict
+        self,
+        task_id: str,
+        exc: Exception,
+        task_name: str,
+        args: Tuple[Any, ...],
+        kwargs: dict[str, JsonValue],
     ) -> None:
         """发送任务失败告警"""
         try:
@@ -228,7 +289,7 @@ class AnalysisTask(BaseUnifiedTask):
         # 分析任务的特定配置
         self.queue = "analysis_queue"
 
-    def validate_analysis_input(self, *args, **kwargs) -> bool:
+    def validate_analysis_input(self, *args: Any, **kwargs: Any) -> bool:
         """验证分析任务输入 - 分析任务的通用验证逻辑"""
         try:
             # 基础输入验证
@@ -262,24 +323,20 @@ class CleanupTask(BaseUnifiedTask):
         # 清理任务的特定配置
         self.queue = "cleanup_queue"
 
-    def acquire_cleanup_lock(self, timeout: int = 3600) -> bool:
-        """获取清理锁 - 防止并发清理任务"""
-        try:
-            from ..core.cleanup_lock import get_cleanup_lock
+    def acquire_cleanup_lock(self, timeout: int = 3600) -> ContextManager[str]:
+        """获取清理锁 - 防止并发清理任务
 
-            cleanup_lock = get_cleanup_lock()
-            task_info = {
-                "task_id": self.request.id if hasattr(self, "request") else "unknown",
-                "task_type": self.get_task_name(),
-                "timestamp": datetime.utcnow().isoformat(),
-            }
+        返回上下文管理器以确保锁的正确获取与释放。
+        """
+        from ..core.cleanup_lock import get_cleanup_lock
 
-            # 尝试获取锁
-            return cleanup_lock.acquire(timeout=timeout, task_info=task_info)
-
-        except Exception as e:
-            logger.error(f"获取清理锁失败: {e}")
-            return False
+        cleanup_lock = get_cleanup_lock()
+        task_info: dict[str, JsonValue] = {
+            "task_id": getattr(getattr(self, "request", object()), "id", "unknown"),
+            "task_type": self.get_task_name(),
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+        return cleanup_lock.acquire(timeout=timeout, task_info=task_info)
 
 
 class MonitoringTask(BaseUnifiedTask):
@@ -294,11 +351,11 @@ class MonitoringTask(BaseUnifiedTask):
 
 
 # 便捷函数 - 用于外部创建任务
-def create_analysis_task(func):
+def create_analysis_task(func: Callable[..., Any]) -> BaseUnifiedTask:
     """装饰器：创建分析任务"""
 
     class AnalysisTaskWrapper(AnalysisTask):
-        def run(self, *args, **kwargs):
+        def run(self, *args: Any, **kwargs: Any) -> Any:
             if not self.validate_analysis_input(*args, **kwargs):
                 raise ValueError("分析任务输入验证失败")
             return func(*args, **kwargs)
@@ -306,33 +363,35 @@ def create_analysis_task(func):
     return AnalysisTaskWrapper()
 
 
-def create_maintenance_task(func):
+def create_maintenance_task(func: Callable[..., Any]) -> BaseUnifiedTask:
     """装饰器：创建维护任务"""
 
     class MaintenanceTaskWrapper(MaintenanceTask):
-        def run(self, *args, **kwargs):
+        def run(self, *args: Any, **kwargs: Any) -> Any:
             return func(*args, **kwargs)
 
     return MaintenanceTaskWrapper()
 
 
-def create_cleanup_task(func):
+def create_cleanup_task(func: Callable[..., Any]) -> BaseUnifiedTask:
     """装饰器：创建清理任务"""
 
     class CleanupTaskWrapper(CleanupTask):
-        def run(self, *args, **kwargs):
-            if not self.acquire_cleanup_lock():
-                raise RuntimeError("无法获取清理锁，任务跳过")
-            return func(*args, **kwargs)
+        def run(self, *args: Any, **kwargs: Any) -> Any:
+            try:
+                with self.acquire_cleanup_lock():
+                    return func(*args, **kwargs)
+            except Exception as exc:
+                raise RuntimeError("无法获取清理锁，任务跳过") from exc
 
     return CleanupTaskWrapper()
 
 
-def create_monitoring_task(func):
+def create_monitoring_task(func: Callable[..., Any]) -> BaseUnifiedTask:
     """装饰器：创建监控任务"""
 
     class MonitoringTaskWrapper(MonitoringTask):
-        def run(self, *args, **kwargs):
+        def run(self, *args: Any, **kwargs: Any) -> Any:
             return func(*args, **kwargs)
 
     return MonitoringTaskWrapper()

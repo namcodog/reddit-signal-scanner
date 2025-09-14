@@ -14,11 +14,13 @@ Linus设计哲学：
 
 import asyncio
 import logging
-from datetime import datetime, timedelta
-from typing import Dict, Any, Optional, Callable, Awaitable
 import time
+from datetime import datetime, timedelta
+from typing import Any, Awaitable, Callable, Dict, Optional
 
-from .redis_client import redis_get, CacheKeys
+from .redis_client import CacheKeys, redis_get
+from .types import JsonValue
+from .config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +40,7 @@ class RecoveryResult:
         success: bool,
         strategy: str,
         message: str,
-        data: Optional[Dict[str, Any]] = None,
+        data: Optional[dict[str, JsonValue]] = None,
         retry_after: Optional[int] = None,
     ):
         self.success = success
@@ -48,9 +50,9 @@ class RecoveryResult:
         self.retry_after = retry_after
         self.timestamp = datetime.utcnow().isoformat()
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, JsonValue]:
         """转换为字典格式，用于API响应"""
-        result = {
+        result: dict[str, JsonValue] = {
             "success": self.success,
             "strategy": self.strategy,
             "message": self.message,
@@ -67,7 +69,7 @@ class RecoveryResult:
 
 
 async def cache_fallback_strategy(
-    task_id: str, error_context: Dict[str, Any] = None
+    task_id: str, error_context: Optional[dict[str, JsonValue]] = None
 ) -> RecoveryResult:
     """
     缓存回退策略 - Reddit API限制时启用
@@ -129,10 +131,10 @@ async def cache_fallback_strategy(
 
 
 async def retry_with_backoff_strategy(
-    operation: Callable[[], Awaitable[Any]],
+    operation: Optional[Callable[[], Awaitable[Any]]],
     max_retries: int = 3,
     base_delay: float = 1.0,
-    error_context: Dict[str, Any] = None,
+    error_context: Optional[dict[str, JsonValue]] = None,
 ) -> RecoveryResult:
     """
     指数退避重试策略 - 数据库连接失败时使用
@@ -151,7 +153,7 @@ async def retry_with_backoff_strategy(
     )
 
     # 如果没有具体操作，返回重试配置信息
-    if not operation:
+    if operation is None:
         return RecoveryResult(
             success=True,
             strategy="retry_with_backoff",
@@ -219,7 +221,7 @@ async def retry_with_backoff_strategy(
 
 
 async def polling_fallback_strategy(
-    task_id: str, error_context: Dict[str, Any] = None
+    task_id: str, error_context: Optional[dict[str, JsonValue]] = None
 ) -> RecoveryResult:
     """
     轮询回退策略 - SSE连接断开时使用
@@ -236,7 +238,8 @@ async def polling_fallback_strategy(
 
         # 计算轮询相关参数
         polling_interval = 2000  # 2秒轮询间隔
-        polling_url = f"/api/v1/status/{task_id}"
+        settings = get_settings()
+        polling_url = f"{settings.api_prefix}/status/{task_id}"
 
         return RecoveryResult(
             success=True,
@@ -262,13 +265,18 @@ async def polling_fallback_strategy(
             success=False,
             strategy="polling_fallback",
             message="轮询回退机制初始化失败",
-            data={"error": str(e), "fallback_url": f"/api/v1/status/{task_id}"},
+            data={
+                "error": str(e),
+                "fallback_url": f"{get_settings().api_prefix}/status/{task_id}",
+            },
             retry_after=60,  # 1分钟后重试
         )
 
 
 # 恢复策略注册表 - 简单的映射关系，避免复杂的策略工厂
-RECOVERY_STRATEGIES: Dict[str, Callable] = {
+from typing import Awaitable as _Awaitable
+
+RECOVERY_STRATEGIES: Dict[str, Callable[..., _Awaitable[RecoveryResult]]] = {
     "cache_fallback": cache_fallback_strategy,
     "retry_with_backoff": retry_with_backoff_strategy,
     "polling_fallback": polling_fallback_strategy,
@@ -276,7 +284,7 @@ RECOVERY_STRATEGIES: Dict[str, Callable] = {
 
 
 async def execute_recovery_strategy(
-    strategy_name: str, **kwargs
+    strategy_name: str, **kwargs: Any
 ) -> Optional[RecoveryResult]:
     """
     执行恢复策略 - 统一的策略调用接口

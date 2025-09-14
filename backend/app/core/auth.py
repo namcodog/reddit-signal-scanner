@@ -9,18 +9,21 @@ Linus原则：
 """
 
 import logging
-from typing import Optional, List, Annotated, Callable
 from datetime import datetime
+from typing import Annotated, Any, Callable, List, Optional
 
-from fastapi import Depends, HTTPException, status, Request
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+import jwt
+from fastapi import Depends, HTTPException, Request, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
-import jwt
 
-from .jwt_handler import get_jwt_handler, TokenPayload
+from ..schemas.contracts.auth_contract import (
+    UserContext as ContractUserContext,
+)
 from .config import get_settings
-from ..database import get_db_session
+from .database import get_session
+from .jwt_handler import get_jwt_handler
 
 # 初始化logger
 logger = logging.getLogger(__name__)
@@ -51,11 +54,23 @@ class CurrentUser(BaseModel):
         """检查是否有所有权限"""
         return all(p in self.permissions for p in permissions)
 
+    def to_contract(
+        self, session_id: str, expires_at: Optional[datetime] = None
+    ) -> ContractUserContext:
+        """导出契约化的用户上下文，服务于多租户与权限边界清晰化。"""
+        return ContractUserContext(
+            user_id=self.user_id,
+            tenant_id=self.tenant_id,
+            permissions=self.permissions,
+            session_id=session_id,
+            expires_at=expires_at or (datetime.utcnow()),
+        )
+
 
 class AuthenticationError(HTTPException):
     """认证错误 - 统一异常格式"""
 
-    def __init__(self, detail: str = "身份验证失败"):
+    def __init__(self, detail: str = "身份验证失败") -> None:
         super().__init__(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=detail,
@@ -66,14 +81,14 @@ class AuthenticationError(HTTPException):
 class PermissionError(HTTPException):
     """权限错误"""
 
-    def __init__(self, detail: str = "权限不足"):
+    def __init__(self, detail: str = "权限不足") -> None:
         super().__init__(status_code=status.HTTP_403_FORBIDDEN, detail=detail)
 
 
 class TenantAccessError(HTTPException):
     """租户访问错误"""
 
-    def __init__(self, detail: str = "租户访问被拒绝"):
+    def __init__(self, detail: str = "租户访问被拒绝") -> None:
         super().__init__(status_code=status.HTTP_403_FORBIDDEN, detail=detail)
 
 
@@ -108,7 +123,8 @@ async def get_required_token(
 
 
 async def authenticate_user(
-    token: str = Depends(get_required_token), db: AsyncSession = Depends(get_db_session)
+    token: str = Depends(get_required_token),
+    db: AsyncSession = Depends(get_session),
 ) -> CurrentUser:
     """核心用户认证 - 验证Token并返回用户信息"""
     jwt_handler = get_jwt_handler()
@@ -148,7 +164,7 @@ async def authenticate_user(
 
 async def authenticate_optional_user(
     token: Optional[str] = Depends(get_optional_token),
-    db: AsyncSession = Depends(get_db_session),
+    db: AsyncSession = Depends(get_session),
 ) -> Optional[CurrentUser]:
     """可选用户认证 - Token可能不存在"""
     if not token:
@@ -176,7 +192,7 @@ async def authenticate_optional_user(
 # ===== 权限检查依赖 =====
 
 
-def require_permissions(*required_permissions: str) -> Callable:
+def require_permissions(*required_permissions: str) -> Callable[..., Any]:
     """权限检查装饰器工厂"""
 
     async def permission_dependency(
@@ -192,16 +208,14 @@ def require_permissions(*required_permissions: str) -> Callable:
     return permission_dependency
 
 
-def require_any_permission(*required_permissions: str) -> Callable:
+def require_any_permission(*required_permissions: str) -> Callable[..., Any]:
     """任一权限检查装饰器工厂"""
 
     async def permission_dependency(
         current_user: CurrentUser = Depends(authenticate_user),
     ) -> CurrentUser:
         if not current_user.has_any_permission(list(required_permissions)):
-            raise PermissionError(
-                f"需要以下权限之一: {', '.join(required_permissions)}"
-            )
+            raise PermissionError(f"需要以下权限之一: {', '.join(required_permissions)}")
         return current_user
 
     return permission_dependency
@@ -219,7 +233,9 @@ async def verify_tenant_access(
     return current_user
 
 
-def require_tenant_access(tenant_id_param: str = "tenant_id") -> Callable:
+def require_tenant_access(
+    tenant_id_param: str = "tenant_id",
+) -> Callable[..., Any]:
     """租户访问检查装饰器工厂
 
     Args:
@@ -227,7 +243,8 @@ def require_tenant_access(tenant_id_param: str = "tenant_id") -> Callable:
     """
 
     async def tenant_dependency(
-        request: Request, current_user: CurrentUser = Depends(authenticate_user)
+        request: Request,
+        current_user: CurrentUser = Depends(authenticate_user),
     ) -> CurrentUser:
         # 从路径参数获取租户ID
         path_tenant_id = request.path_params.get(tenant_id_param)
@@ -297,9 +314,9 @@ async def extract_tenant_from_token(request: Request) -> Optional[str]:
         token = auth_header.split(" ")[1]
         jwt_handler = get_jwt_handler()
 
-        # 获取Token信息（不验证签名）
-        token_info = jwt_handler.get_token_info(token)
-        return token_info.get("tenant_id")
+        # 使用合同化解码，返回严格的 JWTPayload
+        payload = jwt_handler.decode_token_to_contract(token)
+        return payload.tenant
 
     except Exception:
         return None
@@ -310,7 +327,7 @@ async def extract_tenant_from_token(request: Request) -> Optional[str]:
 
 def create_auth_response_headers(
     access_token: str, refresh_token: Optional[str] = None
-) -> dict:
+) -> dict[str, str]:
     """创建认证响应头"""
     headers = {
         "X-Token-Type": "Bearer",
@@ -370,7 +387,7 @@ auth_cache = AuthCache()
 # ===== 调试和诊断工具 =====
 
 
-async def get_auth_debug_info(request: Request) -> dict:
+async def get_auth_debug_info(request: Request) -> dict[str, Any]:
     """获取认证调试信息"""
     return {
         "headers": dict(request.headers),

@@ -10,10 +10,11 @@
  * - 友好的错误提示和加载状态
  */
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import InputValidator from '@/utils/validation';
 import HttpClient from '@/utils/httpClient';
+import logger from '@/utils/logger';
 
 // 输入状态枚举
 enum InputState {
@@ -33,20 +34,33 @@ const InputPage: React.FC = () => {
   const [inputState, setInputState] = useState<InputState>(InputState.IDLE);
   const [error, setError] = useState<string>('');
   const [characterCount, setCharacterCount] = useState(0);
+  const validationTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // 实时输入验证
+  // 清理定时器的函数
+  const clearValidationTimer = useCallback(() => {
+    if (validationTimerRef.current) {
+      clearTimeout(validationTimerRef.current);
+      validationTimerRef.current = null;
+    }
+  }, []);
+
+  // 实时输入验证 - 使用防抖
   const validateInput = useCallback((value: string) => {
+    // 清理之前的定时器
+    clearValidationTimer();
+    
     setCharacterCount(value.length);
 
     if (!value.trim()) {
       setError('');
+      setInputState(InputState.IDLE);
       return;
     }
 
     setInputState(InputState.VALIDATING);
 
     // 防抖动验证
-    const timer = setTimeout(() => {
+    validationTimerRef.current = setTimeout(() => {
       const validation = InputValidator.validateProductDescription(value);
       if (!validation.valid) {
         setError(validation.error || '输入无效');
@@ -55,20 +69,21 @@ const InputPage: React.FC = () => {
         setError('');
         setInputState(InputState.IDLE);
       }
+      validationTimerRef.current = null;
     }, 500);
-
-    return () => clearTimeout(timer);
-  }, []);
+  }, [clearValidationTimer]);
 
   // 处理输入变化
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const value = e.target.value;
     setDescription(value);
-
-    // 实时验证清理
-    const cleanup = validateInput(value);
-    return cleanup;
+    validateInput(value);
   };
+
+  // 组件卸载时清理定时器
+  useEffect(() => {
+    return clearValidationTimer;
+  }, [clearValidationTimer]);
 
   // 提交分析请求
   const handleSubmit = async (e: React.FormEvent) => {
@@ -108,7 +123,7 @@ const InputPage: React.FC = () => {
       // 跳转到分析页面
       navigate(`/analysis/${taskId}`);
     } catch (error) {
-      console.error('Submit failed:', error);
+      logger.error('Submit failed:', error as Error);
 
       // 简化的错误处理 - 遵循Linus原则
       const errorMessage =
@@ -143,7 +158,7 @@ const InputPage: React.FC = () => {
       case InputState.SUBMITTING:
         return '正在提交...';
       default:
-        return '开始分析';
+        return '开始 5 分钟分析';
     }
   };
 
@@ -180,6 +195,7 @@ const InputPage: React.FC = () => {
 
               <textarea
                 id="productDescription"
+                data-testid="product-description-input"
                 value={description}
                 onChange={handleInputChange}
                 disabled={inputState === InputState.SUBMITTING}
@@ -194,6 +210,7 @@ const InputPage: React.FC = () => {
               <div className="flex justify-between items-center mt-3">
                 <div className="flex items-center space-x-4">
                   <span
+                    data-testid="character-count"
                     className={`text-sm ${
                       characterCount > 1800
                         ? 'text-red-600'
@@ -222,7 +239,7 @@ const InputPage: React.FC = () => {
               <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
                 <div className="flex items-center">
                   <div className="text-red-600 mr-2">⚠️</div>
-                  <p className="text-red-700 text-sm">{error}</p>
+                  <p data-testid="error-message" className="text-red-700 text-sm">{error}</p>
                 </div>
               </div>
             )}
@@ -231,6 +248,7 @@ const InputPage: React.FC = () => {
             <div className="flex justify-center">
               <button
                 type="submit"
+                data-testid="submit-button"
                 disabled={!canSubmit}
                 className={`
                   px-8 py-3 text-lg font-semibold rounded-lg transition-all duration-200

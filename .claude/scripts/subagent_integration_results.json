@@ -1,0 +1,70 @@
+{
+  "quality_gate": {
+    "quality_gate_available": true,
+    "bad_code_blocked": true,
+    "good_code_passed": false,
+    "bad_output": "🎯 开始质量检查 - 文件数量: 1\n📁 检查文件: /var/folders/04/d68k8jd51pn8vlrk16dkdkyc0000gn/T/tmp5vzmiw50.py\n🔍 运行MyPy严格类型检查...\n🎨 运行Flake8风格检查...\n⚫ 运行Black格式检查...\n🛡️ 运行安全检查...\n============================================================\n🏛️ Reddit Signal Scanner - 质量门控报告\n============================================================\n📊 综合得分: 79.0/100\n📁 检查文件: 1个\n⏰ 检查时间: 2025-09-04T13:23:42.754065\n\n📋 详细结果:\n  🔍 MyPy类型检查: 80.0/100 (4个错误)\n  🎨 Flake8风格检查: 70.0/100 (3个错误, 0个警告)\n  ⚫ Black格式检查: 80.0/100 (需要格式化)\n  🛡️ 安全检查: 100.0/100 (通过)\n\n🚨 严重问题 (必须修复):\n  ❌ MyPy错误: 4个 (标准: 0)\n     其中 1 个是 'type: ignore' - 违反Linus原则！\n  ❌ Flake8错误: 3个 (标准: 0)\n  ❌ 代码格式不符合Black标准\n  ❌ 综合得分过低: 79.0 (标准: ≥85)\n\n❌ 质量门控: 未通过\n🔧 请修复上述问题后重新检查\n============================================================\n",
+    "good_output": "🎯 开始质量检查 - 文件数量: 1\n📁 检查文件: /var/folders/04/d68k8jd51pn8vlrk16dkdkyc0000gn/T/tmpyddcw3c9.py\n🔍 运行MyPy严格类型检查...\n🎨 运行Flake8风格检查...\n⚫ 运行Black格式检查...\n🛡️ 运行安全检查...\n============================================================\n🏛️ Reddit Signal Scanner - 质量门控报告\n============================================================\n📊 综合得分: 93.0/100\n📁 检查文件: 1个\n⏰ 检查时间: 2025-09-04T13:23:43.202383\n\n📋 详细结果:\n  🔍 MyPy类型检查: 100.0/100 (0个错误)\n  🎨 Flake8风格检查: 90.0/100 (1个错误, 0个警告)\n  ⚫ Black格式检查: 80.0/100 (需要格式化)\n  🛡️ 安全检查: 100.0/100 (通过)\n\n🚨 严重问题 (必须修复):\n  ❌ Flake8错误: 1个 (标准: 0)\n  ❌ 代码格式不符合Black标准\n\n❌ 质量门控: 未通过\n🔧 请修复上述问题后重新检查\n============================================================\n"
+  },
+  "subagent_files": {
+    "pre-code-validator.md": {
+      "exists": true,
+      "has_yaml_header": true,
+      "has_name": true,
+      "has_description": true,
+      "has_tools": true,
+      "valid_format": true
+    },
+    "type-enforcer.md": {
+      "exists": true,
+      "has_yaml_header": true,
+      "has_name": true,
+      "has_description": true,
+      "has_tools": true,
+      "valid_format": true
+    },
+    "design-reviewer.md": {
+      "exists": true,
+      "has_yaml_header": true,
+      "has_name": true,
+      "has_description": true,
+      "has_tools": true,
+      "valid_format": true
+    }
+  },
+  "workflow": {
+    "workflow_available": true,
+    "status_works": true,
+    "output": "\n📊 Reddit Signal Scanner - 项目状态\n==================================================\n✅ 已完成: 32/69 任务 (46.4%)\n📋 可开始: 4 个任务\n   下一个任务:\n     • prd03-07: 实现分析引擎监控和调优 [M]\n     • prd04-04: 实现任务状态管理和监控 [M]\n     • prd05-03: 实现输入页面组件 [M]\n     ... 还有 1 个任务\n⏸️ 被阻塞: 33 个任务等待依赖\n\n📋 PRD完成度:\n   ✅ PRD-01: 10/10 (100%)\n   ✅ PRD-02: 9/9 (100%)\n   🔄 PRD-03: 6/8 (75%)\n   🔄 PRD-04: 3/8 (38%)\n   🔄 PRD-05: 2/9 (22%)\n   🔄 PRD-06: 2/8 (25%)\n   ⏸️ PRD-07: 0/8 (0%)\n   ⏸️ PRD-08: 0/9 (0%)\n\n⏰ 最后更新: 2025-09-04T10:59:58.260620\n"
+  },
+  "mypy_strict": {
+    "missing_types": {
+      "exit_code": 1,
+      "has_errors": true,
+      "error_count": 1,
+      "output": "/var/folders/04/d68k8jd51pn8vlrk16dkdkyc0000gn/T/tmpatk_vspz.py:2: error: Function is missing a type annotation  [no-untyped-def]\nFound 1 error in 1 file (checked 1 source file)\n"
+    },
+    "type_ignore": {
+      "exit_code": 1,
+      "has_errors": true,
+      "error_count": 3,
+      "output": "/var/folders/04/d68k8jd51pn8vlrk16dkdkyc0000gn/T/tmp81byf8ew.py:2: error: Missing type parameters for generic type \"dict\"  [type-arg]\n/var/folders/04/d68k8jd51pn8vlrk16dkdkyc0000gn/T/tmp81byf8ew.py:3:"
+    },
+    "any_abuse": {
+      "exit_code": 0,
+      "has_errors": false,
+      "error_count": 0,
+      "output": "Success: no issues found in 1 source file\n"
+    },
+    "good_types": {
+      "exit_code": 0,
+      "has_errors": false,
+      "error_count": 0,
+      "output": "Success: no issues found in 1 source file\n"
+    }
+  },
+  "agent_coordination": {
+    "coordinator_available": false,
+    "note": "Agent协调器可能需要单独实现"
+  }
+}

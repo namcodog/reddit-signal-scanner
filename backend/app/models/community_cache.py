@@ -12,18 +12,17 @@ from decimal import Decimal
 from typing import Optional
 
 from sqlalchemy import (
-    Boolean,
-    Column,
-    String,
-    Integer,
     DECIMAL,
-    TIMESTAMP,
-    Index,
     CheckConstraint,
+    Index,
+    Integer,
+    String,
     text,
 )
 from sqlalchemy.dialects.postgresql import TIMESTAMP as PostgreSQL_TIMESTAMP
 from sqlalchemy.sql import func
+from sqlalchemy.orm import Mapped, mapped_column
+
 from .base import Base
 
 
@@ -40,7 +39,7 @@ class CommunityCache(Base):
     __tablename__ = "community_cache"
 
     # 主键：Reddit社区名称（自然主键，避免无意义的数字ID）
-    community_name: str = Column(
+    community_name: Mapped[str] = mapped_column(
         String(100), primary_key=True, comment="Reddit社区名称，如r/startups"
     )
 
@@ -49,14 +48,14 @@ class CommunityCache(Base):
     # ====================================================================
 
     # 最后抓取时间：NULL表示从未抓取（避免特殊值处理）
-    last_crawled_at: Optional[datetime] = Column(
+    last_crawled_at: Mapped[Optional[datetime]] = mapped_column(
         PostgreSQL_TIMESTAMP(timezone=True),
         nullable=True,  # 允许NULL，统一"首次抓取"逻辑
         comment="最后抓取时间，NULL表示从未抓取",
     )
 
     # 缓存TTL：每个社区可以有不同的缓存策略
-    ttl_seconds: int = Column(
+    ttl_seconds: Mapped[int] = mapped_column(
         Integer,
         nullable=False,
         server_default=text("3600"),  # 默认1小时
@@ -64,7 +63,7 @@ class CommunityCache(Base):
     )
 
     # 缓存容量：帖子数量，用于容量管理
-    posts_cached: int = Column(
+    posts_cached: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default=text("0"), comment="当前缓存的帖子数量"
     )
 
@@ -73,7 +72,7 @@ class CommunityCache(Base):
     # ====================================================================
 
     # 质量评分：基于数据完整性、新鲜度、用户反馈的综合评分
-    quality_score: Decimal = Column(
+    quality_score: Mapped[Decimal] = mapped_column(
         DECIMAL(3, 2),  # 0.00 - 1.00 精确到小数点后2位
         nullable=False,
         server_default=text("0.50"),  # 默认中等质量
@@ -85,12 +84,12 @@ class CommunityCache(Base):
     # ====================================================================
 
     # 命中计数：LRU清理策略的核心指标
-    hit_count: int = Column(
+    hit_count: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default=text("0"), comment="缓存命中次数"
     )
 
     # 最后访问时间：LRU算法的时间维度
-    last_hit_at: Optional[datetime] = Column(
+    last_hit_at: Mapped[Optional[datetime]] = mapped_column(
         PostgreSQL_TIMESTAMP(timezone=True), nullable=True, comment="最后访问时间"
     )
 
@@ -99,7 +98,7 @@ class CommunityCache(Base):
     # ====================================================================
 
     # 爬虫优先级：1(最高优先级) - 100(最低优先级)
-    crawl_priority: int = Column(
+    crawl_priority: Mapped[int] = mapped_column(
         Integer,
         nullable=False,
         server_default=text("50"),  # 默认中等优先级
@@ -110,14 +109,14 @@ class CommunityCache(Base):
     # 审计字段：自动维护
     # ====================================================================
 
-    created_at: datetime = Column(
+    created_at: Mapped[datetime] = mapped_column(
         PostgreSQL_TIMESTAMP(timezone=True),
         nullable=False,
         server_default=func.current_timestamp(),
         comment="缓存条目创建时间",
     )
 
-    updated_at: datetime = Column(
+    updated_at: Mapped[datetime] = mapped_column(
         PostgreSQL_TIMESTAMP(timezone=True),
         nullable=False,
         server_default=func.current_timestamp(),
@@ -193,12 +192,7 @@ class CommunityCache(Base):
             "hit_count >= 0", name="ck_community_cache_hit_count_non_negative"
         ),
         # 表注释
-        {
-            "comment": (
-                "社区缓存元数据表 - Reddit社区数据的缓存状态管理，"
-                "支持LRU + TTL + Priority三重缓存策略"
-            )
-        },
+        {"comment": ("社区缓存元数据表 - Reddit社区数据的缓存状态管理，" "支持LRU + TTL + Priority三重缓存策略")},
     )
 
     # ====================================================================
@@ -214,7 +208,8 @@ class CommunityCache(Base):
         if self.last_crawled_at is None:
             return True  # 从未抓取，视为过期
 
-        expiry_time = self.last_crawled_at + timedelta(seconds=self.ttl_seconds)
+        # mypy: self.ttl_seconds 是 ORM 字段，这里显式转换为 int
+        expiry_time = self.last_crawled_at + timedelta(seconds=int(self.ttl_seconds))
         return datetime.utcnow() > expiry_time
 
     def increment_hit_count(self) -> None:
@@ -225,7 +220,9 @@ class CommunityCache(Base):
         """
         self.hit_count += 1
 
-    def update_cache_stats(self, posts_count: int, quality: float = None) -> None:
+    def update_cache_stats(
+        self, posts_count: int, quality: Optional[float] = None
+    ) -> None:
         """更新缓存统计信息
 
         Args:
@@ -247,24 +244,25 @@ class CommunityCache(Base):
             float: 优先级评分，分数越高越应该优先抓取
         """
         # 基础优先级（1-100 转换为 100-1，数值越高越优先）
-        base_score = 101 - self.crawl_priority
+        base_score = 101 - int(self.crawl_priority)
 
         # 过期程度加权（过期时间越长，优先级越高）
-        expiry_weight = 0
+        expiry_weight: float = 0.0
         if self.last_crawled_at:
+            last_update = self.last_crawled_at
             hours_since_update = (
-                datetime.utcnow() - self.last_crawled_at
+                datetime.utcnow() - last_update
             ).total_seconds() / 3600
-            ttl_hours = self.ttl_seconds / 3600
+            ttl_hours = float(int(self.ttl_seconds)) / 3600.0
             if hours_since_update > ttl_hours:
-                expiry_weight = min(50, (hours_since_update - ttl_hours) * 2)
+                expiry_weight = min(50.0, (hours_since_update - ttl_hours) * 2.0)
         else:
-            expiry_weight = 100  # 从未抓取，最高加权
+            expiry_weight = 100.0  # 从未抓取，最高加权
 
         # 访问热度加权（热度越高，优先级越高）
-        heat_weight = min(20, self.hit_count * 0.1)
+        heat_weight = min(20.0, float(int(self.hit_count)) * 0.1)
 
-        return base_score + expiry_weight + heat_weight
+        return float(base_score) + expiry_weight + heat_weight
 
     def __repr__(self) -> str:
         """调试友好的字符串表示"""

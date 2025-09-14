@@ -8,15 +8,40 @@
  * - 智能重连机制
  */
 
+import logger from '@/utils/logger';
+
+// 四步骤分析枚举 - 基于v0界面设计
+export enum AnalysisStep {
+  DATA_COLLECTION = 'data-collection',
+  INTELLIGENT_ANALYSIS = 'intelligent-analysis', 
+  INSIGHT_GENERATION = 'insight-generation',
+  REPORT_COMPILATION = 'report-compilation'
+}
+
+// 实时统计数据接口
+export interface AnalysisStats {
+  communities_found: number;
+  posts_analyzed: number;
+  insights_generated: number;
+  processing_time_seconds: number;
+}
+
+// 扩展的任务状态接口 - 支持v0界面需求
 export interface TaskStatus {
   task_id: string;
   status: 'pending' | 'processing' | 'completed' | 'failed';
-  progress?: number;
+  progress?: number; // 整体进度 0-100
   message?: string;
   created_at?: string;
   started_at?: string;
   completed_at?: string;
   error_message?: string;
+  
+  // v0界面扩展字段
+  current_step?: AnalysisStep;
+  step_progress?: number; // 当前步骤进度 0-100
+  estimated_remaining_seconds?: number;
+  stats?: AnalysisStats;
 }
 
 export interface SSEConfig {
@@ -96,8 +121,7 @@ export class SSEManager {
         this.isConnected = true;
         this.retryCount = 0;
         this.startHeartbeat();
-
-        console.log(`SSE连接已建立: ${taskId}`);
+        logger.info(`SSE连接已建立: ${taskId}`);
       };
 
       this.eventSource.onmessage = event => {
@@ -110,7 +134,7 @@ export class SSEManager {
             this.disconnect();
           }
         } catch (error) {
-          console.error('SSE消息解析失败:', error);
+          logger.error('SSE消息解析失败:', error as Error);
           this.onError?.(new Error('数据格式错误'));
         }
       };
@@ -123,7 +147,7 @@ export class SSEManager {
       // 监听心跳事件
       this.eventSource.addEventListener('heartbeat', event => {
         const data = JSON.parse(event.data);
-        console.log('SSE心跳收到:', data.timestamp);
+        logger.debug('SSE心跳收到:', data.timestamp);
       });
     } catch (error) {
       this.handleConnectionError(error as Error);
@@ -137,7 +161,7 @@ export class SSEManager {
     this.isConnected = false;
     this.stopHeartbeat();
 
-    console.error('SSE连接错误:', error.message);
+    logger.error('SSE连接错误:', error);
 
     // 判断是否需要重试
     const shouldRetry = this.retryCount < this.config.maxRetries;
@@ -147,7 +171,7 @@ export class SSEManager {
 
     if (shouldRetry) {
       this.retryCount++;
-      console.log(
+      logger.info(
         `SSE重连第${this.retryCount}次，${this.config.retryDelay}ms后重试`
       );
 
@@ -158,7 +182,7 @@ export class SSEManager {
         }
       }, this.config.retryDelay);
     } else {
-      console.log('SSE重连次数已达上限，放弃连接');
+      logger.warn('SSE重连次数已达上限，放弃连接');
     }
   }
 
@@ -176,7 +200,7 @@ export class SSEManager {
 
       // 检查连接状态
       if (this.eventSource.readyState !== EventSource.OPEN) {
-        console.warn('SSE连接异常，准备重连');
+        logger.warn('SSE连接异常，准备重连');
         this.handleConnectionError(new Error('连接状态异常'));
       }
     }, this.config.heartbeatInterval);
@@ -287,24 +311,24 @@ export class PollingManager {
         this.currentDelay = this.baseDelay;
         this.pollTimer = window.setTimeout(poll, this.currentDelay);
       } catch (error) {
-        console.error('轮询请求失败:', error);
+        logger.error('轮询请求失败:', error as Error);
         onError(error as Error);
 
         // 指数退避重试 - Linus修复
         if (this.attemptCount < this.config.maxAttempts) {
           this.currentDelay = Math.min(this.currentDelay * 2, this.maxDelay);
-          console.log(
+          logger.warn(
             `轮询失败，${this.currentDelay}ms后重试 (第${this.attemptCount}次)`
           );
           this.pollTimer = window.setTimeout(poll, this.currentDelay);
         } else {
-          console.log('轮询达到最大次数，停止轮询');
+          logger.warn('轮询达到最大次数，停止轮询');
           this.stopPolling();
         }
       }
     };
 
-    console.log(`开始轮询任务状态: ${taskId}`);
+    logger.info(`开始轮询任务状态: ${taskId}`);
     poll();
   }
 
@@ -354,7 +378,7 @@ export class RealTimeTaskService {
     onError: SSEErrorHandler,
     onComplete: () => void
   ): void {
-    console.log(`开始监听任务状态: ${taskId}`);
+    logger.info(`开始监听任务状态: ${taskId}`);
 
     // 首先尝试SSE
     this.currentStrategy = 'sse';
@@ -363,12 +387,12 @@ export class RealTimeTaskService {
       taskId,
       onStatusUpdate,
       error => {
-        console.warn('SSE错误:', error.message);
+        logger.warn('SSE错误:', error.message);
         onError(error);
       },
       willRetry => {
         if (!willRetry) {
-          console.log('SSE连接失败，切换到轮询模式');
+          logger.warn('SSE连接失败，切换到轮询模式');
           this.fallbackToPolling(taskId, onStatusUpdate, onError, onComplete);
         }
       }
@@ -417,6 +441,61 @@ export class RealTimeTaskService {
       polling: this.pollingManager.getPollingState(),
     };
   }
+}
+
+// 四步骤定义配置 - 基于v0界面设计
+export const ANALYSIS_STEPS = [
+  {
+    step: AnalysisStep.DATA_COLLECTION,
+    title: '数据收集',
+    description: '扫描Reddit社区，收集相关帖子和评论',
+    icon: '🔍',
+    estimated_duration: 60
+  },
+  {
+    step: AnalysisStep.INTELLIGENT_ANALYSIS,
+    title: '智能分析', 
+    description: '使用AI分析用户需求和市场信号',
+    icon: '🧠',
+    estimated_duration: 90
+  },
+  {
+    step: AnalysisStep.INSIGHT_GENERATION,
+    title: '洞察生成',
+    description: '识别商业机会和竞争态势',
+    icon: '💡',
+    estimated_duration: 45
+  },
+  {
+    step: AnalysisStep.REPORT_COMPILATION,
+    title: '报告编译',
+    description: '生成结构化的分析报告',
+    icon: '📊',
+    estimated_duration: 30
+  }
+] as const;
+
+// 辅助函数：获取步骤索引
+export function getStepIndex(step: AnalysisStep): number {
+  return ANALYSIS_STEPS.findIndex(s => s.step === step);
+}
+
+// 辅助函数：计算整体进度
+export function calculateOverallProgress(currentStep: AnalysisStep, stepProgress: number): number {
+  const stepIndex = getStepIndex(currentStep);
+  if (stepIndex === -1) return 0;
+  
+  const completedSteps = stepIndex;
+  const currentStepWeight = stepProgress / 100;
+  return Math.round(((completedSteps + currentStepWeight) / ANALYSIS_STEPS.length) * 100);
+}
+
+// 辅助函数：格式化剩余时间
+export function formatRemainingTime(seconds: number): string {
+  if (seconds < 60) return `${seconds}秒`;
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  return remainingSeconds > 0 ? `${minutes}分${remainingSeconds}秒` : `${minutes}分钟`;
 }
 
 // 导出单例实例

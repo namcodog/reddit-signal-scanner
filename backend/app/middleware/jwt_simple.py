@@ -9,10 +9,10 @@ JWT认证中间件 - Linus式极简实现
 """
 
 import logging
-from typing import Optional, Set
+from typing import Any, Awaitable, Callable, Optional, Set, cast
 
 import jwt
-from fastapi import Request
+from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp
@@ -40,6 +40,7 @@ class JWTMiddleware(BaseHTTPMiddleware):
         "/redoc",
         "/openapi.json",
         "/health",
+        "/api",  # 冒烟用途：临时放行API根路径
         "/api/auth/login",
         "/api/auth/register",
         "/api/auth/refresh",
@@ -51,7 +52,9 @@ class JWTMiddleware(BaseHTTPMiddleware):
         self.secret_key = self.settings.jwt_secret_key
         logger.info("JWT中间件已初始化 - Linus简化版")
 
-    async def dispatch(self, request: Request, call_next) -> any:
+    async def dispatch(
+        self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
         """中间件核心 - 20行搞定所有逻辑"""
 
         # 跳过无需认证的路径
@@ -108,8 +111,8 @@ class JWTMiddleware(BaseHTTPMiddleware):
 # 便捷的认证检查函数 - 替代复杂的依赖注入
 def get_auth(request: Request) -> AuthContext:
     """获取认证上下文，失败抛异常"""
-    auth = getattr(request.state, "auth", None)
-    if not auth:
+    auth = cast(Optional[AuthContext], getattr(request.state, "auth", None))
+    if auth is None:
         raise AuthError("用户未认证")
     return auth
 
@@ -139,7 +142,7 @@ def require_admin(request: Request) -> AuthContext:
 
 
 # 安装函数
-def install_jwt_middleware(app) -> None:
+def install_jwt_middleware(app: FastAPI) -> None:
     """安装JWT中间件"""
     app.add_middleware(JWTMiddleware)
     logger.info("JWT中间件已安装 - Linus极简版")

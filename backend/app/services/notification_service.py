@@ -8,15 +8,15 @@
 - 完整的错误处理和重试机制
 """
 
-import logging
-from typing import Dict, List, Optional, Any, Union
-from datetime import datetime
-from enum import Enum
-import json
 import asyncio
+import json
+import logging
 from dataclasses import dataclass
+from datetime import datetime, timezone
+from enum import Enum
+from typing import Any, Dict, List, Mapping, Optional, Union
 
-from ..core.config import settings
+from ..core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -49,18 +49,18 @@ class NotificationMessage:
     category: str = "system"
 
     # 可选的结构化数据
-    data: Optional[Dict[str, Any]] = None
+    data: Optional[Mapping[str, Any]] = None
 
     # 通知目标
     channels: Optional[List[NotificationChannel]] = None
 
     # 元数据
-    timestamp: datetime = None
+    timestamp: Optional[datetime] = None
     source: str = "reddit_signal_scanner"
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.timestamp is None:
-            self.timestamp = datetime.utcnow()
+            self.timestamp = datetime.now(timezone.utc)
 
         if self.channels is None:
             # 根据级别确定默认通知渠道
@@ -83,39 +83,45 @@ class NotificationService:
     - 通知历史记录
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
+        self.settings = get_settings()
         self.adapters = self._initialize_adapters()
-        self.enabled = getattr(settings, "NOTIFICATIONS_ENABLED", True)
+        self.enabled = bool(getattr(self.settings, "NOTIFICATIONS_ENABLED", True))
 
     def _initialize_adapters(self) -> Dict[NotificationChannel, Any]:
         """初始化通知适配器"""
-        adapters = {}
+        adapters: Dict[NotificationChannel, Any] = {}
 
         # Slack适配器
-        if hasattr(settings, "SLACK_WEBHOOK_URL") and settings.SLACK_WEBHOOK_URL:
+        if (
+            hasattr(self.settings, "SLACK_WEBHOOK_URL")
+            and self.settings.SLACK_WEBHOOK_URL
+        ):
             adapters[NotificationChannel.SLACK] = SlackNotificationAdapter(
-                webhook_url=settings.SLACK_WEBHOOK_URL
+                webhook_url=self.settings.SLACK_WEBHOOK_URL
             )
 
         # 邮件适配器
-        if hasattr(settings, "SMTP_HOST") and settings.SMTP_HOST:
+        if hasattr(self.settings, "SMTP_HOST") and self.settings.SMTP_HOST:
             adapters[NotificationChannel.EMAIL] = EmailNotificationAdapter(
-                smtp_host=settings.SMTP_HOST,
-                smtp_port=getattr(settings, "SMTP_PORT", 587),
-                smtp_user=getattr(settings, "SMTP_USER", ""),
-                smtp_password=getattr(settings, "SMTP_PASSWORD", ""),
+                smtp_host=self.settings.SMTP_HOST,
+                smtp_port=getattr(self.settings, "SMTP_PORT", 587),
+                smtp_user=getattr(self.settings, "SMTP_USER", ""),
+                smtp_password=getattr(self.settings, "SMTP_PASSWORD", ""),
                 from_email=getattr(
-                    settings, "NOTIFICATIONS_FROM_EMAIL", "noreply@reddit-scanner.com"
+                    self.settings,
+                    "NOTIFICATIONS_FROM_EMAIL",
+                    "noreply@reddit-scanner.com",
                 ),
             )
 
         # Webhook适配器
         if (
-            hasattr(settings, "NOTIFICATION_WEBHOOK_URL")
-            and settings.NOTIFICATION_WEBHOOK_URL
+            hasattr(self.settings, "NOTIFICATION_WEBHOOK_URL")
+            and self.settings.NOTIFICATION_WEBHOOK_URL
         ):
             adapters[NotificationChannel.WEBHOOK] = WebhookNotificationAdapter(
-                webhook_url=settings.NOTIFICATION_WEBHOOK_URL
+                webhook_url=self.settings.NOTIFICATION_WEBHOOK_URL
             )
 
         # 日志适配器（始终可用）
@@ -141,9 +147,10 @@ class NotificationService:
             logger.debug("通知功能已禁用，跳过发送")
             return {}
 
-        results = {}
+        results: Dict[NotificationChannel, bool] = {}
 
-        for channel in message.channels:
+        channels = message.channels or []
+        for channel in channels:
             if channel not in self.adapters:
                 logger.warning(f"通知渠道未配置: {channel}")
                 results[channel] = False
@@ -159,8 +166,9 @@ class NotificationService:
                 else:
                     logger.warning(f"通知发送失败: {channel.value}")
 
-            except Exception as e:
-                logger.error(f"通知发送异常 {channel.value}: {e}")
+            except (RuntimeError, ValueError, TypeError, OSError) as e:
+                # 理论上适配器内部已做细粒度异常处理；此处兜底不抛出
+                logger.error("通知发送异常 %s: %s", channel.value, e)
                 results[channel] = False
 
         # 记录通知历史
@@ -170,7 +178,7 @@ class NotificationService:
 
     def send_cleanup_failure_alert(
         self, task_id: str, error: str, task_type: str = "unknown"
-    ):
+    ) -> Dict[NotificationChannel, bool]:
         """发送清理失败告警"""
         message = NotificationMessage(
             title="🚨 数据清理任务失败",
@@ -183,8 +191,8 @@ class NotificationService:
         return self.send_notification(message)
 
     def send_cleanup_success_summary(
-        self, results: Dict[str, Any], task_type: str = "daily_cleanup"
-    ):
+        self, results: Mapping[str, Any], task_type: str = "daily_cleanup"
+    ) -> Dict[NotificationChannel, bool]:
         """发送清理成功摘要"""
         total_cleaned = results.get("total_cleaned", 0)
         duration = results.get("duration_seconds", 0)
@@ -212,8 +220,11 @@ class NotificationService:
             )
 
             return self.send_notification(message)
+        return {}
 
-    def send_emergency_cleanup_alert(self, reason: str, aggressive: bool = False):
+    def send_emergency_cleanup_alert(
+        self, reason: str, aggressive: bool = False
+    ) -> Dict[NotificationChannel, bool]:
         """发送紧急清理告警"""
         message = NotificationMessage(
             title="⚠️ 紧急数据清理已触发",
@@ -227,7 +238,7 @@ class NotificationService:
 
     def send_database_size_alert(
         self, current_size_gb: float, threshold_gb: float = 100.0
-    ):
+    ) -> Optional[Dict[NotificationChannel, bool]]:
         """发送数据库大小告警"""
         if current_size_gb > threshold_gb:
             message = NotificationMessage(
@@ -239,21 +250,23 @@ class NotificationService:
             )
 
             return self.send_notification(message)
+        return None
 
     def _record_notification_history(
         self, message: NotificationMessage, results: Dict[NotificationChannel, bool]
-    ):
+    ) -> None:
         """记录通知历史"""
         # TODO: 可以保存到数据库或文件
+        ts = message.timestamp or datetime.now(timezone.utc)
         logger.info(
             f"通知记录",
             extra={
                 "category": message.category,
                 "level": message.level.value,
                 "title": message.title,
-                "channels": [ch.value for ch in message.channels],
+                "channels": [ch.value for ch in (message.channels or [])],
                 "results": {ch.value: success for ch, success in results.items()},
-                "timestamp": message.timestamp.isoformat(),
+                "timestamp": ts.isoformat(),
             },
         )
 
@@ -269,13 +282,14 @@ class BaseNotificationAdapter:
 class SlackNotificationAdapter(BaseNotificationAdapter):
     """Slack通知适配器"""
 
-    def __init__(self, webhook_url: str):
+    def __init__(self, webhook_url: str) -> None:
         self.webhook_url = webhook_url
 
     def send(self, message: NotificationMessage) -> bool:
         """发送Slack通知"""
         try:
             import requests
+            from requests import RequestException
 
             # Slack消息格式
             color_map = {
@@ -285,6 +299,7 @@ class SlackNotificationAdapter(BaseNotificationAdapter):
                 NotificationLevel.CRITICAL: "#8B0000",  # 暗红色
             }
 
+            ts = message.timestamp or datetime.now(timezone.utc)
             payload = {
                 "attachments": [
                     {
@@ -292,7 +307,7 @@ class SlackNotificationAdapter(BaseNotificationAdapter):
                         "title": message.title,
                         "text": message.content,
                         "footer": f"{message.source} | {message.category}",
-                        "ts": int(message.timestamp.timestamp()),
+                        "ts": int(ts.timestamp()),
                     }
                 ]
             }
@@ -301,8 +316,11 @@ class SlackNotificationAdapter(BaseNotificationAdapter):
 
             return response.status_code == 200
 
-        except Exception as e:
-            logger.error(f"Slack通知发送失败: {e}")
+        except RequestException as e:
+            logger.error("Slack通知网络异常: %s", e)
+            return False
+        except (ValueError, RuntimeError) as e:
+            logger.error("Slack通知发送失败: %s", e)
             return False
 
 
@@ -316,7 +334,7 @@ class EmailNotificationAdapter(BaseNotificationAdapter):
         smtp_user: str,
         smtp_password: str,
         from_email: str,
-    ):
+    ) -> None:
         self.smtp_host = smtp_host
         self.smtp_port = smtp_port
         self.smtp_user = smtp_user
@@ -327,11 +345,14 @@ class EmailNotificationAdapter(BaseNotificationAdapter):
         """发送邮件通知"""
         try:
             import smtplib
-            from email.mime.text import MIMEText
+            from smtplib import SMTPException
             from email.mime.multipart import MIMEMultipart
+            from email.mime.text import MIMEText
 
-            # 获取收件人列表
-            to_emails = getattr(settings, "NOTIFICATION_EMAIL_RECIPIENTS", [])
+            # 获取收件人列表（运行时读取配置）
+            from app.core.config import get_settings as _get_settings
+
+            to_emails = getattr(_get_settings(), "NOTIFICATION_EMAIL_RECIPIENTS", [])
             if not to_emails:
                 logger.warning("未配置邮件通知收件人")
                 return False
@@ -343,6 +364,7 @@ class EmailNotificationAdapter(BaseNotificationAdapter):
             msg["Subject"] = f"[Reddit Scanner] {message.title}"
 
             # 邮件内容
+            ts = message.timestamp or datetime.now(timezone.utc)
             html_content = f"""
             <html>
             <body>
@@ -353,7 +375,7 @@ class EmailNotificationAdapter(BaseNotificationAdapter):
                     <small>
                         分类: {message.category}<br>
                         级别: {message.level.value}<br>
-                        时间: {message.timestamp.strftime('%Y-%m-%d %H:%M:%S')}
+                        时间: {ts.strftime('%Y-%m-%d %H:%M:%S')}
                     </small>
                 </p>
             </body>
@@ -363,35 +385,44 @@ class EmailNotificationAdapter(BaseNotificationAdapter):
             msg.attach(MIMEText(html_content, "html"))
 
             # 发送邮件
-            with smtplib.SMTP(self.smtp_host, self.smtp_port) as server:
+            with smtplib.SMTP(self.smtp_host, self.smtp_port, timeout=10) as server:
                 server.starttls()
-                server.login(self.smtp_user, self.smtp_password)
+                if self.smtp_user and self.smtp_password:
+                    server.login(self.smtp_user, self.smtp_password)
                 server.send_message(msg)
 
             return True
 
-        except Exception as e:
-            logger.error(f"邮件通知发送失败: {e}")
+        except SMTPException as e:
+            logger.error("邮件通知SMTP异常: %s", e)
+            return False
+        except OSError as e:
+            logger.error("邮件通知网络异常: %s", e)
+            return False
+        except (ValueError, RuntimeError) as e:
+            logger.error("邮件通知发送失败: %s", e)
             return False
 
 
 class WebhookNotificationAdapter(BaseNotificationAdapter):
     """Webhook通知适配器"""
 
-    def __init__(self, webhook_url: str):
+    def __init__(self, webhook_url: str) -> None:
         self.webhook_url = webhook_url
 
     def send(self, message: NotificationMessage) -> bool:
         """发送Webhook通知"""
         try:
             import requests
+            from requests import RequestException
 
+            ts = message.timestamp or datetime.now(timezone.utc)
             payload = {
                 "title": message.title,
                 "content": message.content,
                 "level": message.level.value,
                 "category": message.category,
-                "timestamp": message.timestamp.isoformat(),
+                "timestamp": ts.isoformat(),
                 "source": message.source,
                 "data": message.data,
             }
@@ -405,8 +436,11 @@ class WebhookNotificationAdapter(BaseNotificationAdapter):
 
             return response.status_code in [200, 201, 202]
 
-        except Exception as e:
-            logger.error(f"Webhook通知发送失败: {e}")
+        except RequestException as e:
+            logger.error("Webhook通知网络异常: %s", e)
+            return False
+        except (ValueError, RuntimeError) as e:
+            logger.error("Webhook通知发送失败: %s", e)
             return False
 
 
@@ -446,21 +480,25 @@ def get_notification_service() -> NotificationService:
 
 
 # 便捷函数
-def send_cleanup_failure_alert(task_id: str, error: str, task_type: str = "unknown"):
+def send_cleanup_failure_alert(
+    task_id: str, error: str, task_type: str = "unknown"
+) -> Dict[NotificationChannel, bool]:
     """发送清理失败告警"""
     service = get_notification_service()
     return service.send_cleanup_failure_alert(task_id, error, task_type)
 
 
 def send_cleanup_success_summary(
-    results: Dict[str, Any], task_type: str = "daily_cleanup"
-):
+    results: Mapping[str, Any], task_type: str = "daily_cleanup"
+) -> Dict[NotificationChannel, bool]:
     """发送清理成功摘要"""
     service = get_notification_service()
     return service.send_cleanup_success_summary(results, task_type)
 
 
-def send_emergency_cleanup_alert(reason: str, aggressive: bool = False):
+def send_emergency_cleanup_alert(
+    reason: str, aggressive: bool = False
+) -> Dict[NotificationChannel, bool]:
     """发送紧急清理告警"""
     service = get_notification_service()
     return service.send_emergency_cleanup_alert(reason, aggressive)

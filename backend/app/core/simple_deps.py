@@ -8,26 +8,26 @@
 - 无复杂的装饰器工厂
 """
 
-from typing import Annotated
+from typing import Annotated, Optional, cast
+
 from fastapi import Depends, Request
 
-from .auth_context import AuthContext, PermissionMask, AuthError, TenantError
-
+from .auth_context import AuthContext, AuthError, PermissionMask, TenantError
 
 # ===== 核心依赖函数 =====
 
 
 def get_current_user(request: Request) -> AuthContext:
     """获取当前认证用户"""
-    auth = getattr(request.state, "auth", None)
+    auth = cast(Optional[AuthContext], getattr(request.state, "auth", None))
     if not auth:
         raise AuthError("用户未认证")
     return auth
 
 
-def get_optional_user(request: Request) -> AuthContext | None:
+def get_optional_user(request: Request) -> Optional[AuthContext]:
     """获取可选用户"""
-    return getattr(request.state, "auth", None)
+    return cast(Optional[AuthContext], getattr(request.state, "auth", None))
 
 
 # ===== 权限检查依赖 =====
@@ -72,7 +72,7 @@ def verify_tenant_access(tenant_id: str, request: Request) -> AuthContext:
 
 # 基础用户类型
 AuthUser = Annotated[AuthContext, Depends(get_current_user)]
-OptionalAuthUser = Annotated[AuthContext | None, Depends(get_optional_user)]
+OptionalAuthUser = Annotated[Optional[AuthContext], Depends(get_optional_user)]
 
 # 权限用户类型
 AdminUser = Annotated[AuthContext, Depends(get_admin_user)]

@@ -119,3 +119,7 @@ python3 collector.py
 **记住Linus的名言**: "Talk is cheap. Show me the code."
 
 **现在就开始使用，寻找你的商业机会！** 💡
+
+---
+
+附：API v1 响应统一规范与示例请见 `docs/API响应统一规范.md`。

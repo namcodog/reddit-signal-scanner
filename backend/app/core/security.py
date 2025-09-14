@@ -8,23 +8,49 @@ Linus原则：
 - 性能和安全的平衡
 """
 
-import secrets
 import hashlib
 import hmac
-from typing import Optional, Tuple, Union
+import importlib
+import secrets
 from datetime import datetime, timedelta
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Optional,
+    Protocol,
+    Tuple,
+    Union,
+    cast,
+    runtime_checkable,
+)
 
-from passlib.context import CryptContext
-from passlib.hash import bcrypt
+
+@runtime_checkable
+class _CryptContextProto(Protocol):
+    def hash(self, password: str) -> str:
+        ...
+
+    def verify(self, password: str, hashed: str) -> bool:
+        ...
+
+    def needs_update(self, hashed: str) -> bool:
+        ...
+
+
+# 延迟导入第三方依赖：在类型检查期不要求 stubs
+if TYPE_CHECKING:
+    from passlib.context import CryptContext as _CryptContext  # pragma: no cover
+else:  # 运行时分支
+    _CryptContext = Any
 
 from .config import get_settings
 
-
 # ===== 密码哈希配置 =====
 
-# 密码上下文 - 使用BCrypt算法
-pwd_context = CryptContext(
-    schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=12  # 平衡安全性和性能
+# 密码上下文 - 动态加载，配合 Protocol 约束调用面
+_ctx_cls = cast(Any, importlib.import_module("passlib.context").CryptContext)
+pwd_context: _CryptContextProto = _ctx_cls(
+    schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=12
 )
 
 
@@ -38,7 +64,7 @@ def hash_password(password: str) -> str:
     Returns:
         BCrypt哈希后的密码
     """
-    return pwd_context.hash(password)
+    return str(pwd_context.hash(password))
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -53,7 +79,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
         密码是否匹配
     """
     try:
-        return pwd_context.verify(plain_password, hashed_password)
+        return bool(pwd_context.verify(plain_password, hashed_password))
     except Exception:
         # 哈希格式错误或其他异常
         return False
@@ -72,7 +98,7 @@ def need_password_rehash(hashed_password: str) -> bool:
         是否需要重新哈希
     """
     try:
-        return pwd_context.needs_update(hashed_password)
+        return bool(pwd_context.needs_update(hashed_password))
     except Exception:
         # 哈希格式无法识别，需要重新哈希
         return True
@@ -417,8 +443,8 @@ class SimpleRateLimiter:
     生产环境建议使用Redis实现
     """
 
-    def __init__(self):
-        self._attempts = {}  # {key: [(timestamp, count)]}
+    def __init__(self) -> None:
+        self._attempts: dict[str, list[tuple[datetime, int]]] = {}
         self._cleanup_interval = 3600  # 1小时清理一次
         self._last_cleanup = datetime.utcnow()
 
@@ -467,7 +493,7 @@ class SimpleRateLimiter:
         attempts.append((now, 1))
         return True
 
-    def _cleanup_expired(self):
+    def _cleanup_expired(self) -> None:
         """清理过期的尝试记录"""
         now = datetime.utcnow()
         cutoff_time = now - timedelta(seconds=3600)  # 保留1小时内的记录

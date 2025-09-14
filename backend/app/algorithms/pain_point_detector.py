@@ -8,11 +8,13 @@
 使用的是更优雅的统一处理架构，消除了特殊情况分支。
 """
 
-from ..services.analysis.signal_extractor import UnifiedSignalDetector
+from typing import Any
+
 from ..models.signal_pattern import SignalType
+from ..services.analysis.signal_extractor import UnifiedSignalDetector
 
 
-def detect_pain_points(posts, patterns=None):
+def detect_pain_points(posts: Any, patterns: Any = None) -> Any:
     """
     痛点检测 - 重定向到统一检测器
 

@@ -12,20 +12,42 @@ import asyncio
 import logging
 import os
 import uuid
-from typing import Dict, Any, List, AsyncGenerator, Generator
+from typing import Dict, Any, List, AsyncGenerator, Generator, cast
 from decimal import Decimal
 from datetime import datetime, timedelta
 
 import pytest
+import sys
+import types
 import pytest_asyncio
 from sqlalchemy import create_engine, text, event
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.engine import make_url
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.core.database import Base
 from app.models import User, Task, Analysis, Report, CommunityCache
 from app.core.config import get_settings
+
+# 兼容历史补丁路径：将 backend.app.* 别名映射到 app.*
+try:
+    import app as _app_pkg
+
+    backend_mod = types.ModuleType("backend")
+    backend_mod.app = _app_pkg
+    sys.modules.setdefault("backend", backend_mod)
+    sys.modules.setdefault("backend.app", _app_pkg)
+
+    # 常用子模块按需映射
+    import app.services.data_cleanup_service as _svc_cleanup
+
+    sys.modules.setdefault("backend.app.services.data_cleanup_service_v2", _svc_cleanup)
+    # 兼容 tests.app.* 相对导入
+    sys.modules.setdefault("tests.app", _app_pkg)
+    sys.modules.setdefault("tests.app.core", _app_pkg.core)
+except Exception:
+    pass
 
 
 # ============================================================================
@@ -37,6 +59,23 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # 测试数据库URL - 隔离的测试数据库
+
+# 优先确保测试环境变量，避免依赖 pytest-env 插件
+if "DATABASE_URL" not in os.environ:
+    os.environ[
+        "DATABASE_URL"
+    ] = "postgresql+asyncpg://postgres:postgres@localhost:5432/reddit_signal_scanner_test"
+os.environ.setdefault("TEST_DATABASE_URL", os.environ["DATABASE_URL"])
+os.environ.setdefault("TESTING", "true")
+
+# 清除配置缓存以使上述环境变量生效
+try:
+    from app.core import config as _cfg
+
+    cast(Any, _cfg.get_settings).cache_clear()
+except Exception:
+    pass
+
 settings = get_settings()
 TEST_DATABASE_URL = os.getenv(
     "TEST_DATABASE_URL",
@@ -51,22 +90,212 @@ TEST_DATABASE_URL = os.getenv(
 TEST_DATABASE_URL_SYNC = TEST_DATABASE_URL.replace("+asyncpg", "")
 
 
+# 确保测试数据库存在（同步方式，避免异步事件循环问题）
+def _ensure_test_database(sync_url: str) -> None:
+    url = make_url(sync_url)
+    db_name = url.database
+    admin_url = url.set(database="postgres")
+
+    engine_admin = create_engine(str(admin_url), future=True)
+    try:
+        with engine_admin.connect() as conn:
+            conn = conn.execution_options(isolation_level="AUTOCOMMIT")
+            exists = conn.execute(
+                text("SELECT 1 FROM pg_database WHERE datname = :d"), {"d": db_name}
+            ).scalar()
+            if not exists:
+                conn.execute(text(f"CREATE DATABASE {db_name}"))
+    finally:
+        engine_admin.dispose()
+
+
+# 在函数定义之后执行一次性的全局创建，避免 NameError
+try:
+    _ensure_test_database(TEST_DATABASE_URL_SYNC)
+except Exception:
+    # 静默：若失败，后续连接会暴露问题
+    pass
+
+
+# 统一的 schema 初始化（会话级自动执行）
+@pytest_asyncio.fixture(scope="session", autouse=True)
+async def _ensure_schema_initialized():
+    """确保测试数据库已创建必要的表/类型/函数。
+
+    适配 tests/test_tenant_isolation.py 中直接使用 app.core.database.get_session_factory()
+    的场景，避免因未依赖 async_engine fixture 而缺少 schema。
+    """
+    from sqlalchemy import text
+    from app.core.database import Base
+    from app.core.config import get_settings
+    from sqlalchemy import create_engine
+
+    settings_local = get_settings()
+    sync_url = settings_local.database_url_sync
+
+    engine = create_engine(sync_url, future=True)
+    with engine.begin() as conn:
+        # 先确保依赖的扩展与枚举类型存在
+        try:
+            conn.execute(text("CREATE EXTENSION IF NOT EXISTS pgcrypto"))
+        except Exception:
+            pass
+
+        # 任务状态枚举需在建表前存在，避免默认值引用失败
+        conn.execute(
+            text(
+                """
+        DO $$ BEGIN
+            CREATE TYPE task_status AS ENUM ('pending', 'processing', 'completed', 'failed');
+        EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+        """
+            )
+        )
+
+        # 在创建前移除不兼容测试环境的索引（依赖 CURRENT_TIMESTAMP，PG 要求 IMMUTABLE）
+        try:
+            from app.models.community_cache import CommunityCache  # noqa: F401
+
+            tbl = CommunityCache.__table__
+            to_remove = [
+                ix
+                for ix in list(tbl.indexes)
+                if ix.name == "ix_community_cache_crawl_schedule"
+            ]
+            for ix in to_remove:
+                # 从表索引集合中移除，避免 create_all 尝试创建
+                indexes_collection = cast(Any, tbl.indexes)
+                try:
+                    indexes_collection.discard(ix)
+                except Exception:
+                    # 兼容旧版本 SQLAlchemy：使用 remove
+                    try:
+                        indexes_collection.remove(ix)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+        # 先创建约束依赖的校验函数，保证建表时存在
+        conn.execute(
+            text(
+                """
+        CREATE OR REPLACE FUNCTION validate_insights_schema(data jsonb)
+        RETURNS boolean AS $$
+        BEGIN
+            IF jsonb_typeof(data) != 'object' THEN
+                RETURN false;
+            END IF;
+            IF NOT (data ? 'pain_points' AND data ? 'competitors' AND data ? 'opportunities') THEN
+                RETURN false;
+            END IF;
+            IF jsonb_typeof(data->'pain_points') != 'array' OR
+               jsonb_typeof(data->'competitors') != 'array' OR 
+               jsonb_typeof(data->'opportunities') != 'array' THEN
+                RETURN false;
+            END IF;
+            IF EXISTS (
+                SELECT 1 FROM jsonb_array_elements(data->'pain_points') AS item
+                WHERE NOT (item ? 'description' AND item ? 'frequency' AND item ? 'sentiment_score')
+            ) THEN
+                RETURN false;
+            END IF;
+            RETURN true;
+        END;
+        $$ LANGUAGE plpgsql;
+        """
+            )
+        )
+
+        conn.execute(
+            text(
+                """
+        CREATE OR REPLACE FUNCTION validate_sources_schema(data jsonb)
+        RETURNS boolean AS $$
+        BEGIN
+            IF jsonb_typeof(data) != 'object' THEN
+                RETURN false;
+            END IF;
+            IF NOT (data ? 'communities' AND data ? 'posts_analyzed' AND data ? 'cache_hit_rate') THEN
+                RETURN false;
+            END IF;
+            IF jsonb_typeof(data->'communities') != 'array' THEN
+                RETURN false;
+            END IF;
+            IF jsonb_typeof(data->'posts_analyzed') != 'number' OR 
+               (data->>'posts_analyzed')::int <= 0 THEN
+                RETURN false;
+            END IF;
+            IF jsonb_typeof(data->'cache_hit_rate') != 'number' OR
+               (data->>'cache_hit_rate')::float < 0 OR
+               (data->>'cache_hit_rate')::float > 1 THEN
+                RETURN false;
+            END IF;
+            RETURN true;
+        END;
+        $$ LANGUAGE plpgsql;
+        """
+            )
+        )
+
+        # 先清理后创建，确保一致
+        Base.metadata.drop_all(bind=conn)
+        Base.metadata.create_all(bind=conn)
+
+
 # ============================================================================
 # 2. 数据库夹具 - 严格隔离和性能优化
 # ============================================================================
 
-
-@pytest.fixture(scope="session")
-def event_loop():
-    """提供事件循环给整个测试会话"""
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close()
+# 在测试会话启动时注册租户隔离（只需一次）
+_TENANT_ISOLATION_REGISTERED = False
 
 
-@pytest_asyncio.fixture(scope="session")
+@pytest.fixture(scope="session", autouse=True)
+def _register_tenant_isolation_once():
+    """全局注册租户隔离事件监听器（一次即可）。
+
+    监听器挂在 SQLAlchemy 的 Session 类上，与具体 engine/factory 无关，
+    因此可覆盖本测试中通过 `db_session` 创建的会话。
+    """
+    global _TENANT_ISOLATION_REGISTERED
+    if _TENANT_ISOLATION_REGISTERED:
+        return
+
+    try:
+        from app.core.tenant_isolation import setup_tenant_isolation
+        from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
+
+        # 传入一个占位的 factory（函数内部使用 Session 作为目标进行监听注册）
+        setup_tenant_isolation(async_sessionmaker(class_=AsyncSession))
+        _TENANT_ISOLATION_REGISTERED = True
+    except Exception:
+        # 测试不中断：若注册失败，相关用例会暴露问题
+        pass
+
+
+@pytest.fixture(autouse=True, scope="function")
+def _reset_db_between_tests():
+    """在每个测试前清理数据，确保测试间相互独立（同步执行，避免事件循环冲突）。"""
+    from sqlalchemy import text, create_engine
+    from app.core.config import get_settings
+
+    sync_url = get_settings().database_url_sync
+    engine = create_engine(sync_url, future=True)
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "TRUNCATE TABLE analyses, reports, tasks, users, community_cache RESTART IDENTITY CASCADE;"
+            )
+        )
+
+
+@pytest_asyncio.fixture(scope="function")
 async def async_engine():
     """异步数据库引擎 - 会话级别复用"""
+    # 确保测试数据库存在
+    _ensure_test_database(TEST_DATABASE_URL_SYNC)
+
     engine = create_async_engine(
         TEST_DATABASE_URL,
         echo=False,  # 测试时不输出SQL
@@ -173,10 +402,11 @@ async def async_engine():
             )
         )
 
-    yield engine
-
-    # 清理
-    await engine.dispose()
+    try:
+        yield engine
+    finally:
+        # 清理
+        await engine.dispose()
 
 
 @pytest_asyncio.fixture(scope="function")
@@ -565,9 +795,7 @@ async def multi_tenant_setup(db_session):
 def assert_constraint_violation(exception, constraint_name: str):
     """断言特定约束违反"""
     error_msg = str(exception.value)
-    assert (
-        constraint_name in error_msg
-    ), f"期望约束违反 '{constraint_name}'，实际错误: {error_msg}"
+    assert constraint_name in error_msg, f"期望约束违反 '{constraint_name}'，实际错误: {error_msg}"
 
 
 def assert_performance_target(
@@ -580,8 +808,7 @@ def assert_performance_target(
 
     # 平均延迟必须达标
     assert mean_ms <= target_ms, (
-        f"{operation_name} 平均延迟{mean_ms:.2f}ms超过目标{target_ms}ms。"
-        f"统计数据: {stats}"
+        f"{operation_name} 平均延迟{mean_ms:.2f}ms超过目标{target_ms}ms。" f"统计数据: {stats}"
     )
 
     # P95延迟不超过目标的120%

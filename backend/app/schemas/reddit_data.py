@@ -10,11 +10,14 @@ PRD-03 统一数据结构定义
 - 所有字段完整类型注解，避免运行时类型错误
 """
 
-from datetime import datetime
-from typing import List, Optional, Dict, Any
-from decimal import Decimal
 from dataclasses import dataclass
+from datetime import datetime
+from decimal import Decimal
+from typing import Any, Dict, List, Optional
+
 from pydantic import BaseModel, Field, validator
+
+from ..core.types import JsonValue
 
 
 class RedditPost(BaseModel):
@@ -50,9 +53,7 @@ class RedditPost(BaseModel):
 
     # 元数据字段
     flair_text: Optional[str] = Field(default=None, description="帖子标签")
-    distinguished: Optional[str] = Field(
-        default=None, description="特殊标识（mod/admin）"
-    )
+    distinguished: Optional[str] = Field(default=None, description="特殊标识（mod/admin）")
     stickied: bool = Field(default=False, description="是否置顶")
     is_self: bool = Field(default=False, description="是否为自发帖")
 
@@ -64,14 +65,14 @@ class RedditPost(BaseModel):
     selftext_html: Optional[str] = Field(default=None, description="HTML格式正文")
 
     @validator("community")
-    def validate_community_format(cls, v):
+    def validate_community_format(cls, v: str) -> str:
         """验证社区名称格式"""
         if not v.startswith("r/"):
             return f"r/{v}"
         return v
 
     @validator("created_utc")
-    def validate_created_utc(cls, v):
+    def validate_created_utc(cls, v: int) -> int:
         """验证创建时间的合理性"""
         if v < 0:
             raise ValueError("创建时间不能为负数")
@@ -131,9 +132,7 @@ class DataCollectionResult(BaseModel):
     api_calls_made: int = Field(default=0, ge=0, description="API调用次数")
 
     # 执行信息
-    execution_time_seconds: float = Field(
-        default=0.0, ge=0.0, description="执行耗时（秒）"
-    )
+    execution_time_seconds: float = Field(default=0.0, ge=0.0, description="执行耗时（秒）")
     errors: Optional[List[str]] = Field(default=None, description="错误信息列表")
     error_message: Optional[str] = Field(default=None, description="主要错误信息")
 
@@ -143,9 +142,12 @@ class DataCollectionResult(BaseModel):
     )
 
     @validator("successful_communities")
-    def validate_successful_communities(cls, v, values):
+    def validate_successful_communities(
+        cls, v: int, values: dict[str, JsonValue]
+    ) -> int:
         """验证成功社区数不超过总数"""
-        total = values.get("total_communities", 0)
+        total_value = values.get("total_communities", 0)
+        total = int(total_value) if isinstance(total_value, (int, float, str)) else 0
         if v > total:
             raise ValueError("成功社区数不能超过总社区数")
         return v
@@ -169,7 +171,7 @@ class DataCollectionResult(BaseModel):
         """采集是否成功（成功率>50%且有帖子）"""
         return self.success_rate > 0.5 and len(self.posts) > 0
 
-    def get_summary(self) -> Dict[str, Any]:
+    def get_summary(self) -> dict[str, JsonValue]:
         """获取采集结果摘要"""
         return {
             "total_posts": len(self.posts),
@@ -203,9 +205,7 @@ class CacheStatus(BaseModel):
     is_fresh: bool = Field(default=False, description="缓存是否新鲜")
     posts_count: int = Field(default=0, ge=0, description="缓存帖子数量")
     last_updated: Optional[datetime] = Field(default=None, description="最后更新时间")
-    quality_score: float = Field(
-        default=0.5, ge=0.0, le=1.0, description="缓存质量评分"
-    )
+    quality_score: float = Field(default=0.5, ge=0.0, le=1.0, description="缓存质量评分")
     hit_count: int = Field(default=0, ge=0, description="命中次数")
 
     @property
@@ -233,9 +233,7 @@ class CacheStatus(BaseModel):
 class BatchCollectionRequest(BaseModel):
     """批量采集请求模型"""
 
-    communities: List[str] = Field(
-        ..., min_items=1, max_items=50, description="社区列表"
-    )
+    communities: List[str] = Field(min_length=1, max_length=50, description="社区列表")
     max_posts_per_community: int = Field(
         default=100, ge=1, le=500, description="每社区最大帖子数"
     )
@@ -246,7 +244,7 @@ class BatchCollectionRequest(BaseModel):
     timeout_seconds: int = Field(default=300, ge=30, le=600, description="超时时间")
 
     @validator("communities")
-    def validate_communities(cls, v):
+    def validate_communities(cls, v: List[str]) -> List[str]:
         """验证社区名称列表"""
         clean_communities = []
         for community in v:
@@ -275,9 +273,9 @@ class CollectionResponse(BaseModel):
     timestamp: datetime = Field(default_factory=datetime.utcnow, description="响应时间")
 
     @property
-    def response_summary(self) -> Dict[str, Any]:
+    def response_summary(self) -> dict[str, JsonValue]:
         """响应摘要"""
-        summary = {
+        summary: dict[str, JsonValue] = {
             "success": self.success,
             "message": self.message,
             "timestamp": self.timestamp.isoformat(),

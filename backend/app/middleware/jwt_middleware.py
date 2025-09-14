@@ -8,26 +8,27 @@ Linus原则实现：
 - 性能优先：最小化处理时间，<5ms目标
 """
 
-import time
 import logging
 import os
-from typing import Set, Optional, Callable, List, Awaitable
+import time
 from datetime import datetime
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Set
 
-from fastapi import Request, Response, FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp
 
 from ..core.auth import (
-    CurrentUser,
     AuthenticationError,
+    CurrentUser,
     TenantAccessError,
-    get_token_from_request,
     auth_cache,
+    get_token_from_request,
 )
-from ..core.jwt_handler import get_jwt_handler, TokenPayload
 from ..core.config import get_settings
+from ..core.jwt_handler import TokenPayload, get_jwt_handler
+from ..schemas.contracts.auth_contract import UserContext as ContractUserContext
 
 logger = logging.getLogger(__name__)
 
@@ -95,10 +96,19 @@ class JWTAuthenticator:
         # 尝试缓存命中
         cached_user = await auth_cache.get_user_info(token_hash)
         if cached_user and not self._is_token_expired(cached_user):
+            # Context7安全检查：即使缓存命中，也要检查黑名单
+            await self._check_token_blacklist(cached_user.user_id, token)
             return cached_user
 
         # 验证Token并创建用户上下文
         payload = self.jwt_handler.verify_access_token(token)
+
+        # Context7核心安全检查：验证token是否在黑名单中
+        await self._check_token_revoked(payload.jti)
+
+        # 检查用户是否被全局撤销
+        await self._check_user_globally_revoked(payload.user_id)
+
         auth_context = self._create_user_from_payload(payload)
 
         # 缓存结果
@@ -117,7 +127,7 @@ class JWTAuthenticator:
                 raise RuntimeError("生产环境必须设置JWT_CACHE_SALT环境变量")
             # 开发环境使用默认值（仅用于测试）
             salt_hex = (
-                "a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456"
+                "a1b2c3d4e5f6789012345678901234567890abcdef" "1234567890abcdef123456"
             )
 
         try:
@@ -156,7 +166,9 @@ class JWTAuthenticator:
         self._check_tenant_access(auth_context.tenant_id, tenant_id)
 
     def _check_permissions(
-        self, user_permissions: List[str], required_permissions: Optional[Set[str]]
+        self,
+        user_permissions: List[str],
+        required_permissions: Optional[Set[str]],
     ) -> None:
         """权限检查 - 单一职责"""
         if not required_permissions:
@@ -191,7 +203,8 @@ class JWTAuthenticator:
         """记录未知错误 - 简化逻辑"""
         if getattr(self.settings, "is_production", False):
             logger.error(
-                "认证失败", extra={"token_hash": self._safe_get_token_hash(token)}
+                "认证失败",
+                extra={"token_hash": self._safe_get_token_hash(token)},
             )
         else:
             logger.error(f"认证异常: {error}", exc_info=True)
@@ -211,6 +224,50 @@ class JWTAuthenticator:
 
         logger.debug(f"认证性能: {duration_ms:.2f}ms, result: {result}, error: {error}")
 
+    # ===== Context7安全检查方法 =====
+
+    async def _check_token_revoked(self, jti: str) -> None:
+        """检查token是否在黑名单中 - Context7核心安全机制"""
+        try:
+            from ..services.token_blacklist_service import get_token_blacklist_service
+
+            blacklist_service = get_token_blacklist_service()
+
+            if await blacklist_service.is_token_revoked(jti):
+                raise AuthenticationError("Token已被撤销")
+        except AuthenticationError:
+            raise
+        except Exception as e:
+            # Context7模式：黑名单服务错误时记录但允许通过
+            logger.warning(f"黑名单检查失败: {e}")
+
+    async def _check_user_globally_revoked(self, user_id: str) -> None:
+        """检查用户是否被全局撤销 - Context7全局撤销机制"""
+        try:
+            from ..services.token_blacklist_service import get_token_blacklist_service
+
+            blacklist_service = get_token_blacklist_service()
+
+            if await blacklist_service.is_user_globally_revoked(user_id):
+                raise AuthenticationError("用户所有token已被撤销")
+        except AuthenticationError:
+            raise
+        except Exception as e:
+            # Context7模式：全局撤销检查失败时记录但允许通过
+            logger.warning(f"全局撤销检查失败: {e}")
+
+    async def _check_token_blacklist(self, user_id: str, token: str) -> None:
+        """缓存命中时的黑名单检查 - 确保撤销的token立即失效"""
+        try:
+            # 从token中提取JTI进行检查
+            payload = self.jwt_handler.verify_access_token(token)
+            await self._check_token_revoked(payload.jti)
+            await self._check_user_globally_revoked(user_id)
+        except Exception as e:
+            # 黑名单检查失败时使缓存失效，强制重新验证
+            logger.warning(f"缓存token黑名单检查失败: {e}")
+            raise AuthenticationError("Token状态验证失败")
+
 
 class JWTMiddleware(BaseHTTPMiddleware):
     """
@@ -225,13 +282,22 @@ class JWTMiddleware(BaseHTTPMiddleware):
     # 无需认证的路径
     SKIP_AUTH_PATHS = {
         "/",
+        "/api",
         "/docs",
         "/redoc",
         "/openapi.json",
         "/health",
+        "/dev/test-error",
+        "/dev/config",
         "/api/auth/login",
         "/api/auth/register",
         "/api/auth/refresh",
+        # 版本化API的公开端点
+        "/api/v1/auth/login",
+        "/api/v1/auth/register",
+        "/api/v1/auth/refresh",
+        "/api/v1/auth/health",
+        "/api/v1/auth/reset-password",
     }
 
     def __init__(self, app: ASGIApp) -> None:
@@ -240,7 +306,9 @@ class JWTMiddleware(BaseHTTPMiddleware):
         logger.info("JWT中间件已初始化")
 
     async def dispatch(
-        self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
+        self,
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
     ) -> Response:
         """
         中间件核心处理 - 无状态、无嵌套、直线逻辑
@@ -287,7 +355,16 @@ class JWTMiddleware(BaseHTTPMiddleware):
             return True
 
         # 前缀匹配
-        skip_prefixes = ["/docs", "/redoc", "/static", "/health"]
+        skip_prefixes = [
+            "/docs",
+            "/redoc",
+            "/static",
+            "/health",
+            "/api/v1/status",
+            "/api/v1/stream",
+            # 版本化认证路由整体免认证（注册/登录/健康/重置密码等）
+            "/api/v1/auth",
+        ]
         return any(path.startswith(prefix) for prefix in skip_prefixes)
 
     def _handle_auth_error(
@@ -302,6 +379,7 @@ class JWTMiddleware(BaseHTTPMiddleware):
                 "type": "authentication_error",
                 "path": request.url.path,
                 "timestamp": datetime.now().isoformat(),
+                "frontend_action": "redirect_login",
             },
             headers={"WWW-Authenticate": "Bearer"},
         )
@@ -340,7 +418,7 @@ class JWTMiddleware(BaseHTTPMiddleware):
 # ===== 中间件配置工具 =====
 
 
-def create_jwt_middleware_config() -> dict:
+def create_jwt_middleware_config() -> Dict[str, Any]:
     """创建JWT中间件配置"""
     return {
         "cache_ttl": 300,  # 5分钟缓存
@@ -350,7 +428,9 @@ def create_jwt_middleware_config() -> dict:
     }
 
 
-def install_jwt_middleware(app: FastAPI, config: Optional[dict] = None) -> None:
+def install_jwt_middleware(
+    app: FastAPI, config: Optional[Dict[str, Any]] = None
+) -> None:
     """
     安装JWT中间件到FastAPI应用
 
@@ -394,10 +474,11 @@ def has_permission_in_request(request: Request, permission: str) -> bool:
 # ===== 调试和诊断 =====
 
 
-async def get_middleware_debug_info(request: Request) -> dict:
+async def get_middleware_debug_info(request: Request) -> Dict[str, Any]:
     """获取中间件调试信息"""
     return {
         "auth_user": get_current_user_from_request(request),
+        "user_context_contract": get_user_context_contract(request),
         "user_id": get_user_id_from_request(request),
         "tenant_id": get_tenant_id_from_request(request),
         "permissions": getattr(request.state, "permissions", []),
@@ -406,3 +487,14 @@ async def get_middleware_debug_info(request: Request) -> dict:
         "method": request.method,
         "headers": dict(request.headers),
     }
+
+
+def get_user_context_contract(
+    request: Request,
+) -> Optional[ContractUserContext]:
+    """从请求构造契约化的用户上下文（用于跨模块/多租户边界）。"""
+    user = get_current_user_from_request(request)
+    if not user:
+        return None
+    session_id = getattr(request.state, "request_id", None) or "session"
+    return user.to_contract(session_id=session_id)

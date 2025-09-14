@@ -9,11 +9,11 @@ Reddit Signal Scanner - 类型安全检查脚本
     python scripts/type_check.py --fix     # 自动修复部分问题
 """
 
+import argparse
 import subprocess
 import sys
 from pathlib import Path
-from typing import List, Dict, Any
-import argparse
+from typing import Any, Dict, List
 
 
 def run_mypy_check(files: List[str], strict: bool = False) -> Dict[str, Any]:

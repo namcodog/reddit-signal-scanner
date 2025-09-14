@@ -140,9 +140,7 @@ class TestUnifiedSignalDetector:
             self.create_test_post(
                 "Looking for an alternative to Zoom that actually works"
             ),
-            self.create_test_post(
-                "Just regular discussion about features"
-            ),  # 不应该匹配
+            self.create_test_post("Just regular discussion about features"),  # 不应该匹配
         ]
 
         signals = self.detector.extract_signals(posts)

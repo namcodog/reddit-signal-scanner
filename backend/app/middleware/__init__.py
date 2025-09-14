@@ -9,14 +9,14 @@
 """
 
 from .jwt_middleware import (
-    JWTMiddleware,
     JWTAuthenticator,
-    install_jwt_middleware,
+    JWTMiddleware,
     create_jwt_middleware_config,
     get_current_user_from_request,
-    get_user_id_from_request,
     get_tenant_id_from_request,
+    get_user_id_from_request,
     has_permission_in_request,
+    install_jwt_middleware,
 )
 
 __all__ = [

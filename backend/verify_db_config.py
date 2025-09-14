@@ -51,9 +51,7 @@ def print_config_summary(config: dict) -> None:
     if memory:
         print(f"📊 内存配置:")
         print(f"   - shared_buffers: {memory.get('shared_buffers', '未配置')}")
-        print(
-            f"   - effective_cache_size: {memory.get('effective_cache_size', '未配置')}"
-        )
+        print(f"   - effective_cache_size: {memory.get('effective_cache_size', '未配置')}")
         print(f"   - work_mem: {memory.get('work_mem', '未配置')}")
 
     # 连接配置
@@ -76,9 +74,7 @@ def print_config_summary(config: dict) -> None:
     env_targets = targets.get(settings.environment, {})
     if env_targets:
         print(f"🎯 性能目标 ({settings.environment}):")
-        print(
-            f"   - JSONB查询最大时间: {env_targets.get('jsonb_query_max_time', '未配置')}"
-        )
+        print(f"   - JSONB查询最大时间: {env_targets.get('jsonb_query_max_time', '未配置')}")
         print(f"   - 并发连接数: {env_targets.get('concurrent_connections', '未配置')}")
 
 
@@ -191,9 +187,7 @@ async def main():
 
     config_summary = validation_result.get("config_summary", {})
     print(f"📊 配置摘要:")
-    print(
-        f"   - 内存优化: {format_status(config_summary.get('memory_optimized', False))}"
-    )
+    print(f"   - 内存优化: {format_status(config_summary.get('memory_optimized', False))}")
     print(
         f"   - JSONB优化: {format_status(config_summary.get('jsonb_optimized', False))}"
     )
@@ -262,16 +256,10 @@ async def main():
         print("\n📈 预期性能提升:")
         targets = config.get("performance_targets", {}).get(settings.environment, {})
         if targets:
-            print(
-                f"   🔹 JSONB查询目标: <{targets.get('jsonb_query_max_time', '50ms')}"
-            )
-            print(
-                f"   🔹 并发连接支持: {targets.get('concurrent_connections', '100')}个"
-            )
+            print(f"   🔹 JSONB查询目标: <{targets.get('jsonb_query_max_time', '50ms')}")
+            print(f"   🔹 并发连接支持: {targets.get('concurrent_connections', '100')}个")
             if "multi_tenant_query_max_time" in targets:
-                print(
-                    f"   🔹 多租户查询目标: <{targets['multi_tenant_query_max_time']}"
-                )
+                print(f"   🔹 多租户查询目标: <{targets['multi_tenant_query_max_time']}")
     else:
         print("\n⚠️ prd01-08任务实施需要注意以下问题:")
         if not config:

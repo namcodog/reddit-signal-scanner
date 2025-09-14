@@ -8,7 +8,7 @@ Linus原则："数据结构决定一切"
 """
 
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Mapping, Optional, cast
 from uuid import UUID
 
 from sqlalchemy.exc import SQLAlchemyError
@@ -17,15 +17,20 @@ from sqlalchemy.orm import Session
 from ..models.analysis import Analysis
 from ..models.report import Report
 from ..models.task import Task
+from ..schemas.contracts.report_contract import (
+    InsightItem,
+    ReportData,
+    ReportFormat,
+)
 
 
 class ReportFormatterService:
     """报告格式化服务 - 统一数据处理"""
 
-    def __init__(self, db: Session):
+    def __init__(self, db: Session) -> None:
         self.db = db
 
-    def get_complete_report(self, task_id: str) -> Dict[str, Any]:
+    def get_complete_report(self, task_id: str) -> dict[str, Any]:
         """
         获取完整的分析报告
 
@@ -66,25 +71,25 @@ class ReportFormatterService:
         except SQLAlchemyError as e:
             raise RuntimeError(f"数据库查询失败: {str(e)}") from e
 
-    def get_summary_report(self, task_id: str) -> Dict[str, Any]:
+    def get_summary_report(self, task_id: str) -> dict[str, Any]:
         """获取摘要版报告"""
-        complete_report = self.get_complete_report(task_id)
+        complete_report: dict[str, Any] = self.get_complete_report(task_id)
 
         # 只保留核心摘要信息
         if complete_report.get("success"):
-            data = complete_report["data"]
+            data: dict[str, Any] = cast(dict[str, Any], complete_report["data"])
             data["key_insights"] = data["key_insights"][:1]  # 只保留第一个洞察
             data["user_personas"] = []  # 移除用户画像
             complete_report["message"] = "摘要报告获取成功"
 
         return complete_report
 
-    def get_insights_only(self, task_id: str) -> Dict[str, Any]:
+    def get_insights_only(self, task_id: str) -> dict[str, Any]:
         """仅获取关键洞察"""
-        complete_report = self.get_complete_report(task_id)
+        complete_report: dict[str, Any] = self.get_complete_report(task_id)
 
         if complete_report.get("success"):
-            data = complete_report["data"]
+            data: dict[str, Any] = cast(dict[str, Any], complete_report["data"])
             # 只保留洞察相关字段
             insights_data = {
                 "task_id": data["task_id"],
@@ -100,12 +105,12 @@ class ReportFormatterService:
 
     def _format_complete_report(
         self, analysis: Analysis, report: Report, task: Task
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """格式化完整报告数据"""
 
-        # 提取JSONB数据
-        insights_data = analysis.insights or {}
-        sources_data = analysis.sources or {}
+        # 提取JSONB数据并显式类型化，避免 Column/Any 混用
+        insights_data: dict[str, Any] = cast(dict[str, Any], analysis.insights or {})
+        sources_data: dict[str, Any] = cast(dict[str, Any], analysis.sources or {})
 
         # 构建标准化响应
         current_time = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
@@ -116,20 +121,28 @@ class ReportFormatterService:
             "total_posts": sources_data.get("posts_analyzed", 0),
             "total_comments": sources_data.get("comments_count", 0),
             "analysis_duration": self._calculate_duration(
-                task.created_at, analysis.created_at
+                task.created_at, cast(datetime, analysis.created_at)
             ),
             "confidence_score": float(analysis.confidence_score),
             # 核心洞察
             "key_insights": self._format_insights(insights_data),
             # 情感分析摘要
-            "sentiment_summary": self._format_sentiment(insights_data),
+            "sentiment_summary": self._format_sentiment(
+                cast(Mapping[str, Any], insights_data)
+            ),
             # 热门话题
-            "trending_topics": self._format_topics(insights_data),
+            "trending_topics": self._format_topics(
+                cast(Mapping[str, Any], insights_data)
+            ),
             # 用户画像
-            "user_personas": self._format_personas(insights_data),
+            "user_personas": self._format_personas(
+                cast(Mapping[str, Any], insights_data)
+            ),
             # 元数据
             "generated_at": current_time,
-            "data_freshness": self._calculate_freshness(analysis.created_at),
+            "data_freshness": self._calculate_freshness(
+                cast(datetime, analysis.created_at)
+            ),
             "html_content": report.html_content,
             "data_coverage": {
                 "communities": len(sources_data.get("communities", [])),
@@ -145,9 +158,11 @@ class ReportFormatterService:
             "data": report_data,
         }
 
-    def _format_insights(self, insights_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _format_insights(
+        self, insights_data: Mapping[str, Any]
+    ) -> list[dict[str, Any]]:
         """格式化关键洞察"""
-        formatted_insights = []
+        formatted_insights: list[dict[str, Any]] = []
 
         # 痛点洞察
         pain_points = insights_data.get("pain_points", [])
@@ -197,9 +212,9 @@ class ReportFormatterService:
 
         return formatted_insights
 
-    def _format_sentiment(self, insights_data: Dict[str, Any]) -> Dict[str, float]:
+    def _format_sentiment(self, insights_data: Mapping[str, Any]) -> dict[str, float]:
         """格式化情感分析"""
-        sentiment = insights_data.get("sentiment_summary", {})
+        sentiment = cast(Mapping[str, Any], insights_data.get("sentiment_summary", {}))
 
         # 提供默认值确保数据一致性
         return {
@@ -208,20 +223,21 @@ class ReportFormatterService:
             "negative": sentiment.get("negative", 0.2),
         }
 
-    def _format_topics(self, insights_data: Dict[str, Any]) -> List[str]:
+    def _format_topics(self, insights_data: Mapping[str, Any]) -> List[str]:
         """格式化热门话题"""
-        topics = insights_data.get("trending_topics", [])
-
-        if not topics:
+        topics_any = insights_data.get("trending_topics", [])
+        if not topics_any:
             return ["用户体验讨论", "功能需求反馈", "价格对比分析", "替代方案探讨"]
+        topics_list = list(map(str, cast(List[Any], topics_any)))
+        return topics_list[:5]  # 最多返回5个话题
 
-        return topics[:5]  # 最多返回5个话题
-
-    def _format_personas(self, insights_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _format_personas(
+        self, insights_data: Mapping[str, Any]
+    ) -> list[dict[str, Any]]:
         """格式化用户画像"""
-        personas = insights_data.get("user_personas", [])
+        personas_any = insights_data.get("user_personas", [])
 
-        if not personas:
+        if not personas_any:
             # 提供默认用户画像
             return [
                 {
@@ -236,7 +252,9 @@ class ReportFormatterService:
                 },
             ]
 
-        return personas
+        # 尽力转换为字典列表
+        personas_list = cast(List[dict[str, Any]], personas_any)
+        return personas_list
 
     def _calculate_duration(self, start_time: datetime, end_time: datetime) -> float:
         """计算分析耗时（秒）"""
@@ -280,12 +298,13 @@ class ReportFormatterService:
             return "未指定查询"
 
         # 取前100个字符作为查询摘要
-        if len(task.product_description) <= 100:
-            return task.product_description
+        desc = str(task.product_description)
+        if len(desc) <= 100:
+            return desc
         else:
-            return task.product_description[:97] + "..."
+            return desc[:97] + "..."
 
-    def _create_empty_response(self, task_id: str, message: str) -> Dict[str, Any]:
+    def _create_empty_response(self, task_id: str, message: str) -> dict[str, Any]:
         """创建空响应"""
         current_time = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
@@ -315,7 +334,7 @@ class ReportFormatterService:
 
 def get_formatted_report(
     db: Session, task_id: str, format_type: str = "full"
-) -> Dict[str, Any]:
+) -> ReportData:
     """
     获取格式化报告的便利函数
 
@@ -325,13 +344,49 @@ def get_formatted_report(
         format_type: 格式类型 (full/summary/insights)
 
     Returns:
-        Dict: 格式化的报告数据
+        ReportData: 结构化的报告数据
     """
     service = ReportFormatterService(db)
 
-    if format_type == "summary":
-        return service.get_summary_report(task_id)
-    elif format_type == "insights":
-        return service.get_insights_only(task_id)
+    raw: dict[str, Any]
+    if format_type == ReportFormat.SUMMARY.value:
+        raw = service.get_summary_report(task_id)
+    elif format_type == ReportFormat.INSIGHTS.value:
+        raw = service.get_insights_only(task_id)
     else:
-        return service.get_complete_report(task_id)
+        raw = service.get_complete_report(task_id)
+
+    # 容错：失败则抛出 404，由上层捕获
+    if not raw.get("success"):
+        raise LookupError(raw.get("message", "未找到分析报告"))
+    data: dict[str, Any] = cast(dict[str, Any], raw.get("data", {}))
+
+    insights: List[InsightItem] = []
+    for it in data.get("key_insights") or []:
+        try:
+            insights.append(
+                InsightItem(
+                    title=str(it.get("title", "")),
+                    content=str(it.get("content", "")),
+                    confidence=float(it.get("confidence", 0.0)),
+                    source_count=int(it.get("source_count", 0)),
+                    tags=list(it.get("tags", []) or []),
+                )
+            )
+        except (TypeError, ValueError, KeyError):
+            continue
+
+    return ReportData(
+        task_id=str(data.get("task_id", task_id)),
+        query=str(data.get("query", "")),
+        total_posts=int(data.get("total_posts", 0)),
+        total_comments=int(data.get("total_comments", 0)),
+        analysis_duration=float(data.get("analysis_duration", 0.0)),
+        key_insights=insights,
+        sentiment_summary=dict(data.get("sentiment_summary", {})),
+        trending_topics=list(data.get("trending_topics", []) or []),
+        user_personas=list(data.get("user_personas", []) or []),
+        generated_at=str(data.get("generated_at", raw.get("timestamp", ""))),
+        data_freshness=str(data.get("data_freshness", "unknown")),
+        html_content=data.get("html_content"),
+    )

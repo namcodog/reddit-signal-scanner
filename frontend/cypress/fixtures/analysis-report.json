@@ -1,0 +1,74 @@
+{
+  "task_id": "test-analysis-123",
+  "status": "completed",
+  "report": {
+    "summary": {
+      "total_posts": 1250,
+      "total_comments": 3420,
+      "communities_analyzed": 15,
+      "opportunities_found": 8,
+      "analysis_confidence": 0.85
+    },
+    "opportunities": [
+      {
+        "id": "opp-1",
+        "title": "AI-powered productivity tools for remote teams",
+        "description": "High demand for AI automation in remote work environments",
+        "confidence": 0.92,
+        "market_size": "Large",
+        "urgency": "High",
+        "pain_points": [
+          "Manual task management",
+          "Communication overhead",
+          "Time tracking difficulties"
+        ],
+        "communities": ["r/remotework", "r/productivity", "r/startups"],
+        "evidence_posts": 45,
+        "trend_score": 8.7
+      },
+      {
+        "id": "opp-2",
+        "title": "Sustainable packaging solutions for e-commerce",
+        "description": "Growing concern about packaging waste in online shopping",
+        "confidence": 0.78,
+        "market_size": "Medium",
+        "urgency": "Medium",
+        "pain_points": [
+          "Excessive packaging waste",
+          "Environmental concerns",
+          "High shipping costs"
+        ],
+        "communities": ["r/sustainability", "r/entrepreneur", "r/ecommerce"],
+        "evidence_posts": 32,
+        "trend_score": 7.3
+      }
+    ],
+    "keywords_analysis": {
+      "high_impact": ["AI", "automation", "remote work", "productivity"],
+      "emerging_trends": ["sustainability", "packaging", "eco-friendly"],
+      "market_gaps": ["SMB tools", "affordable solutions", "easy integration"]
+    },
+    "communities_insights": [
+      {
+        "name": "r/entrepreneur",
+        "posts_analyzed": 420,
+        "opportunity_score": 8.5,
+        "active_discussions": 15,
+        "key_themes": ["startup funding", "product validation", "marketing"]
+      },
+      {
+        "name": "r/startups", 
+        "posts_analyzed": 380,
+        "opportunity_score": 7.8,
+        "active_discussions": 12,
+        "key_themes": ["tech solutions", "team building", "growth hacking"]
+      }
+    ]
+  },
+  "metadata": {
+    "analysis_duration": "2m 15s",
+    "data_sources": ["Reddit API", "Community Posts", "Comment Threads"],
+    "algorithms_used": ["NLP", "Sentiment Analysis", "Trend Detection"],
+    "generated_at": "2025-09-11T10:02:15Z"
+  }
+}

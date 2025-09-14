@@ -9,19 +9,24 @@ Reddit信号提取步骤 - 基于配置驱动的统一信号检测
 """
 
 import re
-from typing import Dict, List, Any, Optional
+import time
 from dataclasses import dataclass
 from logging import getLogger
+from typing import Any, Dict, List, Optional, Union, cast
 
-from app.core.step_base import BaseAnalysisStep, step_performance_monitor
+# JSON序列化类型定义
+JsonValue = Union[
+    str, int, float, bool, None, List["JsonValue"], Dict[str, "JsonValue"]
+]
+
+from app.core.step_base import AnalysisStep
+from app.models.analysis_pipeline import PipelineData, PipelineResult, StepStatus
 from app.models.signal_pattern import (
-    SignalPattern,
-    Signal,
     DEFAULT_SIGNAL_PATTERNS,
     RedditPost,
+    Signal,
+    SignalPattern,
 )
-from app.models.analysis_pipeline import PipelineData, PipelineResult, StepStatus
-
 
 logger = getLogger(__name__)
 
@@ -114,7 +119,7 @@ class RedditContextAdapter:
 class UnifiedSignalDetector:
     """统一信号检测器 - 消除三类信号的特殊处理逻辑"""
 
-    def __init__(self, patterns: List[SignalPattern]):
+    def __init__(self, patterns: List[SignalPattern]) -> None:
         self.patterns = patterns
         self.context_adapter = RedditContextAdapter()
 
@@ -278,30 +283,57 @@ class UnifiedSignalDetector:
         reddit_feature_boost = sum(text_features.values()) * 0.1
 
         # 综合置信度
-        confidence = (
+        confidence: float = (
             keyword_confidence * 0.5
             + sentiment_confidence * 0.3
             + reddit_feature_boost * 0.2
-        ) * pattern.confidence_weight
+        ) * float(pattern.confidence_weight)
 
-        return min(1.0, max(0.0, confidence))
+        # 明确转换为 float，避免 min/max 推断为 Any
+        return float(min(1.0, max(0.0, confidence)))
 
 
-class RedditSignalExtractor(BaseAnalysisStep):
+class RedditSignalExtractor(AnalysisStep):
     """Reddit信号提取步骤 - 配置驱动的统一处理"""
 
-    def __init__(self, custom_patterns: Optional[List[SignalPattern]] = None):
-        super().__init__()
+    def __init__(self, config: Optional[Dict[str, JsonValue]] = None) -> None:
+        from app.core.analyzer_config import StepConfig
+
+        step_config = StepConfig(
+            step_name="signal_extraction",
+            max_duration=float(cast(Dict[str, Any], config).get("max_duration", 60))
+            if config
+            else 60.0,
+            config_data=(config or {}),
+        )
+        super().__init__(step_config)
         self.name = "signal_extraction"
 
         # 配置驱动：使用预定义模式或自定义模式
-        self.signal_patterns = custom_patterns or DEFAULT_SIGNAL_PATTERNS
+        self.signal_patterns = DEFAULT_SIGNAL_PATTERNS
         self.detector = UnifiedSignalDetector(self.signal_patterns)
 
         logger.info(f"初始化信号提取器，加载{len(self.signal_patterns)}个信号模式")
 
-    @step_performance_monitor
-    async def execute(self, data: PipelineData) -> PipelineResult:
+    def validate_input(self, data: "PipelineData") -> bool:
+        """验证输入数据 - AnalysisStep要求的抽象方法实现"""
+        if not data:
+            return False
+
+        # 检查是否有Reddit数据收集结果
+        reddit_data = data.get_step_result("data_collection")
+        if not reddit_data or "reddit_posts" not in reddit_data:
+            return False
+
+        reddit_posts = reddit_data["reddit_posts"]
+        # 类型检查：确保reddit_posts是列表类型且非空
+        return (
+            reddit_posts is not None
+            and isinstance(reddit_posts, list)
+            and len(reddit_posts) > 0
+        )
+
+    async def _process_step(self, data: PipelineData) -> PipelineResult:
         """
         执行Reddit信号提取
 
@@ -310,7 +342,7 @@ class RedditSignalExtractor(BaseAnalysisStep):
         """
 
         # 输入验证
-        if not self.validate_common_input(data):
+        if not self.validate_input(data):
             return self._create_error_result("输入数据验证失败")
 
         # 获取Reddit数据
@@ -322,24 +354,35 @@ class RedditSignalExtractor(BaseAnalysisStep):
         if not reddit_posts:
             return self._create_error_result("Reddit帖子数据为空")
 
-        logger.info(f"开始处理{len(reddit_posts)}条Reddit帖子")
+        # 类型断言确保安全访问
+        reddit_posts_typed = cast(List[RedditPost], reddit_posts)
+
+        logger.info(f"开始处理{len(reddit_posts_typed)}条Reddit帖子")
 
         try:
             # 信号提取 - 统一处理
-            signals = self.detector.extract_signals(reddit_posts)
+            signals = self.detector.extract_signals(reddit_posts_typed)
 
             # 按信号类型分组统计
             signal_stats = self._calculate_signal_statistics(signals)
+            signal_stats_json: Dict[str, JsonValue] = cast(
+                Dict[str, JsonValue], signal_stats
+            )
 
             # 质量评估
-            quality_metrics = self._assess_extraction_quality(signals, reddit_posts)
+            quality_metrics = self._assess_extraction_quality(
+                signals, reddit_posts_typed
+            )
+            quality_metrics_json: Dict[str, JsonValue] = cast(
+                Dict[str, JsonValue], quality_metrics
+            )
 
             # 构建结果
-            result_data = {
+            result_data: Dict[str, JsonValue] = {
                 "signals": [self._signal_to_dict(signal) for signal in signals],
-                "statistics": signal_stats,
-                "quality_metrics": quality_metrics,
-                "total_processed": len(reddit_posts),
+                "statistics": signal_stats_json,
+                "quality_metrics": quality_metrics_json,
+                "total_processed": len(reddit_posts_typed),
                 "total_signals": len(signals),
             }
 
@@ -350,15 +393,30 @@ class RedditSignalExtractor(BaseAnalysisStep):
                 f"机会:{signal_stats.get('OPPORTUNITY', 0)}"
             )
 
-            return self.create_success_result(result_data)
+            # 构造成功结果 - 直接创建PipelineResult对象
+            duration = time.time() - self._start_time if self._start_time else 0.0
+            from app.models.analysis_pipeline import PipelineResult, StepStatus
 
-        except Exception as e:
+            return PipelineResult(
+                step_name=self.name,
+                duration=duration,
+                data=result_data,
+                success=True,
+                status=StepStatus.COMPLETED,
+                metadata={
+                    "step_name": self.name,
+                    "execution_time": duration,
+                    "config_version": self.config.step_name,
+                },
+            )
+
+        except (ValueError, TypeError, KeyError) as e:
             logger.error(f"信号提取过程发生错误：{str(e)}")
             return self._create_error_result(f"信号提取失败：{str(e)}")
 
     def _calculate_signal_statistics(self, signals: List[Signal]) -> Dict[str, int]:
         """计算信号统计信息"""
-        stats = {}
+        stats: Dict[str, int] = {}
 
         for signal in signals:
             signal_type_name = signal.signal_type.value
@@ -390,27 +448,53 @@ class RedditSignalExtractor(BaseAnalysisStep):
             "quality_score": quality_score,
         }
 
-    def _signal_to_dict(self, signal: Signal) -> Dict[str, Any]:
+    def _signal_to_dict(self, signal: Signal) -> Dict[str, JsonValue]:
         """信号对象转字典"""
-        return {
+        # 使用typing.cast确保类型兼容性
+        result: Dict[str, JsonValue] = {
             "signal_type": signal.signal_type.value,
             "content": signal.content,
-            "matched_keywords": signal.matched_keywords,
+            "matched_keywords": (
+                list(signal.matched_keywords)
+                if hasattr(signal, "matched_keywords") and signal.matched_keywords
+                else []
+            ),
             "confidence": signal.confidence,
             "sentiment_score": signal.sentiment_score,
             "source_post_id": signal.source_post_id,
             "subreddit": signal.subreddit,
-            "context_metadata": signal.context_metadata,
+            "context_metadata": (
+                cast(Dict[str, JsonValue], signal.context_metadata)
+                if hasattr(signal, "context_metadata") and signal.context_metadata
+                else {}
+            ),
             "extracted_at": signal.extracted_at.isoformat(),
         }
+        return result
 
-    def _create_error_result(self, error_message: str) -> PipelineResult:
+    def _create_error_result(
+        self, error_message: str, status: StepStatus = StepStatus.FAILED
+    ) -> PipelineResult:
         """创建错误结果"""
         logger.error(error_message)
+        duration = 0.0
+        if hasattr(self, "_start_time") and self._start_time:
+            duration = time.time() - self._start_time
+
         return PipelineResult(
             step_name=self.name,
-            duration=0.0,
+            duration=duration,
             data={"error": error_message},
             success=False,
-            status=StepStatus.FAILED,
+            status=status,
+            error_message=error_message,
+            metadata={
+                "step_name": self.name,
+                "error_time": time.time(),
+                "config_version": (
+                    self.config.step_name
+                    if hasattr(self.config, "step_name")
+                    else "unknown"
+                ),
+            },
         )

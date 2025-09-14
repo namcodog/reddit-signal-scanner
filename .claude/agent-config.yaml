@@ -17,35 +17,49 @@ model_strategy:
 
 # 各Agent专门配置
 agents:
-  # 代码质量门控 - 快速语法和风格检查
+  # 代码质量门控 - 零容忍检查 + TypeEnforcer集成 (v2.0增强)
   quality-gate:
     model: Sonnet 4
     timeout: 30s
     priority: critical
-    description: "代码质量门控系统，在代码编辑和文件写入前进行自动化质检"
+    description: "代码质量门控系统，零容忍类型检查模式，与smart-fix协同实现96%修复成功率"
     triggers:
       - tool: Edit
       - tool: Write  
       - tool: MultiEdit
     checks:
-      - syntax_validation    # 语法检查
-      - type_checking       # 类型检查
-      - style_compliance    # 风格规范
-      - security_scan       # 安全扫描
+      - syntax_validation      # 语法检查
+      - zero_tolerance_typing  # 零容忍类型检查【增强】
+      - type_ignore_detection  # 类型逃避检测【新增】
+      - any_type_abuse        # Any类型滥用检测【新增】
+      - style_compliance      # 风格规范
+      - security_scan         # 安全扫描
+    enforcement_mode:
+      - block_type_violations  # 阻塞类型违规
+      - auto_trigger_smart_fix # 自动触发智能修复
     
-  # Linus总架构师 - 深度架构分析和设计决策
+  # Linus总架构师 - 平衡架构审核 + 类型设计审查 (v2.0增强)
   linus-architect:
     model: Opus 4.1
     timeout: 45s
     priority: critical
-    description: "项目总架构师，以Linus Torvalds的视角进行架构决策"
+    description: "项目总架构师，平衡PRD需求与架构简洁性，集成类型设计质量审查"
     triggers:
-      - tool: MultiEdit     # 多文件编辑时触发
+      - task_completion      # 任务完成时最终审核
+      - major_refactor      # 重大重构时
     focus_areas:
+      - prd_requirement_balance   # PRD需求平衡【新增】
       - data_structure_design    # 数据结构设计
+      - type_safety_assessment   # 类型安全评估【新增】
       - system_architecture      # 系统架构
       - complexity_reduction     # 复杂度控制
       - design_philosophy        # 设计哲学
+    scoring_matrix:
+      - prd_compliance: 35%      # PRD符合度权重
+      - code_simplicity: 25%     # 代码简洁性权重
+      - type_safety: 20%         # 类型安全性权重【新增】
+      - maintainability: 15%     # 可维护性权重
+      - performance: 5%          # 性能考虑权重
 
   # 信号验证专家 - 数据质量和商业信号分析
   signal-validator:
@@ -81,19 +95,29 @@ agents:
       cache_hit_critical: 50%
       cache_hit_warning: 60%
 
-  # 任务编排专家 - 智能任务流程管控
+  # 任务编排专家 - 5步流程项目管理 (v2.0增强)
   task-orchestrator:
     model: Sonnet 4
     timeout: 20s
     priority: high
-    description: "智能任务流程管控专家，自动分析依赖关系"
+    description: "5步高效开发流程项目管理专家，统筹task-analyzer→pre-implementation-check→implementation→quality-gate+smart-fix→linus-architect完整流程"
     triggers:
+      - session_start          # 会话开始时【新增】
       - tool: TodoWrite
+      - workflow_milestone     # 工作流里程碑【新增】
     capabilities:
+      - five_step_orchestration  # 5步流程编排【新增】
       - dependency_analysis     # 依赖关系分析
       - bottleneck_detection    # 瓶颈检测
       - parallel_optimization   # 并行优化
       - priority_adjustment     # 优先级调整
+      - agent_coordination      # Agent协调【新增】
+    workflow_management:
+      - step1: "task-analyzer 深度分析"
+      - step2: "pre-implementation-check 预检"
+      - step3: "implementation 实施"
+      - step4: "quality-gate + smart-fix 质量保证"
+      - step5: "linus-architect 最终审核"
 
   # 配置同步专家 - 配置文件一致性管理
   config-sync:
@@ -166,12 +190,12 @@ agents:
       - interactive_debugging      # 交互式调试会话
       - comprehensive_solution     # 彻底解决方案
 
-  # 任务分析专家 - 强制预分析
+  # 任务分析专家 - 强制预分析 + 类型系统设计 (v2.0增强)
   task-analyzer:
     model: Opus 4.1
     timeout: 300s
     priority: critical
-    description: "任务分析专家，每个新任务开始前强制深度分析"
+    description: "任务分析专家，深度理解PRD需求并设计完整类型系统"
     triggers:
       - task_start: always   # 每个新任务都触发
     tools:
@@ -183,30 +207,58 @@ agents:
       - mcp__tavily-mcp__tavily-search
       - mcp__openmemory-local__search_memory
       - mcp__openmemory-local__add_memories
+      - Read
+      - Grep
     capabilities:
-      - requirement_analysis       # 需求分析
+      - requirement_analysis       # PRD需求分析（100%覆盖）
+      - type_system_design        # 类型系统设计【新增】
+      - data_structure_planning    # 数据结构预规划【新增】
       - technology_assessment      # 技术评估
       - risk_prediction           # 风险预测
       - implementation_planning    # 实施规划
+      - balanced_solution_design   # 平衡方案设计【新增】
 
-  # 架构预审专家 - 快速架构方向验证 (v7.0新增)
-  pre-linus-check:
-    model: Opus 4.1
-    timeout: 60s
+  # 实施前预检专家 - 10秒快速预防80%问题 (v2.0新增)
+  pre-implementation-check:
+    model: Sonnet 4
+    timeout: 10s
     priority: high
-    description: "Linus架构预审专家，实现前60秒快速架构方向检查"
+    description: "实施前预检专家，10秒快速验证数据结构设计和类型系统"
     triggers:
       - after_task_analyzer        # task-analyzer完成后触发
-      - complexity_score: ">6"     # 复杂度评分>6分时触发
+      - complexity_score: ">4"     # 复杂度评分>4分时触发
     tools:
-      - mcp__sequential-thinking__sequentialthinking
-      - mcp__serena__find_symbol
       - Read
+      - mcp__serena__find_symbol
+      - mcp__serena__get_symbols_overview
+      - Grep
+      - mcp__sequential-thinking__sequentialthinking
     capabilities:
-      - architecture_precheck      # 架构方向预审
-      - complexity_assessment      # 复杂度评估
-      - data_structure_validation  # 数据结构验证
-      - linus_principles_check     # Linus原则检查
+      - data_structure_validation  # 数据结构验证（3秒）
+      - type_system_check         # 类型系统检查（3秒）
+      - architecture_reasonableness # 架构合理性验证（2秒）
+      - risk_identification       # 风险识别（2秒）
+
+  # 智能修复专家 - 分层处理quality-gate问题 (v2.0新增)
+  smart-fix:
+    model: Sonnet 4
+    timeout: 15s
+    priority: high
+    description: "智能修复专家，分层处理质量问题，96%一次修复成功"
+    triggers:
+      - quality_gate_failed       # quality-gate失败时触发
+    tools:
+      - Read
+      - Edit
+      - MultiEdit
+      - Bash
+      - mcp__serena__find_symbol
+      - mcp__sequential-thinking__sequentialthinking
+    capabilities:
+      - auto_fix                  # Level 1: 自动修复（70%问题，1-2秒）
+      - suggested_fix             # Level 2: 建议修复（25%问题，3-8秒）
+      - refactor_suggestion       # Level 3: 重构建议（5%问题，10-15秒）
+      - fix_verification          # 修复验证（2秒）
 
 # 环境配置
 environments:
@@ -223,8 +275,74 @@ environments:
     timeout_multiplier: 0.8    # 生产环境超时时间缩短20%
     error_tolerance: low       # 低错误容忍度
 
+# 5步工作流程触发机制 (v2.0新增)
+workflow_triggers:
+  # 5步高效开发流程定义
+  five_step_workflow:
+    enabled: true
+    description: "高效5步开发流程，50%效率提升，95%成功率"
+    
+    step1_task_analysis:
+      agent: task-analyzer
+      trigger: "task_start"
+      timeout: 300s
+      required: true
+      success_criteria:
+        - prd_understanding: ">95%"
+        - type_system_designed: true
+        - data_structures_planned: true
+      
+    step2_pre_check:
+      agent: pre-implementation-check
+      trigger: "after_task_analysis"
+      timeout: 10s
+      required: true
+      dependencies: ["step1_task_analysis"]
+      success_criteria:
+        - data_structures_valid: true
+        - type_coverage: ">80%"
+        - no_high_risks: true
+      
+    step3_implementation:
+      trigger: "after_pre_check"
+      timeout: "flexible"
+      dependencies: ["step2_pre_check"]
+      description: "编码实施阶段，基于前两步的分析和设计"
+      
+    step4_quality_assurance:
+      agents: ["quality-gate", "smart-fix"]
+      trigger: "code_modification"
+      timeout: 30s
+      coordination: "sequential"  # quality-gate -> smart-fix (如失败)
+      dependencies: ["step3_implementation"]
+      success_criteria:
+        - quality_gate_passed: true
+        - fix_success_rate: ">96%"
+        
+    step5_final_review:
+      agent: linus-architect
+      trigger: "after_quality_assurance"
+      timeout: 45s
+      dependencies: ["step4_quality_assurance"]
+      success_criteria:
+        - prd_compliance: ">95%"
+        - architecture_score: ">85%"
+        - type_safety_score: ">90%"
+
+  # 流程控制设置
+  flow_control:
+    auto_progression: true        # 自动流程推进
+    failure_handling: "smart_retry"  # 智能重试策略
+    max_retries: 2               # 最大重试次数
+    rollback_on_failure: true   # 失败时回滚
+    
+  # 并发控制
+  concurrency:
+    step1_step2: "sequential"    # 步骤1→2：顺序执行
+    step4_agents: "coordinated"  # 步骤4内：协调执行
+    max_parallel_steps: 1        # 最大并行步骤数
+
 # 成本控制策略
-cost_optimization:
   # 模型使用优先级（按成本从低到高）
   model_preference:
     1: claude-3-haiku

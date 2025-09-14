@@ -9,13 +9,15 @@
 """
 
 import logging
-from typing import Dict, List, Optional, Any
-from datetime import datetime, timedelta
+from datetime import datetime
 from enum import Enum
+from typing import Any, Dict, Optional
 
 from celery import Celery
 from celery.result import AsyncResult
 from celery.schedules import crontab
+
+from .types import JsonValue
 
 logger = logging.getLogger(__name__)
 
@@ -71,12 +73,12 @@ class TaskScheduler:
     - 任务失败告警和恢复
     """
 
-    def __init__(self, celery_app: Celery):
+    def __init__(self, celery_app: Celery) -> None:
         self.celery_app = celery_app
         self.config = SchedulerConfig()
 
     def schedule_daily_cleanup(
-        self, schedule_time: str = "2:00", config: Optional[Dict] = None
+        self, schedule_time: str = "2:00", config: Optional[Dict[str, Any]] = None
     ) -> str:
         """
         调度每日清理任务
@@ -121,14 +123,17 @@ class TaskScheduler:
         """
         logger.warning(f"触发紧急清理: aggressive={aggressive}, reason={reason}")
 
-        from ..tasks.data_cleanup import emergency_cleanup
+        from ..core.celery_app import get_celery_app
 
-        result = emergency_cleanup.delay(force_aggressive=aggressive)
+        app = get_celery_app()
+        result: Any = app.send_task(
+            "emergency_cleanup", kwargs={"force_aggressive": aggressive}
+        )
 
         # 记录紧急清理触发
         self._log_emergency_trigger(result.id, aggressive, reason)
 
-        return result.id
+        return str(result.id)
 
     def trigger_category_cleanup(
         self,
@@ -151,18 +156,20 @@ class TaskScheduler:
         """
         logger.info(f"触发分类清理: {category}")
 
-        from ..tasks.data_cleanup import cleanup_by_category_task
+        from ..core.celery_app import get_celery_app
 
-        result = cleanup_by_category_task.apply_async(
+        app = get_celery_app()
+        result: Any = app.send_task(
+            "cleanup_by_category_task",
             args=[category],
             kwargs={"days_old": days_old, "hours_old": hours_old},
             priority=priority,
             queue="cleanup",
         )
 
-        return result.id
+        return str(result.id)
 
-    def get_task_status(self, task_id: str) -> Dict[str, Any]:
+    def get_task_status(self, task_id: str) -> dict[str, "JsonValue"]:
         """
         获取任务状态
 
@@ -206,7 +213,7 @@ class TaskScheduler:
 
         return status_info
 
-    def get_active_tasks(self) -> List[Dict[str, Any]]:
+    def get_active_tasks(self) -> list[dict[str, "JsonValue"]]:
         """
         获取活跃任务列表
 
@@ -237,7 +244,7 @@ class TaskScheduler:
 
         return active_tasks
 
-    def get_scheduled_tasks(self) -> List[Dict[str, Any]]:
+    def get_scheduled_tasks(self) -> list[dict[str, "JsonValue"]]:
         """
         获取已调度任务列表
 
@@ -290,7 +297,7 @@ class TaskScheduler:
 
     def get_task_history(
         self, task_type: Optional[str] = None, limit: int = 50
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, "JsonValue"]]:
         """
         获取任务历史记录
 
@@ -308,7 +315,7 @@ class TaskScheduler:
             history = get_cleanup_history(days=30)
 
             # 转换为统一格式
-            task_history = []
+            task_history: list[dict[str, "JsonValue"]] = []
             for record in history[:limit]:
                 task_history.append(
                     {
@@ -327,7 +334,7 @@ class TaskScheduler:
             logger.error(f"获取任务历史失败: {e}")
             return []
 
-    def get_scheduler_status(self) -> Dict[str, Any]:
+    def get_scheduler_status(self) -> dict[str, "JsonValue"]:
         """
         获取调度器状态
 
@@ -342,7 +349,7 @@ class TaskScheduler:
             active = inspect.active()
             scheduled = inspect.scheduled()
 
-            status = {
+            status: dict[str, "JsonValue"] = {
                 "workers": {
                     "total": len(stats) if stats else 0,
                     "active_tasks": (
@@ -379,10 +386,12 @@ class TaskScheduler:
                 "health": {"broker_connected": False, "workers_available": False},
             }
 
-    def _log_emergency_trigger(self, task_id: str, aggressive: bool, reason: str):
+    def _log_emergency_trigger(
+        self, task_id: str, aggressive: bool, reason: str
+    ) -> None:
         """记录紧急清理触发日志"""
         logger.warning(
-            f"紧急清理已触发",
+            "紧急清理已触发",
             extra={
                 "task_id": task_id,
                 "aggressive": aggressive,
@@ -406,10 +415,10 @@ class TaskScheduler:
 class CleanupScheduler:
     """清理任务专用调度器 - 便捷接口"""
 
-    def __init__(self, celery_app: Celery):
+    def __init__(self, celery_app: Celery) -> None:
         self.scheduler = TaskScheduler(celery_app)
 
-    def setup_default_schedule(self):
+    def setup_default_schedule(self) -> None:
         """设置默认的清理调度"""
         logger.info("设置默认清理调度")
 
@@ -421,7 +430,7 @@ class CleanupScheduler:
 
         logger.info("默认清理调度设置完成")
 
-    def schedule_cache_cleanup(self, interval_hours: int = 4):
+    def schedule_cache_cleanup(self, interval_hours: int = 4) -> None:
         """调度缓存清理任务"""
         self.scheduler.celery_app.conf.beat_schedule["cache-cleanup"] = {
             "task": "cleanup_by_category",
@@ -443,27 +452,27 @@ class CleanupScheduler:
 _scheduler_instance: Optional[TaskScheduler] = None
 
 
-def get_scheduler(celery_app: Celery = None) -> TaskScheduler:
+def get_scheduler(celery_app: Optional[Celery] = None) -> TaskScheduler:
     """获取全局调度器实例"""
     global _scheduler_instance
 
     if _scheduler_instance is None:
         if celery_app is None:
-            from ..tasks.data_cleanup import celery_app as default_app
+            from ..core.celery_app import get_celery_app
 
-            celery_app = default_app
+            celery_app = get_celery_app()
 
         _scheduler_instance = TaskScheduler(celery_app)
 
     return _scheduler_instance
 
 
-def get_cleanup_scheduler(celery_app: Celery = None) -> CleanupScheduler:
+def get_cleanup_scheduler(celery_app: Optional[Celery] = None) -> CleanupScheduler:
     """获取清理调度器实例"""
     if celery_app is None:
-        from ..tasks.data_cleanup import celery_app as default_app
+        from ..core.celery_app import get_celery_app
 
-        celery_app = default_app
+        celery_app = get_celery_app()
 
     return CleanupScheduler(celery_app)
 

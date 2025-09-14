@@ -15,17 +15,17 @@ from typing import Optional
 from uuid import UUID
 
 from sqlalchemy import (
-    Column,
-    String,
     TEXT,
     TIMESTAMP,
+    CheckConstraint,
     ForeignKey,
     Index,
-    CheckConstraint,
+    Integer,
+    String,
     text,
 )
 from sqlalchemy.dialects.postgresql import UUID as PostgreSQL_UUID
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
 from .base import Base
@@ -35,15 +35,33 @@ class TaskStatus(PyEnum):
     """任务状态枚举
 
     Linus原则：简单状态机，消除特殊情况
-    - 只有4个状态，每个状态语义清晰
+    - 5个状态，每个状态语义清晰
     - 状态转换：pending → processing → completed/failed
-    - 没有"处理中但暂停"等复杂中间态
+    - 重试机制：failed → pending (允许重试)
+    - 死信队列：failed → dead_letter (重试失败)
     """
 
     PENDING = "pending"  # 已创建，等待处理
     PROCESSING = "processing"  # 正在分析中
     COMPLETED = "completed"  # 分析完成
     FAILED = "failed"  # 分析失败
+    DEAD_LETTER = "dead_letter"  # 重试失败，进入死信队列  # 分析失败
+
+
+class FailureCategory(PyEnum):
+    """失败类型分类枚举
+
+    根据重试策略和恢复机制对失败进行分类
+    - 网络错误：通常可重试
+    - 处理错误：通常可重试，但需限制次数
+    - 数据验证错误：通常不可重试
+    - 系统错误：通常可重试
+    """
+
+    NETWORK_ERROR = "network_error"  # 网络连接失败、超时等
+    PROCESSING_ERROR = "processing_error"  # 业务处理逻辑错误
+    DATA_VALIDATION_ERROR = "data_validation_error"  # 数据格式或内容验证失败
+    SYSTEM_ERROR = "system_error"  # 系统级错误：内存不足、权限等
 
 
 @dataclass
@@ -138,7 +156,7 @@ class Task(Base):
     __tablename__ = "tasks"
 
     # 主键：UUID类型，数据库生成
-    id: UUID = Column(
+    id: Mapped[UUID] = mapped_column(
         PostgreSQL_UUID(as_uuid=True),
         primary_key=True,
         server_default=func.gen_random_uuid(),
@@ -146,7 +164,7 @@ class Task(Base):
     )
 
     # 外键关联：多租户通过用户实现数据隔离
-    user_id: UUID = Column(
+    user_id: Mapped[UUID] = mapped_column(
         PostgreSQL_UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
@@ -154,33 +172,33 @@ class Task(Base):
     )
 
     # 业务数据：分析目标描述
-    product_description: str = Column(
+    product_description: Mapped[str] = mapped_column(
         TEXT, nullable=False, comment="待分析的产品或服务描述，10-2000字符"
     )
 
     # 状态管理：简单4状态机
     # 注意：这里使用数据库的task_status枚举类型，不是Python枚举
-    status: str = Column(
-        String,  # PostgreSQL的ENUM在SQLAlchemy中映射为String
+    status: Mapped[str] = mapped_column(
+        String,
         nullable=False,
         server_default=text("'pending'::task_status"),
         comment="任务状态：pending/processing/completed/failed",
     )
 
     # 错误信息：失败时的详细信息
-    error_message: Optional[str] = Column(
+    error_message: Mapped[Optional[str]] = mapped_column(
         TEXT, nullable=True, comment="任务失败时的错误描述"
     )
 
     # 审计字段：自动维护的时间戳
-    created_at: datetime = Column(
+    created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True),
         nullable=False,
         server_default=func.current_timestamp(),
         comment="任务创建时间",
     )
 
-    updated_at: datetime = Column(
+    updated_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True),
         nullable=False,
         server_default=func.current_timestamp(),
@@ -188,15 +206,49 @@ class Task(Base):
         comment="任务最后更新时间",
     )
 
+    # 开始处理时间：仅在processing状态开始时设置
+    started_at: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=True,
+        comment="任务开始处理时间（仅processing状态开始时）",
+    )
     # 完成时间：仅在completed状态时有值
-    completed_at: Optional[datetime] = Column(
+    completed_at: Mapped[Optional[datetime]] = mapped_column(
         TIMESTAMP(timezone=True),
         nullable=True,
         comment="任务完成时间（仅completed状态）",
     )
 
+    # 重试机制字段：支持任务重试和死信队列
+    retry_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default=text("0"),
+        comment="重试次数，初始为0，每次重试递增",
+    )
+
+    failure_category: Mapped[Optional[str]] = mapped_column(
+        String(50),
+        nullable=True,
+        comment="失败类型分类：network_error/processing_error/data_validation_error/system_error",
+    )
+
+    last_retry_at: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=True,
+        comment="最后重试时间",
+    )
+
+    dead_letter_at: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=True,
+        comment="进入死信队列时间",
+    )
+
     # 关系映射：反向关联到用户
     user = relationship("User", back_populates="tasks")
+    # 一对一：任务与分析结果
+    analysis = relationship("Analysis", back_populates="task", uselist=False)
 
     # 数据库约束和索引：确保数据完整性和查询性能
     __table_args__ = (
@@ -251,9 +303,7 @@ class Task(Base):
             notify_sse: 是否推送SSE更新，默认True
         """
         if self.status != TaskStatus.PENDING.value:
-            raise ValueError(
-                f"只有pending状态的任务才能开始处理，当前状态：{self.status}"
-            )
+            raise ValueError(f"只有pending状态的任务才能开始处理，当前状态：{self.status}")
 
         self.status = TaskStatus.PROCESSING.value
         # updated_at会被数据库触发器自动更新
@@ -275,12 +325,11 @@ class Task(Base):
             notify_sse: 是否推送SSE更新，默认True
         """
         if self.status != TaskStatus.PROCESSING.value:
-            raise ValueError(
-                f"只有processing状态的任务才能标记完成，当前状态：{self.status}"
-            )
+            raise ValueError(f"只有processing状态的任务才能标记完成，当前状态：{self.status}")
 
         self.status = TaskStatus.COMPLETED.value
-        self.completed_at = completion_time or func.current_timestamp()
+        # 赋值为原生 datetime，避免SQL表达式类型不一致
+        self.completed_at = completion_time or datetime.utcnow()
         self.error_message = None  # 清除可能存在的错误信息
 
         # 可选的SSE推送
@@ -298,9 +347,7 @@ class Task(Base):
             notify_sse: 是否推送SSE更新，默认True
         """
         if self.status != TaskStatus.PROCESSING.value:
-            raise ValueError(
-                f"只有processing状态的任务才能标记失败，当前状态：{self.status}"
-            )
+            raise ValueError(f"只有processing状态的任务才能标记失败，当前状态：{self.status}")
 
         if not error_message or not error_message.strip():
             raise ValueError("失败任务必须提供错误信息")

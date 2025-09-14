@@ -1,0 +1,137 @@
+{
+  "generated_at": "2025-09-14T04:25:34.437568",
+  "count": 11,
+  "records": [
+    {
+      "case_id": "api:analyze:submit_concurrency:10",
+      "timestamp": "2025-09-14T04:25:33.811919",
+      "env": {
+        "python": "3.11.13",
+        "platform": "macOS-15.6.1-arm64-arm-64bit",
+        "node": "hujiadeMacBook-Pro.local"
+      },
+      "duration_ms": 225.744,
+      "label": ""
+    },
+    {
+      "case_id": "api:stats:processing_time",
+      "timestamp": "2025-09-14T04:25:33.884375",
+      "env": {
+        "python": "3.11.13",
+        "platform": "macOS-15.6.1-arm64-arm-64bit",
+        "node": "hujiadeMacBook-Pro.local"
+      },
+      "avg_processing_time_s": 140.0,
+      "max_processing_time_s": 240.0
+    },
+    {
+      "case_id": "api:latency:health",
+      "timestamp": "2025-09-14T04:25:33.902827",
+      "env": {
+        "python": "3.11.13",
+        "platform": "macOS-15.6.1-arm64-arm-64bit",
+        "node": "hujiadeMacBook-Pro.local"
+      },
+      "duration_ms": 1.417
+    },
+    {
+      "case_id": "perf:bench:blacklist_revoke:N200",
+      "timestamp": "2025-09-14T04:25:33.913256",
+      "env": {
+        "python": "3.11.13",
+        "platform": "macOS-15.6.1-arm64-arm-64bit",
+        "node": "hujiadeMacBook-Pro.local"
+      },
+      "duration_ms": 4.039,
+      "ops": 200,
+      "throughput_ops": 49513.11
+    },
+    {
+      "case_id": "perf:capacity:staircase",
+      "timestamp": "2025-09-14T04:25:33.916088",
+      "env": {
+        "python": "3.11.13",
+        "platform": "macOS-15.6.1-arm64-arm-64bit",
+        "node": "hujiadeMacBook-Pro.local"
+      },
+      "levels": [
+        1,
+        5,
+        10,
+        20
+      ],
+      "throughput": {
+        "1": 87431.67,
+        "5": 221892.87,
+        "10": 229095.1,
+        "20": 281789.37
+      }
+    },
+    {
+      "case_id": "perf:load:login_rate_limit:50",
+      "timestamp": "2025-09-14T04:25:33.917255",
+      "env": {
+        "python": "3.11.13",
+        "platform": "macOS-15.6.1-arm64-arm-64bit",
+        "node": "hujiadeMacBook-Pro.local"
+      },
+      "duration_ms": 0.196,
+      "label": ""
+    },
+    {
+      "case_id": "perf:load:login_rate_limit:50",
+      "timestamp": "2025-09-14T04:25:33.917269",
+      "env": {
+        "python": "3.11.13",
+        "platform": "macOS-15.6.1-arm64-arm-64bit",
+        "node": "hujiadeMacBook-Pro.local"
+      },
+      "concurrency": 50,
+      "error_count": 0
+    },
+    {
+      "case_id": "infra:redis:recovery_time",
+      "timestamp": "2025-09-14T04:25:33.949072",
+      "env": {
+        "python": "3.11.13",
+        "platform": "macOS-15.6.1-arm64-arm-64bit",
+        "node": "hujiadeMacBook-Pro.local"
+      },
+      "recovery_time_ms": 31.14,
+      "attempts": 1
+    },
+    {
+      "case_id": "perf:stress:login_rate_limit",
+      "timestamp": "2025-09-14T04:25:33.999449",
+      "env": {
+        "python": "3.11.13",
+        "platform": "macOS-15.6.1-arm64-arm-64bit",
+        "node": "hujiadeMacBook-Pro.local"
+      },
+      "duration_ms": 1.04,
+      "label": ""
+    },
+    {
+      "case_id": "perf:stress:login_rate_limit",
+      "timestamp": "2025-09-14T04:25:33.999527",
+      "env": {
+        "python": "3.11.13",
+        "platform": "macOS-15.6.1-arm64-arm-64bit",
+        "node": "hujiadeMacBook-Pro.local"
+      },
+      "total_requests": 12,
+      "blocked": 7
+    },
+    {
+      "case_id": "api:analyze:stress_level:10",
+      "timestamp": "2025-09-14T04:25:34.422303",
+      "env": {
+        "python": "3.11.13",
+        "platform": "macOS-15.6.1-arm64-arm-64bit",
+        "node": "hujiadeMacBook-Pro.local"
+      },
+      "duration_ms": 419.571,
+      "label": ""
+    }
+  ]
+}

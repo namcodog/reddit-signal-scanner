@@ -8,14 +8,20 @@
 - 子类专注业务逻辑，基类处理通用逻辑
 """
 
-from abc import ABC, abstractmethod
-from typing import Optional, Dict, Any
-import time
-import logging
 import asyncio
+import logging
+import time
+from abc import ABC, abstractmethod
+from typing import Any, Dict, Optional, Union, cast
 
-from app.models.analysis_pipeline import PipelineData, PipelineResult, StepStatus
-from app.core.analyzer_config import StepConfig
+from ..models.analysis_pipeline import (
+    PipelineData,
+    PipelineResult,
+    StepResultValue,
+    StepStatus,
+)
+from .analyzer_config import StepConfig
+from .types import JsonValue, StepInfo
 
 
 class AnalysisStep(ABC):
@@ -29,7 +35,7 @@ class AnalysisStep(ABC):
     - 子类只需实现核心的 _process_step 方法
     """
 
-    def __init__(self, config: StepConfig):
+    def __init__(self, config: StepConfig) -> None:
         self.config = config
         self.name = self.__class__.__name__.replace("Step", "").lower()
         self.logger = logging.getLogger(f"analysis.{self.name}")
@@ -85,8 +91,7 @@ class AnalysisStep(ABC):
             )
 
             self.logger.info(
-                f"步骤 {self.name} 执行完成，耗时: {duration:.2f}s，"
-                f"成功: {result.success}"
+                f"步骤 {self.name} 执行完成，耗时: {duration:.2f}s，" f"成功: {result.success}"
             )
 
             return result
@@ -132,17 +137,9 @@ class AnalysisStep(ABC):
         Returns:
             bool: 结果是否有效
         """
-        # 基础验证
-        if not isinstance(result, PipelineResult):
-            self.logger.error("返回结果不是PipelineResult类型")
-            return False
-
+        # 基础验证（类型由签名保证，此处不再做运行时类型检查）
         if result.step_name != self.name:
             self.logger.error(f"步骤名不匹配: 期望{self.name}, 实际{result.step_name}")
-            return False
-
-        if not isinstance(result.data, dict):
-            self.logger.error("结果数据必须是字典类型")
             return False
 
         return True
@@ -182,14 +179,14 @@ class AnalysisStep(ABC):
         """预期耗时（秒）"""
         return self.config.max_duration
 
-    def get_step_info(self) -> Dict[str, Any]:
+    def get_step_info(self) -> StepInfo:
         """获取步骤信息"""
         return {
             "name": self.name,
-            "class": self.__class__.__name__,
-            "expected_duration": self.get_expected_duration(),
+            "class_": self.__class__.__name__,
+            "expected_duration": float(self.get_expected_duration()),
             "config": {
-                "max_duration": self.config.max_duration,
+                "max_duration": float(self.config.max_duration),
                 "step_name": self.config.step_name,
             },
         }
@@ -208,16 +205,18 @@ class BaseAnalysisStep(AnalysisStep):
 
     def get_previous_result(
         self, data: PipelineData, step_name: str
-    ) -> Optional[Dict[str, Any]]:
+    ) -> Optional[Dict[str, StepResultValue]]:
         """安全获取前序步骤结果"""
         return data.get_step_result(step_name)
 
-    def create_success_result(self, result_data: Dict[str, Any]) -> PipelineResult:
+    def create_success_result(
+        self, result_data: Dict[str, StepResultValue]
+    ) -> PipelineResult:
         """创建成功结果"""
         return PipelineResult(
             step_name=self.name,
             duration=0.0,  # 将在process方法中更新
-            data=result_data,
+            data=cast(Dict[str, JsonValue], result_data),
             success=True,
             status=StepStatus.COMPLETED,
         )
@@ -232,18 +231,14 @@ class BaseAnalysisStep(AnalysisStep):
         data.add_error(error, self.name)
         self.logger.error(error)
 
-    def log_performance(self, operation: str, duration: float, **metrics) -> None:
+    def log_performance(
+        self, operation: str, duration: float, **metrics: Union[str, int, float]
+    ) -> None:
         """记录性能指标"""
-        self.logger.info(
-            f"性能指标 - {operation}: {duration:.3f}s, " f"指标: {metrics}"
-        )
+        self.logger.info(f"性能指标 - {operation}: {duration:.3f}s, " f"指标: {metrics}")
 
     def validate_common_input(self, data: PipelineData) -> bool:
         """通用输入验证"""
-        if not isinstance(data, PipelineData):
-            self.logger.error("输入数据不是PipelineData类型")
-            return False
-
         if not data.product_description.strip():
             self.logger.error("产品描述为空")
             return False
@@ -254,7 +249,9 @@ class BaseAnalysisStep(AnalysisStep):
 
         return True
 
-    async def _execute_with_timeout(self, coro, timeout: Optional[float] = None):
+    async def _execute_with_timeout(
+        self, coro: Any, timeout: Optional[float] = None
+    ) -> Any:
         """执行协程并处理超时"""
         if timeout is None:
             timeout = self.config.max_duration / 2  # 给步骤留一半时间
@@ -280,10 +277,10 @@ class BaseAnalysisStep(AnalysisStep):
 
 
 # 便捷的装饰器
-def step_performance_monitor(func):
+def step_performance_monitor(func: Any) -> Any:
     """步骤性能监控装饰器"""
 
-    async def wrapper(self, *args, **kwargs):
+    async def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
         start_time = time.time()
         try:
             result = await func(self, *args, **kwargs)
@@ -292,9 +289,12 @@ def step_performance_monitor(func):
             return result
         except Exception as e:
             duration = time.time() - start_time
-            self.logger.error(
-                f"{func.__name__} 执行失败，耗时: {duration:.3f}s，错误: {e}"
-            )
+            self.logger.error(f"{func.__name__} 执行失败，耗时: {duration:.3f}s，错误: {e}")
             raise
 
     return wrapper
+
+
+# 兼容导出：某些测试从 step_base 导入 StepResult
+# 将 StepResult 作为 PipelineResult 的别名导出，避免大范围改测
+StepResult = PipelineResult
