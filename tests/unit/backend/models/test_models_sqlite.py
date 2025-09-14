@@ -72,7 +72,7 @@ class SQLiteAnalysis(SQLiteBase):
 
 
 # SQLite测试专用的fixtures
-@pytest_asyncio.fixture(scope="function", loop_scope="function")
+@pytest_asyncio.fixture(scope="function")
 async def sqlite_engine():
     """创建SQLite内存数据库引擎"""
     engine = create_async_engine(
@@ -90,7 +90,7 @@ async def sqlite_engine():
     await engine.dispose()
 
 
-@pytest_asyncio.fixture(scope="function", loop_scope="function")
+@pytest_asyncio.fixture(scope="function")
 async def sqlite_session(sqlite_engine):
     """创建SQLite测试会话"""
     async_session_factory = sessionmaker(

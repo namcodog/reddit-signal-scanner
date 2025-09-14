@@ -29,7 +29,7 @@ TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 TEST_SYNC_DATABASE_URL = "sqlite:///test.db"
 
 
-@pytest_asyncio.fixture(scope="function", loop_scope="function")
+@pytest_asyncio.fixture(scope="function")
 async def async_engine() -> AsyncGenerator[AsyncEngine, None]:
     """创建异步数据库引擎 - 内存SQLite"""
     engine = create_async_engine(
@@ -54,7 +54,7 @@ async def async_engine() -> AsyncGenerator[AsyncEngine, None]:
     await engine.dispose()
 
 
-@pytest_asyncio.fixture(scope="function", loop_scope="function")
+@pytest_asyncio.fixture(scope="function")
 async def async_session(async_engine: AsyncEngine) -> AsyncGenerator[AsyncSession, None]:
     """创建异步数据库会话"""
     async_session_factory = sessionmaker(
