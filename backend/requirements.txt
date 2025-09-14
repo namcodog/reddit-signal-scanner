@@ -55,3 +55,9 @@ python-dotenv==1.0.0
 pyyaml==6.0.1
 aiofiles==23.2.1
 psutil==6.0.0
+
+# Type stubs and validators (type-check only)
+email-validator
+types-PyYAML
+types-requests
+types-aiofiles

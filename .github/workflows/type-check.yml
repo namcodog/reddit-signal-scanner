@@ -23,6 +23,8 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install mypy
+          # Ensure common stub packages are available to mypy
+          pip install types-PyYAML types-requests types-aiofiles || true
 
       - name: Run mypy (backend, strict)
         working-directory: backend

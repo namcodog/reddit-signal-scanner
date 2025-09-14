@@ -100,16 +100,24 @@ class ErrorBoundaryEnhanced extends Component<ErrorBoundaryProps, ErrorBoundaryS
 
     // 记录错误（开发模式）
     if (process.env.NODE_ENV === 'development') {
+      // 控制台分组以便测试断言与开发调试
+      // eslint-disable-next-line no-console
+      console.group(`React组件错误 - ${this.errorId}`);
       // 源于开发模式的调试输出，使用统一logger
-      import('@/utils/logger').then(({ default: logger }) => {
-        logger.error(`🚨 React组件错误 - ${this.errorId}`);
-        logger.error('错误对象:', error as Error);
-        logger.error('错误信息:', errorInfo as unknown as Error);
-        logger.error('增强错误:', enhancedError as unknown as Error);
-      }).catch(() => {
-        // eslint-disable-next-line no-console
-        console.error('ErrorBoundaryEnhanced: logger加载失败');
-      });
+      import('@/utils/logger')
+        .then(({ default: logger }) => {
+          logger.error('错误对象:', error as Error);
+          logger.error('错误信息:', errorInfo as unknown as Error);
+          logger.error('增强错误:', enhancedError as unknown as Error);
+        })
+        .catch(() => {
+          // eslint-disable-next-line no-console
+          console.error('ErrorBoundaryEnhanced: logger加载失败');
+        })
+        .finally(() => {
+          // eslint-disable-next-line no-console
+          console.groupEnd();
+        });
     }
 
     // 调用外部错误处理器

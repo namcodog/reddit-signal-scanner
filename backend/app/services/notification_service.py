@@ -313,8 +313,9 @@ class SlackNotificationAdapter(BaseNotificationAdapter):
             }
 
             response = requests.post(self.webhook_url, json=payload, timeout=10)
-
-            return response.status_code == 200
+            from typing import cast
+            status: int = cast(int, getattr(response, "status_code", 0))
+            return status == 200
 
         except RequestException as e:
             logger.error("Slack通知网络异常: %s", e)
@@ -433,8 +434,9 @@ class WebhookNotificationAdapter(BaseNotificationAdapter):
                 headers={"Content-Type": "application/json"},
                 timeout=10,
             )
-
-            return response.status_code in [200, 201, 202]
+            from typing import cast
+            status: int = cast(int, getattr(response, "status_code", 0))
+            return status in (200, 201, 202)
 
         except RequestException as e:
             logger.error("Webhook通知网络异常: %s", e)
