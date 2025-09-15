@@ -50,10 +50,10 @@ CI：Quick Gate ≤10 分钟，Required checks 全绿；Integration 转合并后
 - 非必需：Integration/Backend Unit 失败不阻塞 PR；合并后/定时跑。
 
 ## 今日待办（T+0）
-- [ ] PR‑TD‑01：pre‑commit 钩子精准化（已提交配置修复，等待验证）
+- [x] PR‑TD‑01：pre‑commit 钩子精准化（已提交配置修复，等待验证）
   - 修复 mypy/Dict[str, Any] 钩子在“无匹配文件”时误扫全仓库的问题。
   - 验收：本地提交不再因文档/venv 误报阻塞。
-- [ ] PR‑TD‑02：后端 Quick Gate 稳定化（smoke）
+- [x] PR‑TD‑02：后端 Quick Gate 稳定化（smoke）
   - pytest.ini 增加 `smoke` 标记；后端 import‑smoke 快速检查稳定。
   - 验收：Quick Gate / Backend ≤3 分钟稳定绿。
 - [ ] develop → main 同步 PR（Auto‑merge），我盯住 4 个必需检查并修红点到全绿。

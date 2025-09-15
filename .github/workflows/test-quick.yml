@@ -10,7 +10,7 @@ on:
 
 jobs:
   backend-quick:
-    name: Backend Quick (unit only)
+    name: Backend Quick (smoke)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -35,21 +35,12 @@ jobs:
           pip install --prefer-binary -r backend/requirements.txt
           pip install pytest-xdist
 
-      - name: Import smoke (no DB)
+      - name: Run smoke tests
         env:
           TEST_USE_REAL_DB: 'false'
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD: '1'
         run: |
-          python - <<'PY'
-          import importlib
-          modules = [
-              'backend.app.core.config',
-              'backend.app.core.jwt_handler',
-              'backend.app.core.database',
-          ]
-          for m in modules:
-              importlib.import_module(m)
-          print('✅ backend quick import smoke passed')
-          PY
+          python -m pytest -q -m smoke tests/smoke
 
   frontend-quick:
     name: Frontend Quick (unit only)
