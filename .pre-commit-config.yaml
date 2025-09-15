@@ -25,6 +25,7 @@ repos:
         args:
           - -c
           - >-
+            if [ "$#" -eq 0 ]; then echo "(skip mypy: no matched files)"; exit 0; fi; \
             mypy --strict --no-implicit-optional --warn-return-any --show-error-codes --pretty "$@"
         types: [python]
         files: ^backend/app/.*\.py$
@@ -37,7 +38,8 @@ repos:
         args:
           - -c
           - >-
-            if grep -R -n "Dict\\[str, Any\\]" "$@"; then echo "❌ Dict[str, Any] detected in staged files"; exit 1; fi; exit 0
+            if [ "$#" -eq 0 ]; then echo "(skip Dict[str, Any] check: no matched files)"; exit 0; fi; \
+            if grep -n "Dict\\[str, Any\\]" "$@"; then echo "❌ Dict[str, Any] detected in staged files"; exit 1; fi; exit 0
         types: [python]
         files: ^backend/app/.*\.py$
         exclude: ^(migrations/|tests/|backend/scripts/)
@@ -89,4 +91,3 @@ repos:
           - >-
             if grep -n -E ": any(\s|$|;|,|\||\[|\]).*(?<!vi\.fn\(\)|vi\.mock\(\)|MockedFunction)" "$@"; then echo "❌ 测试文件中检测到非Mock的any类型"; exit 1; fi; exit 0
         files: ^frontend/src/.*\.test\.(ts|tsx)$
-
