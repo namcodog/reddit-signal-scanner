@@ -21,8 +21,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, field_validator
 from sqlalchemy.orm import Session
 
-from ....core.auth import authenticate_user as get_current_user
-from ....core.database import get_db
+from ....core.auth import (
+    authenticate_user as get_current_user,
+    CurrentUser,
+)
+from ....core.database import get_session_sync as get_db
 from ....core.sqlalchemy_typing import as_bool_clause
 from ....models.task import Task, TaskStatus
 from ....models.user import User
@@ -148,7 +151,7 @@ class RetryStatisticsResponse(BaseModel):
     summary="查询死信队列",
     description="查询用户的死信队列中的任务，支持多种过滤条件",
 )
-async def get_dead_letter_queue(
+def get_dead_letter_queue(
     failure_categories: Optional[str] = Query(None, description="失败类型过滤，逗号分隔"),
     age_hours_min: Optional[int] = Query(None, description="最小存在小时数"),
     age_hours_max: Optional[int] = Query(None, description="最大存在小时数"),
@@ -156,7 +159,7 @@ async def get_dead_letter_queue(
     retry_count_max: Optional[int] = Query(None, description="最大重试次数"),
     limit: int = Query(50, description="返回数量限制"),
     offset: int = Query(0, description="偏移量"),
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> DeadLetterResponse:
     """查询当前用户的死信队列任务"""
@@ -171,7 +174,7 @@ async def get_dead_letter_queue(
             age_hours_max=age_hours_max,
             retry_count_min=retry_count_min,
             retry_count_max=retry_count_max,
-            user_id=str(current_user.id),  # 只查询当前用户的任务
+            user_id=str(current_user.user_id),  # 只查询当前用户的任务
         )
 
         # 获取死信队列处理器
@@ -227,9 +230,9 @@ async def get_dead_letter_queue(
     summary="手动重试任务",
     description="手动重试死信队列中的指定任务",
 )
-async def manual_retry_tasks(
+def manual_retry_tasks(
     retry_request: BatchRetryRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> RetryOperationResponse:
     """手动重试指定的死信任务"""
@@ -249,7 +252,7 @@ async def manual_retry_tasks(
             db.query(Task)
             .filter(
                 as_bool_clause(Task.id.in_(task_uuids)),
-                as_bool_clause(Task.user_id == current_user.id),
+                as_bool_clause(Task.user_id == current_user.user_id),
             )
             .count()
         )
@@ -272,7 +275,7 @@ async def manual_retry_tasks(
         from datetime import datetime
 
         operation_id = (
-            f"retry_{current_user.id}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
+            f"retry_{current_user.user_id}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
         )
 
         # 失败任务从 List[Tuple[str, str]] 收敛为 List[Dict[str, str]]
@@ -302,8 +305,9 @@ async def manual_retry_tasks(
     summary="获取重试统计",
     description="获取用户的重试和死信队列统计信息",
 )
-async def get_retry_statistics(
-    current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
+def get_retry_statistics(
+    current_user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ) -> RetryStatisticsResponse:
     """获取当前用户的重试统计信息"""
 
@@ -316,7 +320,7 @@ async def get_retry_statistics(
         user_dlq_count = (
             db.query(Task)
             .filter(
-                as_bool_clause(Task.user_id == current_user.id),
+                as_bool_clause(Task.user_id == current_user.user_id),
                 as_bool_clause(Task.status == TaskStatus.DEAD_LETTER.value),
             )
             .count()
@@ -325,7 +329,7 @@ async def get_retry_statistics(
         user_retry_count = (
             db.query(Task)
             .filter(
-                as_bool_clause(Task.user_id == current_user.id),
+                as_bool_clause(Task.user_id == current_user.user_id),
                 as_bool_clause(Task.retry_count > 0),
             )
             .count()
@@ -335,7 +339,7 @@ async def get_retry_statistics(
             user_statistics=UserRetryStats(
                 dead_letter_count=user_dlq_count,
                 tasks_with_retries=user_retry_count,
-                user_id=str(current_user.id),
+                user_id=str(current_user.user_id),
             ),
             system_statistics=SystemRetryStats(
                 total_dead_letter=dlq_stats.total_count,
@@ -355,9 +359,9 @@ async def get_retry_statistics(
     summary="获取失败分析",
     description="获取失败模式分析和预防建议",
 )
-async def get_failure_analysis(
+def get_failure_analysis(
     time_window_hours: int = Query(24, description="分析时间窗口(小时)"),
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> FailureAnalysisResponse:
     """获取失败模式分析和预防建议"""
@@ -396,10 +400,10 @@ async def get_failure_analysis(
     summary="清理旧的死信任务",
     description="清理指定天数前的死信任务（管理员功能）",
 )
-async def cleanup_old_dead_letters(
+def cleanup_old_dead_letters(
     older_than_days: int = Query(30, description="清理多少天前的记录"),
     dry_run: bool = Query(True, description="是否为试运行"),
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> SuccessResponse:
     """清理旧的死信任务（仅限管理员）"""
@@ -428,7 +432,7 @@ async def cleanup_old_dead_letters(
                 "by_category": cleanup_result["by_category"],
                 "dry_run": bool(cleanup_result["dry_run"]),
                 "cleanup_timestamp": str(cleanup_result["cleanup_timestamp"]),
-                "operator": str(current_user.id),
+                "operator": str(current_user.user_id),
                 "operation_type": "dry_run" if dry_run else "actual_cleanup",
             },
         )

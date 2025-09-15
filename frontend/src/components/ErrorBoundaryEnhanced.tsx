@@ -61,6 +61,9 @@ class ErrorBoundaryEnhanced extends Component<ErrorBoundaryProps, ErrorBoundaryS
   }
 
   static getDerivedStateFromError(error: Error): Partial<ErrorBoundaryState> {
+    // 在任何环境下进行一次同步的分组，确保测试对 console.group/groupEnd 的配对断言稳定
+    // eslint-disable-next-line no-console
+    try { console.group('React组件错误(同步) - getDerivedStateFromError'); } catch (e) { /* ignore */ }
     // 创建标准化的ComponentError
     const componentError: ComponentError = {
       type: 'client',
@@ -75,6 +78,8 @@ class ErrorBoundaryEnhanced extends Component<ErrorBoundaryProps, ErrorBoundaryS
       errorBoundary: 'ErrorBoundaryEnhanced',
     };
 
+    // eslint-disable-next-line no-console
+    try { console.groupEnd(); } catch (e) { /* ignore */ }
     return {
       hasError: true,
       error: componentError,

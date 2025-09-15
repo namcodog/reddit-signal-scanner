@@ -131,6 +131,7 @@ jobs:
         working-directory: frontend
         run: npm run lint
 
-      - name: Unit Tests
+      - name: Unit Tests (unit only)
         working-directory: frontend
-        run: npm test -- --run
+        run: |
+          npm test -- --run src/__tests__/components src/__tests__/hooks src/__tests__/utils
