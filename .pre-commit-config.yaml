@@ -5,6 +5,7 @@ repos:
       - id: check-yaml
       - id: end-of-file-fixer
       - id: trailing-whitespace
+
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v1.10.0
     hooks:
@@ -12,10 +13,8 @@ repos:
         name: mypy (backend changed files)
         files: ^backend/app/
         additional_dependencies: []
-repos:
-  # ================================
+
   # 后端Python质量约束
-  # ================================
   - repo: local
     hooks:
       - id: mypy-strict
@@ -24,29 +23,26 @@ repos:
         entry: bash
         args:
           - -c
-          - >-
-            if [ "$#" -eq 0 ]; then echo "(skip mypy: no matched files)"; exit 0; fi; \
+          - >
+            if [ "$#" -eq 0 ]; then echo "(skip mypy: no matched files)"; exit 0; fi;
             mypy --strict --no-implicit-optional --warn-return-any --show-error-codes --pretty "$@"
         types: [python]
         files: ^backend/app/.*\.py$
         exclude: ^(migrations/|tests/|backend/scripts/)
-
       - id: no-dict-str-any
         name: Prevent Dict[str, Any] in new code (app only)
         language: system
         entry: bash
         args:
           - -c
-          - >-
-            if [ "$#" -eq 0 ]; then echo "(skip Dict[str, Any] check: no matched files)"; exit 0; fi; \
+          - >
+            if [ "$#" -eq 0 ]; then echo "(skip Dict[str, Any] check: no matched files)"; exit 0; fi;
             if grep -n "Dict\\[str, Any\\]" "$@"; then echo "❌ Dict[str, Any] detected in staged files"; exit 1; fi; exit 0
         types: [python]
         files: ^backend/app/.*\.py$
         exclude: ^(migrations/|tests/|backend/scripts/)
 
-  # ================================  
-  # 前端TypeScript质量约束 - 100%类型安全
-  # ================================
+  # 前端 TypeScript 质量约束
   - repo: local
     hooks:
       - id: typescript-strict
@@ -55,39 +51,36 @@ repos:
         entry: bash
         args:
           - -c
-          - >-
+          - >
             cd frontend && npm run type-check
         files: ^frontend/src/.*\.(ts|tsx)$
         pass_filenames: false
-
-      - id: frontend-lint  
+      - id: frontend-lint
         name: ESLint Strict Check (frontend)
         language: system
         entry: bash
         args:
           - -c
-          - >-
+          - >
             cd frontend && npm run lint
         files: ^frontend/src/.*\.(ts|tsx)$
         pass_filenames: false
-
       - id: no-any-type-frontend
         name: 禁止any类型 (frontend) - 100%类型安全
         language: system
         entry: bash
         args:
           - -c
-          - >-
-            if grep -n -E ": any(\s|$|;|,|\||\[|\])" "$@"; then echo "❌ any类型检测到，请使用具体类型定义"; exit 1; fi; exit 0
+          - >
+            if grep -n -E ": any(\\s|$|;|,|\\||\\[|\\])" "$@"; then echo "❌ any类型检测到，请使用具体类型定义"; exit 1; fi; exit 0
         files: ^frontend/src/.*\.(ts|tsx)$
         exclude: ^frontend/src/.*\.test\.(ts|tsx)$
-
       - id: test-type-safety
         name: 测试文件类型安全检查
-        language: system  
+        language: system
         entry: bash
         args:
           - -c
-          - >-
-            if grep -n -E ": any(\s|$|;|,|\||\[|\]).*(?<!vi\.fn\(\)|vi\.mock\(\)|MockedFunction)" "$@"; then echo "❌ 测试文件中检测到非Mock的any类型"; exit 1; fi; exit 0
+          - >
+            if grep -n -E ": any(\\s|$|;|,|\\||\\[|\\]).*(?<!vi\\.fn\\(\\)|vi\\.mock\\(\\)|MockedFunction)" "$@"; then echo "❌ 测试文件中检测到非Mock的any类型"; exit 1; fi; exit 0
         files: ^frontend/src/.*\.test\.(ts|tsx)$
