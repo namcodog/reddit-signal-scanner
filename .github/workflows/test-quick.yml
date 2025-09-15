@@ -34,9 +34,9 @@ jobs:
       - name: Run smoke tests
         env:
           TEST_USE_REAL_DB: 'false'
-          PYTEST_DISABLE_PLUGIN_AUTOLOAD: '1'
+          PYTHONPATH: backend:.
         run: |
-          python -m pytest -c tests/pytest.ini -p pytest_asyncio -q -m smoke tests/smoke
+          python -m pytest -p pytest_asyncio -q -m smoke tests/smoke
 
   frontend-quick:
     name: Frontend Quick (unit only)
