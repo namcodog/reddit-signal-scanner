@@ -15,12 +15,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
       - name: Cache pip
         uses: actions/cache@v4
         with:
@@ -28,28 +26,17 @@ jobs:
           key: ${{ runner.os }}-pip-${{ hashFiles('backend/requirements.txt') }}
           restore-keys: |
             ${{ runner.os }}-pip-
-
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install --prefer-binary -r backend/requirements.txt
           pip install pytest-xdist
-
-      - name: Import smoke (no DB)
+      - name: Run smoke tests
         env:
           TEST_USE_REAL_DB: 'false'
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD: '1'
         run: |
-          python - <<'PY'
-          import importlib
-          modules = [
-              'backend.app.core.config',
-              'backend.app.core.jwt_handler',
-              'backend.app.core.database',
-          ]
-          for m in modules:
-              importlib.import_module(m)
-          print('✅ backend quick import smoke passed')
-          PY
+          python -m pytest -q -m smoke tests/smoke
 
   frontend-quick:
     name: Frontend Quick (unit only)
@@ -57,18 +44,15 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Use Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
-
       - name: Install deps
         working-directory: frontend
         run: npm ci
-
       - name: Unit Tests (vitest, unit only)
         working-directory: frontend
         run: |
