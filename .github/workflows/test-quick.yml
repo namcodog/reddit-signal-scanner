@@ -10,7 +10,7 @@ on:
 
 jobs:
   backend-quick:
-    name: Backend Quick (smoke)
+    name: Backend Quick (unit only)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
