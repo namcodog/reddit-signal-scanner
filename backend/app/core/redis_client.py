@@ -7,15 +7,35 @@ Linus设计哲学：
 - "简洁胜过聪明"：直接使用redis-py，不搞复杂的抽象层
 """
 
+from __future__ import annotations
+
 import json
 import logging
-from typing import Any, Optional, Dict, Union
-import redis.asyncio as redis
-from redis.asyncio import Redis
+from typing import Any, Optional, TypeVar
+
+from redis.asyncio import ConnectionPool
+from typing import TYPE_CHECKING
+from .types import TypedRedis  # kept for external references
+from redis.asyncio import Redis as RuntimeRedis
 
 from .config import get_settings
 
 logger = logging.getLogger(__name__)
+
+T = TypeVar("T")
+
+
+async def _await_maybe(value: Any) -> Any:
+    """Await value if it is awaitable, otherwise return as-is.
+    This relaxes mismatched redis-py asyncio stubs across versions.
+    """
+    try:
+        # Awaitables in asyncio implement __await__
+        getattr(value, "__await__")
+    except Exception:
+        return value
+    else:
+        return await value
 
 
 class RedisClient:
@@ -29,39 +49,41 @@ class RedisClient:
     - 连接健康检查
     """
 
-    def __init__(self, redis_url: Optional[str] = None):
+    def __init__(self, redis_url: Optional[str] = None) -> None:
         settings = get_settings()
         self.redis_url = redis_url or settings.redis_url
-        self.client: Optional[Redis] = None
+        self.client: Optional[Any] = None
         self._connected = False
 
     async def connect(self) -> None:
-        """建立Redis连接"""
+        """建立Redis连接 - 使用共享连接池"""
         try:
-            self.client = redis.from_url(
-                self.redis_url,
-                encoding="utf-8",
-                decode_responses=True,
-                socket_connect_timeout=5,
-                socket_timeout=5,
-                retry_on_timeout=True,
-            )
+            # 获取共享连接池 - Context7最佳实践
+            pool = await get_shared_redis_pool()
+
+            # Context7文档精确模式: Redis(connection_pool=pool)
+            self.client = RuntimeRedis(connection_pool=pool)
 
             # 测试连接
-            await self.client.ping()
+            assert self.client is not None
+            await _await_maybe(self.client.ping())
             self._connected = True
 
-            logger.info(f"Redis connected successfully: {self.redis_url}")
+            logger.info("Redis connected with shared pool: %s", self.redis_url)
 
         except Exception as e:
             self._connected = False
-            logger.error(f"Redis connection failed: {e}")
+            logger.error("Redis connection failed: %s", e)
             raise
 
     async def disconnect(self) -> None:
         """关闭Redis连接"""
         if self.client:
-            await self.client.close()
+            # Prefer graceful async close if provided, otherwise fallback
+            if hasattr(self.client, "aclose"):
+                await _await_maybe(self.client.aclose())
+            else:
+                await _await_maybe(self.client.close())
             self._connected = False
             logger.info("Redis disconnected")
 
@@ -71,7 +93,7 @@ class RedisClient:
             return False
 
         try:
-            await self.client.ping()
+            await _await_maybe(self.client.ping())
             return True
         except Exception as e:
             logger.warning(f"Redis health check failed: {e}")
@@ -89,7 +111,7 @@ class RedisClient:
             return default
 
         try:
-            value = await self.client.get(key)
+            value: Any = await _await_maybe(self.client.get(key))
 
             if value is None:
                 return default
@@ -102,7 +124,7 @@ class RedisClient:
                 return value
 
         except Exception as e:
-            logger.error(f"Redis get failed for key '{key}': {e}")
+            logger.error("Redis get failed for key '%s': %s", key, e)
             return default
 
     async def set(self, key: str, value: Any, ttl: Optional[int] = None) -> bool:
@@ -122,15 +144,19 @@ class RedisClient:
             else:
                 serialized_value = str(value)
 
+            result: Any
             if ttl:
-                result = await self.client.setex(key, ttl, serialized_value)
+                result = await _await_maybe(
+                    self.client.setex(key, ttl, serialized_value)
+                )
             else:
-                result = await self.client.set(key, serialized_value)
+                result = await _await_maybe(self.client.set(key, serialized_value))
 
-            return bool(result)
+            # Redis set成功时返回True，处理None情况
+            return bool(result) if result is not None else True
 
         except Exception as e:
-            logger.error(f"Redis set failed for key '{key}': {e}")
+            logger.error("Redis set failed for key '%s': %s", key, e)
             return False
 
     async def delete(self, *keys: str) -> int:
@@ -139,9 +165,9 @@ class RedisClient:
             return 0
 
         try:
-            return await self.client.delete(*keys)
+            return int(await _await_maybe(self.client.delete(*keys)))
         except Exception as e:
-            logger.error(f"Redis delete failed for keys {keys}: {e}")
+            logger.error("Redis delete failed for keys %s: %s", keys, e)
             return 0
 
     async def exists(self, key: str) -> bool:
@@ -150,7 +176,7 @@ class RedisClient:
             return False
 
         try:
-            return bool(await self.client.exists(key))
+            return bool(await _await_maybe(self.client.exists(key)))
         except Exception as e:
             logger.error(f"Redis exists check failed for key '{key}': {e}")
             return False
@@ -161,7 +187,7 @@ class RedisClient:
             return False
 
         try:
-            return bool(await self.client.expire(key, ttl))
+            return bool(await _await_maybe(self.client.expire(key, ttl)))
         except Exception as e:
             logger.error(f"Redis expire failed for key '{key}': {e}")
             return False
@@ -170,12 +196,43 @@ class RedisClient:
         """获取Redis键的剩余过期时间"""
         if not self.client:
             return -1
-
         try:
-            return await self.client.ttl(key)
+            result: Any = await _await_maybe(self.client.ttl(key))
+            return int(result) if result is not None else -1
         except Exception as e:
             logger.error(f"Redis TTL check failed for key '{key}': {e}")
             return -1
+
+    async def incr(self, key: str, amount: int = 1) -> int:
+        """自增计数器"""
+        if not self.client:
+            return 0
+        try:
+            return int(await _await_maybe(self.client.incr(key, amount)))
+        except Exception as e:
+            logger.error(f"Redis incr failed for key '{key}': {e}")
+            return 0
+
+    async def sadd(self, key: str, *members: Any) -> int:
+        """向集合添加成员"""
+        if not self.client:
+            return 0
+        try:
+            smembers = [str(m) for m in members]
+            return int(await _await_maybe(self.client.sadd(key, *smembers)))
+        except Exception as e:
+            logger.error(f"Redis sadd failed for key '{key}': {e}")
+            return 0
+
+    async def scard(self, key: str) -> int:
+        """获取集合基数"""
+        if not self.client:
+            return 0
+        try:
+            return int(await _await_maybe(self.client.scard(key)))
+        except Exception as e:
+            logger.error(f"Redis scard failed for key '{key}': {e}")
+            return 0
 
     async def keys(self, pattern: str = "*") -> list[str]:
         """获取匹配模式的所有键（谨慎使用）"""
@@ -183,9 +240,38 @@ class RedisClient:
             return []
 
         try:
-            return await self.client.keys(pattern)
+            keys: Any = await _await_maybe(self.client.keys(pattern))
+            return list(keys)
         except Exception as e:
             logger.error(f"Redis keys failed for pattern '{pattern}': {e}")
+            return []
+
+    async def lpush(self, key: str, *values: Any) -> int:
+        """列表左侧推入元素"""
+        if not self.client:
+            return 0
+
+        try:
+            ser_values: list[str] = []
+            for v in values:
+                if isinstance(v, (dict, list, tuple)):
+                    ser_values.append(json.dumps(v, ensure_ascii=False))
+                else:
+                    ser_values.append(str(v))
+            return int(await _await_maybe(self.client.lpush(key, *ser_values)))
+        except Exception as e:
+            logger.error(f"Redis lpush failed for key '{key}': {e}")
+            return 0
+
+    async def lrange(self, key: str, start: int, end: int) -> list[str]:
+        """获取列表区间元素"""
+        if not self.client:
+            return []
+        try:
+            items: Any = await _await_maybe(self.client.lrange(key, start, end))
+            return list(items)
+        except Exception as e:
+            logger.error(f"Redis lrange failed for key '{key}': {e}")
             return []
 
     async def flush_db(self) -> bool:
@@ -199,7 +285,7 @@ class RedisClient:
                 logger.warning("Flush DB is only allowed in development environment")
                 return False
 
-            await self.client.flushdb()
+            await _await_maybe(self.client.flushdb())
             logger.info("Redis database flushed")
             return True
 
@@ -208,9 +294,39 @@ class RedisClient:
             return False
 
 
-# ===== 全局Redis客户端实例 =====
+# ===== 全局Redis连接池和客户端实例 =====
 
+from typing import Any
+
+_shared_pool: Optional[Any] = None
 _redis_client: Optional[RedisClient] = None
+
+
+async def get_shared_redis_pool() -> Any:
+    """
+    获取全局共享Redis连接池 - Context7最佳实践
+
+    基于文档验证的模式：ConnectionPool.from_url + 多客户端复用
+    """
+    global _shared_pool
+
+    if _shared_pool is None:
+        settings = get_settings()
+
+        # Context7文档精确模式: ConnectionPool.from_url
+        _shared_pool = ConnectionPool.from_url(
+            settings.redis_url,
+            encoding="utf-8",
+            decode_responses=True,
+            max_connections=20,  # 优化并发连接数
+            retry_on_timeout=True,  # 自动重连
+            socket_connect_timeout=5,
+            socket_timeout=5,
+            health_check_interval=30,  # 健康检查间隔
+        )
+        logger.info("Shared Redis connection pool created: %s", settings.redis_url)
+
+    return _shared_pool
 
 
 async def get_redis_client() -> RedisClient:
@@ -233,13 +349,27 @@ async def get_redis_client() -> RedisClient:
     return _redis_client
 
 
+# 兼容函数：部分测试从此模块导入 get_redis
+# 返回底层原生 AsyncRedis 客户端，便于直接调用 redis-py 方法
+async def get_redis() -> Any:
+    client = await get_redis_client()
+    assert client.client is not None
+    return client.client
+
+
 async def close_redis_client() -> None:
     """关闭全局Redis客户端 - 应用关闭时调用"""
-    global _redis_client
+    global _redis_client, _shared_pool
 
     if _redis_client:
         await _redis_client.disconnect()
         _redis_client = None
+
+    # Context7最佳实践：proper cleanup of shared pool
+    if _shared_pool:
+        await _shared_pool.disconnect()
+        _shared_pool = None
+        logger.info("Shared Redis connection pool closed")
 
 
 # ===== 便利函数 - 简化常见操作 =====

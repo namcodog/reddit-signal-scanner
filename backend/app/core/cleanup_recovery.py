@@ -10,21 +10,26 @@
 
 import logging
 import time
-from datetime import datetime, timezone, timedelta
-from typing import Dict, List, Optional, Any, Tuple
-from enum import Enum
-from dataclasses import dataclass, field
-import json
 import traceback
-
-from ..services.data_cleanup_service_v2 import (
-    CleanupCategory,
-    CleanupResult,
-    BatchCleanupResult,
-    CleanupManager,
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
+from enum import Enum
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Tuple,
+    TypedDict,
+    TypeVar,
+    Union,
+    cast,
 )
+
 from ..core.cleanup_locks import get_cleanup_lock_manager
-from ..core.database import get_db
+from ..services.data_cleanup_service import CleanupCategory, CleanupManager
+from .types import JsonValue
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +57,14 @@ class RecoveryAction(Enum):
     ESCALATE_TO_HUMAN = "escalate_to_human"
 
 
+class RecoveryContext(TypedDict, total=False):
+    function_name: str
+    args: Tuple[Any, ...]
+    kwargs: dict[str, JsonValue]
+    timestamp: str
+    category: str
+
+
 @dataclass
 class FailureRecord:
     """故障记录数据结构"""
@@ -62,7 +75,7 @@ class FailureRecord:
     error_message: str
     stack_trace: str
     occurred_at: datetime
-    context: Dict[str, Any]
+    context: RecoveryContext
     recovery_attempts: int = 0
     recovered: bool = False
     recovery_actions: List[RecoveryAction] = field(default_factory=list)
@@ -77,7 +90,27 @@ class RecoveryPlan:
     max_attempts: int
     backoff_multiplier: float
     timeout_seconds: int
-    reduced_scope_params: Optional[Dict[str, Any]] = None
+    reduced_scope_params: Optional[dict[str, JsonValue]] = None
+
+
+class FailureHistoryItem(TypedDict):
+    failure_id: str
+    failure_type: str
+    category: Optional[str]
+    error_message: str
+    occurred_at: str
+    recovery_attempts: int
+    recovered: bool
+    recovery_actions: List[str]
+
+
+class RecoveryStats(TypedDict):
+    total_failures: int
+    successful_recoveries: int
+    failed_recoveries: int
+    escalated_to_human: int
+    success_rate_percent: Union[int, float]
+    generated_at: str
 
 
 class FailureAnalyzer:
@@ -88,7 +121,7 @@ class FailureAnalyzer:
     """
 
     def analyze_failure(
-        self, exception: Exception, context: Dict[str, Any]
+        self, exception: Exception, context: RecoveryContext
     ) -> FailureType:
         """
         分析故障类型
@@ -101,7 +134,8 @@ class FailureAnalyzer:
             FailureType: 故障类型
         """
         error_message = str(exception).lower()
-        exception_type = type(exception).__name__
+        # 移除未使用的局部变量，避免 F841：exception_type
+        # exception_type = type(exception).__name__
 
         # 锁超时故障
         if "lock" in error_message or "timeout" in error_message:
@@ -110,7 +144,13 @@ class FailureAnalyzer:
         # 数据库错误
         if any(
             keyword in error_message
-            for keyword in ["connection", "database", "sql", "postgresql", "deadlock"]
+            for keyword in [
+                "connection",
+                "database",
+                "sql",
+                "postgresql",
+                "deadlock",
+            ]
         ):
             return FailureType.DATABASE_ERROR
 
@@ -275,7 +315,7 @@ class FailureAnalyzer:
             timeout_seconds=600,
         )
 
-    def _generate_safe_params(self, context: Dict[str, Any]) -> Dict[str, Any]:
+    def _generate_safe_params(self, context: RecoveryContext) -> dict[str, JsonValue]:
         """生成安全的参数 - 参数错误的缩小版"""
         return {
             "completed_task_days": 30,
@@ -284,7 +324,9 @@ class FailureAnalyzer:
             "inactive_user_days": 365,
         }
 
-    def _generate_minimal_params(self, context: Dict[str, Any]) -> Dict[str, Any]:
+    def _generate_minimal_params(
+        self, context: RecoveryContext
+    ) -> dict[str, JsonValue]:
         """生成最小参数 - 资源耗尽的最小版"""
         return {
             "completed_task_days": 7,  # 大幅缩小范围
@@ -293,7 +335,9 @@ class FailureAnalyzer:
             "inactive_user_days": 90,
         }
 
-    def _generate_conservative_params(self, context: Dict[str, Any]) -> Dict[str, Any]:
+    def _generate_conservative_params(
+        self, context: RecoveryContext
+    ) -> dict[str, JsonValue]:
         """生成保守参数 - 业务逻辑错误的保守版"""
         return {
             "completed_task_days": 14,  # 保守清理
@@ -314,7 +358,7 @@ class CleanupRecoveryManager:
     4. 防止恢复循环和资源耗尽
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.failure_analyzer = FailureAnalyzer()
         self.failure_history: Dict[str, FailureRecord] = {}
         self.recovery_stats = {
@@ -328,7 +372,7 @@ class CleanupRecoveryManager:
         self,
         exception: Exception,
         category: Optional[CleanupCategory],
-        context: Dict[str, Any],
+        context: RecoveryContext,
     ) -> Tuple[bool, Optional[Any]]:
         """
         处理清理失败 - 主要入口点
@@ -368,7 +412,7 @@ class CleanupRecoveryManager:
         self,
         exception: Exception,
         category: Optional[CleanupCategory],
-        context: Dict[str, Any],
+        context: RecoveryContext,
     ) -> FailureRecord:
         """创建故障记录"""
         failure_id = (
@@ -413,9 +457,7 @@ class CleanupRecoveryManager:
             # 如果所有动作都失败，等待后重试
             if attempt < plan.max_attempts - 1:
                 backoff_time = plan.backoff_multiplier**attempt
-                logger.info(
-                    f"恢复尝试 {attempt + 1} 失败，等待 {backoff_time} 秒后重试"
-                )
+                logger.info(f"恢复尝试 {attempt + 1} 失败，等待 {backoff_time} 秒后重试")
                 time.sleep(backoff_time)
 
         # 所有尝试都失败，最后执行升级动作
@@ -425,9 +467,9 @@ class CleanupRecoveryManager:
         self, action: RecoveryAction, plan: RecoveryPlan, attempt: int
     ) -> Tuple[bool, Optional[Any]]:
         """执行具体的恢复动作 - 使用策略模式消除elif分支"""
-        failure_record = plan.failure_record
-        context = failure_record.context
-        category = failure_record.category
+        # 移除未使用的局部变量，避免 F841
+        # context = plan.failure_record.context
+        # category = plan.failure_record.category
 
         # 策略模式：将每个恢复动作封装为独立的处理器
         action_handlers = {
@@ -449,41 +491,46 @@ class CleanupRecoveryManager:
         self, plan: RecoveryPlan, attempt: int
     ) -> Tuple[bool, Optional[Any]]:
         """处理立即重试恢复动作"""
-        failure_record = plan.failure_record
-        return self._retry_cleanup(failure_record.category, failure_record.context)
+        fr = plan.failure_record
+        return self._retry_cleanup(
+            fr.category,
+            self._extract_kwargs_for_retry(fr.context),
+        )
 
     def _handle_retry_with_backoff(
         self, plan: RecoveryPlan, attempt: int
     ) -> Tuple[bool, Optional[Any]]:
         """处理延迟重试恢复动作"""
-        failure_record = plan.failure_record
+        fr = plan.failure_record
         backoff_time = plan.backoff_multiplier**attempt
         logger.info(f"延迟 {backoff_time} 秒后重试清理")
         time.sleep(backoff_time)
-        return self._retry_cleanup(failure_record.category, failure_record.context)
+        return self._retry_cleanup(
+            fr.category,
+            self._extract_kwargs_for_retry(fr.context),
+        )
 
     def _handle_retry_with_reduced_scope(
         self, plan: RecoveryPlan, attempt: int
     ) -> Tuple[bool, Optional[Any]]:
         """处理缩小范围重试恢复动作"""
-        failure_record = plan.failure_record
+        fr = plan.failure_record
         if plan.reduced_scope_params:
             logger.info("使用缩小范围的参数重试清理")
-            return self._retry_cleanup(
-                failure_record.category, plan.reduced_scope_params
-            )
+            return self._retry_cleanup(fr.category, plan.reduced_scope_params)
         else:
-            return self._retry_cleanup(failure_record.category, failure_record.context)
+            return self._retry_cleanup(
+                fr.category,
+                self._extract_kwargs_for_retry(fr.context),
+            )
 
     def _handle_skip_and_continue(
         self, plan: RecoveryPlan, attempt: int
     ) -> Tuple[bool, Optional[Any]]:
         """处理跳过并继续恢复动作"""
-        failure_record = plan.failure_record
-        category = failure_record.category
-        logger.info(
-            f"跳过清理类别 {category.value if category else 'unknown'}，继续其他清理"
-        )
+        fr = plan.failure_record
+        category = fr.category
+        logger.info(f"跳过清理类别 {category.value if category else 'unknown'}，继续其他清理")
         return True, {
             "skipped": True,
             "category": category.value if category else None,
@@ -493,20 +540,19 @@ class CleanupRecoveryManager:
         self, plan: RecoveryPlan, attempt: int
     ) -> Tuple[bool, Optional[Any]]:
         """处理中止并清理恢复动作"""
-        failure_record = plan.failure_record
+        fr = plan.failure_record
         logger.info("中止清理并执行清理操作")
-        self._cleanup_partial_operations(failure_record)
+        self._cleanup_partial_operations(fr)
         return False, {"aborted": True, "cleaned_up": True}
 
     def _handle_escalate_to_human(
         self, plan: RecoveryPlan, attempt: int
     ) -> Tuple[bool, Optional[Any]]:
         """处理升级到人工处理恢复动作"""
-        failure_record = plan.failure_record
-        return self._escalate_failure(failure_record)
+        return self._escalate_failure(plan.failure_record)
 
     def _retry_cleanup(
-        self, category: Optional[CleanupCategory], params: Dict[str, Any]
+        self, category: Optional[CleanupCategory], params: dict[str, JsonValue]
     ) -> Tuple[bool, Optional[Any]]:
         """重试清理操作"""
         try:
@@ -526,7 +572,7 @@ class CleanupRecoveryManager:
             logger.error(f"重试清理失败: {e}")
             return False, None
 
-    def _cleanup_partial_operations(self, failure_record: FailureRecord):
+    def _cleanup_partial_operations(self, failure_record: FailureRecord) -> None:
         """清理部分操作（释放资源、回滚事务等）"""
         try:
             # 释放可能持有的锁
@@ -547,17 +593,15 @@ class CleanupRecoveryManager:
         self, failure_record: FailureRecord
     ) -> Tuple[bool, Optional[Any]]:
         """升级失败到人工处理"""
-        logger.error(
-            f"故障升级到人工处理: {failure_record.failure_id}",
-            extra={
-                "failure_type": failure_record.failure_type.value,
-                "category": (
-                    failure_record.category.value if failure_record.category else None
-                ),
-                "error_message": failure_record.error_message,
-                "recovery_attempts": failure_record.recovery_attempts,
-            },
-        )
+        extra_data = {
+            "failure_type": failure_record.failure_type.value,
+            "category": (
+                failure_record.category.value if failure_record.category else None
+            ),
+            "error_message": failure_record.error_message,
+            "recovery_attempts": failure_record.recovery_attempts,
+        }
+        logger.error(f"故障升级到人工处理: {failure_record.failure_id}", extra=extra_data)
 
         # TODO: 发送告警通知（邮件、钉钉、企微等）
         # TODO: 记录到故障管理系统
@@ -570,7 +614,7 @@ class CleanupRecoveryManager:
 
         return False, escalation_result
 
-    def _update_recovery_stats(self, success: bool, plan: RecoveryPlan):
+    def _update_recovery_stats(self, success: bool, plan: RecoveryPlan) -> None:
         """更新恢复统计信息"""
         self.recovery_stats["total_failures"] += 1
 
@@ -583,11 +627,11 @@ class CleanupRecoveryManager:
             if RecoveryAction.ESCALATE_TO_HUMAN in plan.recommended_actions:
                 self.recovery_stats["escalated_to_human"] += 1
 
-    def get_failure_history(self, hours: int = 24) -> List[Dict[str, Any]]:
+    def get_failure_history(self, hours: int = 24) -> List[FailureHistoryItem]:
         """获取故障历史"""
         cutoff_time = datetime.now(timezone.utc) - timedelta(hours=hours)
 
-        recent_failures = []
+        recent_failures: List[FailureHistoryItem] = []
         for failure_id, record in self.failure_history.items():
             if record.occurred_at >= cutoff_time:
                 recent_failures.append(
@@ -607,23 +651,38 @@ class CleanupRecoveryManager:
 
         return sorted(recent_failures, key=lambda x: x["occurred_at"], reverse=True)
 
-    def get_recovery_statistics(self) -> Dict[str, Any]:
+    def get_recovery_statistics(self) -> RecoveryStats:
         """获取恢复统计信息"""
         total = self.recovery_stats["total_failures"]
+        success_rate: float
         if total == 0:
-            success_rate = 0
+            success_rate = 0.0
         else:
             success_rate = round(
-                (self.recovery_stats["successful_recoveries"] / total) * 100, 2
+                (self.recovery_stats["successful_recoveries"] / total) * 100.0, 2
             )
 
         return {
-            **self.recovery_stats,
+            "total_failures": int(self.recovery_stats.get("total_failures", 0)),
+            "successful_recoveries": int(
+                self.recovery_stats.get("successful_recoveries", 0)
+            ),
+            "failed_recoveries": int(self.recovery_stats.get("failed_recoveries", 0)),
+            "escalated_to_human": int(self.recovery_stats.get("escalated_to_human", 0)),
             "success_rate_percent": success_rate,
             "generated_at": datetime.now(timezone.utc).isoformat(),
         }
 
-    def cleanup_old_records(self, days: int = 7):
+    def _extract_kwargs_for_retry(
+        self, context: RecoveryContext
+    ) -> dict[str, JsonValue]:
+        """从恢复上下文中提取用于重试的参数字典。"""
+        raw = context.get("kwargs")
+        if raw is None:
+            return {}
+        return raw
+
+    def cleanup_old_records(self, days: int = 7) -> None:
         """清理旧的故障记录"""
         cutoff_time = datetime.now(timezone.utc) - timedelta(days=days)
 
@@ -654,7 +713,12 @@ def get_cleanup_recovery_manager() -> CleanupRecoveryManager:
 
 
 # 便捷装饰器
-def with_cleanup_recovery(category: Optional[CleanupCategory] = None):
+T = TypeVar("T")
+
+
+def with_cleanup_recovery(
+    category: Optional[CleanupCategory] = None,
+) -> Callable[[Callable[..., T]], Callable[..., T]]:
     """
     清理恢复装饰器 - 自动处理清理失败和恢复
 
@@ -662,14 +726,14 @@ def with_cleanup_recovery(category: Optional[CleanupCategory] = None):
         category: 清理类别
     """
 
-    def decorator(func):
-        def wrapper(*args, **kwargs):
+    def decorator(func: Callable[..., T]) -> Callable[..., T]:
+        def wrapper(*args: Any, **kwargs: Any) -> T:
             try:
                 return func(*args, **kwargs)
             except Exception as e:
                 recovery_manager = get_cleanup_recovery_manager()
 
-                context = {
+                context: RecoveryContext = {
                     "function_name": func.__name__,
                     "args": args,
                     "kwargs": kwargs,
@@ -681,7 +745,7 @@ def with_cleanup_recovery(category: Optional[CleanupCategory] = None):
                 )
 
                 if success:
-                    return result
+                    return cast(T, result)
                 else:
                     # 恢复失败，重新抛出原异常
                     raise e

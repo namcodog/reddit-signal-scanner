@@ -42,9 +42,7 @@ def upgrade() -> None:
         sa.Column(
             "email", sa.String(255), unique=True, nullable=False, comment="用户邮箱地址"
         ),
-        sa.Column(
-            "password_hash", sa.String(255), nullable=False, comment="密码哈希值"
-        ),
+        sa.Column("password_hash", sa.String(255), nullable=False, comment="密码哈希值"),
         # 状态管理
         sa.Column(
             "is_active",

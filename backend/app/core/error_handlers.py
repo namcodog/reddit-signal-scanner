@@ -16,17 +16,19 @@ Linus设计哲学：
 import logging
 import uuid
 from datetime import datetime, timezone
-from typing import Dict, Any, Callable
+from typing import Any, Callable, Dict, Optional
+
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
 from .exceptions import (
     BaseApplicationError,
-    ValidationError,
-    TaskNotFoundError,
-    RedditAPIError,
     DatabaseError,
+    RedditAPIError,
+    TaskNotFoundError,
+    ValidationError,
 )
+from .types import JsonValue
 
 logger = logging.getLogger(__name__)
 
@@ -35,8 +37,8 @@ def create_error_response(
     request: Request,
     exc: BaseApplicationError,
     error_type: str,
-    additional_data: Dict[str, Any] = None,
-) -> Dict[str, Any]:
+    additional_data: Optional[dict[str, JsonValue]] = None,
+) -> dict[str, JsonValue]:
     """
     创建统一的错误响应格式 - 消除响应格式的特殊情况
 
@@ -52,14 +54,17 @@ def create_error_response(
     request_id = getattr(request.state, "request_id", str(uuid.uuid4())[:8])
     timestamp = datetime.now(timezone.utc).isoformat()
 
-    response_data = {
+    response_data: dict[str, JsonValue] = {
         "status": "error",
         "error_type": error_type,
         "message": exc.detail,
         "recovery_hint": exc.recovery_hint,
         "timestamp": timestamp,
         "request_id": request_id,
-        "context": exc.context,
+        # Normalize Mapping to dict to satisfy JsonValue (which allows dict, not Mapping)
+        "context": dict(exc.context)
+        if isinstance(exc.context, dict)
+        else dict(exc.context),
     }
 
     # 添加额外数据（如恢复策略结果）
@@ -130,7 +135,7 @@ def handle_reddit_api_error(request: Request, exc: RedditAPIError) -> JSONRespon
     )
 
     # Reddit API错误需要触发恢复策略
-    additional_data = {
+    additional_data: dict[str, JsonValue] = {
         "recovery_strategy": "cache_fallback",
         "fallback_enabled": True,
         "cache_ttl": 300,  # 5分钟缓存
@@ -161,7 +166,7 @@ def handle_database_error(request: Request, exc: DatabaseError) -> JSONResponse:
     )
 
     # 数据库错误需要触发重试机制
-    additional_data = {
+    additional_data: dict[str, JsonValue] = {
         "recovery_strategy": "auto_retry",
         "max_retries": 3,
         "retry_delay": 2,
@@ -194,7 +199,7 @@ def handle_generic_error(request: Request, exc: Exception) -> JSONResponse:
         },
     )
 
-    response_data = {
+    response_data: dict[str, JsonValue] = {
         "status": "error",
         "error_type": "internal_error",
         "message": "服务内部错误，请稍后重试",
@@ -208,7 +213,11 @@ def handle_generic_error(request: Request, exc: Exception) -> JSONResponse:
 
 
 # 错误处理器映射表 - Linus: "简单的数据结构胜过复杂的逻辑"
-ERROR_HANDLERS: Dict[type, Callable] = {
+from typing import Callable as _Callable
+from typing import Type as _Type
+from typing import Callable as __Callable
+
+ERROR_HANDLERS: Dict[_Type[BaseApplicationError], __Callable[..., JSONResponse]] = {
     ValidationError: handle_validation_error,
     TaskNotFoundError: handle_task_not_found,
     RedditAPIError: handle_reddit_api_error,

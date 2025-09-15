@@ -166,9 +166,7 @@ class TestDatabaseSchema:
         )
 
         fk_constraints: List[Tuple] = result.fetchall()
-        assert (
-            len(fk_constraints) >= 3
-        ), f"外键约束不足，期望至少3个，实际: {len(fk_constraints)}"
+        assert len(fk_constraints) >= 3, f"外键约束不足，期望至少3个，实际: {len(fk_constraints)}"
 
         # 验证关键外键关系存在
         expected_fks: Set[Tuple[str, str, str]] = {
@@ -186,9 +184,7 @@ class TestDatabaseSchema:
 
         # 验证级联删除设置
         cascade_rules = [fk for fk in fk_constraints if fk[5] == "CASCADE"]
-        assert (
-            len(cascade_rules) >= 2
-        ), f"级联删除规则不足，期望至少2个，实际: {len(cascade_rules)}"
+        assert len(cascade_rules) >= 2, f"级联删除规则不足，期望至少2个，实际: {len(cascade_rules)}"
 
     @pytest.mark.asyncio
     async def test_indexes_exist_and_optimized(self, db_session: AsyncSession) -> None:
@@ -279,9 +275,7 @@ class TestDatabaseSchema:
 
         missing_check_tables = expected_tables - constraint_tables
         if missing_check_tables:
-            print(
-                f"警告: 这些表可能需要CHECK约束来确保数据完整性: {missing_check_tables}"
-            )
+            print(f"警告: 这些表可能需要CHECK约束来确保数据完整性: {missing_check_tables}")
 
         # 验证至少存在基础约束
         print(f"发现 {len(check_constraints)} 个CHECK约束")

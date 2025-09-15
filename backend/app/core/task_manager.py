@@ -10,22 +10,26 @@
 """
 
 import logging
-from typing import Dict, Any, Optional, List, TYPE_CHECKING
 from datetime import datetime, timezone
 from enum import Enum
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from uuid import UUID
+
+from .types import JsonValue
 
 if TYPE_CHECKING:
     from ..core.user_context import UserContext
 
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update, and_
 from celery.result import AsyncResult
+from sqlalchemy import and_, select, update
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..models.task import Task as TaskModel
-from ..services.task_producer import TaskProducer, get_task_producer
-from ..schemas.task_producer import TaskSubmissionRequest, TaskSubmissionResponse
 from ..core.celery_app import get_celery_app, get_task_status
 from ..core.exceptions import TaskNotFoundError, TaskProducerError
+from ..core.sqlalchemy_typing import as_bool_clause
+from ..models.task import Task as TaskModel
+from ..schemas.task_producer import TaskSubmissionRequest, TaskSubmissionResponse
+from ..services.task_producer import TaskProducer, get_task_producer
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +61,7 @@ class TaskManager:
     - 批量操作
     """
 
-    def __init__(self, task_producer: Optional[TaskProducer] = None):
+    def __init__(self, task_producer: Optional[TaskProducer] = None) -> None:
         """
         初始化任务管理器
 
@@ -106,7 +110,7 @@ class TaskManager:
 
     async def get_task(
         self, task_id: str, db: AsyncSession
-    ) -> Optional[Dict[str, Any]]:
+    ) -> Optional[dict[str, JsonValue]]:
         """
         获取任务详细信息
 
@@ -120,8 +124,15 @@ class TaskManager:
             Optional[Dict]: 任务信息，如果不存在返回None
         """
         try:
+            # 解析为 UUID
+            try:
+                task_uuid = UUID(task_id)
+            except Exception:
+                logger.warning(f"无效的任务ID: {task_id}")
+                return None
+
             # 获取数据库记录
-            db_task = await db.get(TaskModel, task_id)
+            db_task = await db.get(TaskModel, task_uuid)
             if not db_task:
                 return None
 
@@ -135,7 +146,6 @@ class TaskManager:
                 "status": db_task.status,
                 "created_at": db_task.created_at.isoformat(),
                 "updated_at": db_task.updated_at.isoformat(),
-                "metadata": db_task.metadata or {},
                 "celery_status": {
                     "state": celery_status.get("state"),
                     "ready": celery_status.get("ready"),
@@ -153,7 +163,7 @@ class TaskManager:
         task_id: str,
         status: TaskStatus,
         db: AsyncSession,
-        additional_data: Optional[Dict[str, Any]] = None,
+        additional_data: Optional[dict[str, JsonValue]] = None,
     ) -> bool:
         """
         更新任务状态
@@ -168,10 +178,17 @@ class TaskManager:
             bool: 是否更新成功
         """
         try:
+            # 解析为 UUID
+            try:
+                task_uuid = UUID(task_id)
+            except Exception:
+                logger.warning(f"无效的任务ID: {task_id}")
+                return False
+
             # 更新数据库记录
             stmt = (
                 update(TaskModel)
-                .where(TaskModel.id == task_id)
+                .where(as_bool_clause(TaskModel.id == task_uuid))
                 .values(status=status.value, updated_at=datetime.now(timezone.utc))
             )
 
@@ -181,13 +198,12 @@ class TaskManager:
                 logger.warning(f"任务不存在，无法更新状态: {task_id}")
                 return False
 
-            # 如果有额外数据，单独更新metadata
+            # 该模型不包含 metadata 字段，additional_data 暂不写库，仅记录日志
             if additional_data:
-                task = await db.get(TaskModel, task_id)
-                if task:
-                    metadata = task.metadata or {}
-                    metadata.update(additional_data)
-                    task.metadata = metadata
+                logger.debug(
+                    "additional_data provided but Task model has no metadata field: %s",
+                    list(additional_data.keys()),
+                )
 
             await db.commit()
             logger.debug(f"任务状态已更新: {task_id} -> {status.value}")
@@ -245,7 +261,7 @@ class TaskManager:
         status: Optional[TaskStatus] = None,
         limit: int = 50,
         offset: int = 0,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, JsonValue]]:
         """
         列出任务
 
@@ -263,14 +279,20 @@ class TaskManager:
             # 构建查询条件
             conditions = []
             if user_id:
-                conditions.append(TaskModel.user_id == user_id)
+                try:
+                    user_uuid = UUID(user_id)
+                    conditions.append(as_bool_clause(TaskModel.user_id == user_uuid))
+                except Exception:
+                    logger.warning(f"无效的用户ID: {user_id}, 忽略该过滤条件")
             if status:
-                conditions.append(TaskModel.status == status.value)
+                conditions.append(as_bool_clause(TaskModel.status == status.value))
 
             # 执行查询
             stmt = (
                 select(TaskModel)
-                .where(and_(*conditions) if conditions else True)
+                .where(
+                    and_(*conditions) if conditions else as_bool_clause(True == True)
+                )
                 .order_by(TaskModel.created_at.desc())
                 .limit(limit)
                 .offset(offset)
@@ -280,7 +302,7 @@ class TaskManager:
             tasks = result.scalars().all()
 
             # 转换为字典格式
-            task_list = []
+            task_list: list[dict[str, JsonValue]] = []
             for task in tasks:
                 task_list.append(
                     {
@@ -304,7 +326,7 @@ class TaskManager:
             logger.error(f"列出任务失败: {e}")
             return []
 
-    async def get_task_statistics(self, db: AsyncSession) -> Dict[str, Any]:
+    async def get_task_statistics(self, db: AsyncSession) -> dict[str, JsonValue]:
         """
         获取任务统计信息
 
@@ -318,13 +340,15 @@ class TaskManager:
             # 统计各状态的任务数量
             stats = {}
             for status in TaskStatus:
-                stmt = select(TaskModel).where(TaskModel.status == status.value)
+                stmt = select(TaskModel).where(
+                    as_bool_clause(TaskModel.status == status.value)
+                )
                 result = await db.execute(stmt)
                 count = len(result.scalars().all())
                 stats[status.value] = count
 
             # 获取队列长度
-            from ..core.celery_app import get_queue_lengths, get_active_tasks
+            from ..core.celery_app import get_active_tasks, get_queue_lengths
 
             queue_lengths = get_queue_lengths()
             active_tasks = get_active_tasks()
@@ -342,7 +366,7 @@ class TaskManager:
 
     async def retry_failed_tasks(
         self, db: AsyncSession, limit: int = 10
-    ) -> Dict[str, Any]:
+    ) -> dict[str, JsonValue]:
         """
         重试失败的任务
 
@@ -357,7 +381,7 @@ class TaskManager:
             # 查找失败的任务
             stmt = (
                 select(TaskModel)
-                .where(TaskModel.status == TaskStatus.FAILED.value)
+                .where(as_bool_clause(TaskModel.status == TaskStatus.FAILED.value))
                 .order_by(TaskModel.updated_at.desc())
                 .limit(limit)
             )
@@ -419,18 +443,15 @@ class TaskManager:
             return {"error": str(e)}
 
 
-def get_task_manager(task_producer: Optional[TaskProducer] = None) -> TaskManager:
+def get_task_manager() -> TaskManager:
     """
     获取任务管理器实例 - 修复全局单例反模式
 
     Linus修复：移除全局可变状态，使用依赖注入
     每次调用都创建新实例，避免并发编程噩梦
 
-    Args:
-        task_producer: 可选的任务生产者，用于依赖注入
-
     Returns:
         TaskManager: 新的任务管理器实例
     """
     # 每次创建新实例，线程安全
-    return TaskManager(task_producer)
+    return TaskManager()

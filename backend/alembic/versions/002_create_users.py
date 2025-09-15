@@ -42,9 +42,7 @@ def upgrade() -> None:
             server_default=sa.text("gen_random_uuid()"),
             comment="租户ID，个人用户=单用户租户",
         ),
-        sa.Column(
-            "email", sa.String(320), nullable=False, comment="用户邮箱地址，租户内唯一"
-        ),
+        sa.Column("email", sa.String(320), nullable=False, comment="用户邮箱地址，租户内唯一"),
         sa.Column(
             "password_hash", sa.String(255), nullable=False, comment="BCrypt密码哈希值"
         ),

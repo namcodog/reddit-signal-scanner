@@ -9,10 +9,22 @@
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Any, Optional
+from typing import Any, Dict, List, Optional, Union
+
+from ..core.types import JsonValue
+
+# 步骤结果的通用类型定义
+StepResultValue = Union[
+    str,
+    int,
+    float,
+    bool,
+    List[Union[str, int, float]],
+    Dict[str, Union[str, int, float]],
+]
+import time
 from datetime import datetime
 from enum import Enum
-import time
 
 
 class StepStatus(Enum):
@@ -45,7 +57,7 @@ class AnalysisConfig:
     # 时间限制
     max_total_time: Optional[float] = None  # 覆盖默认总时长
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """后处理验证"""
         if not self.product_description.strip():
             raise ValueError("产品描述不能为空")
@@ -68,12 +80,14 @@ class PipelineData:
     # 输入数据
     product_description: str
     target_keywords: List[str] = field(default_factory=list)
-    analysis_config: AnalysisConfig = field(default_factory=lambda: AnalysisConfig(""))
+    analysis_config: AnalysisConfig = field(
+        default_factory=lambda: AnalysisConfig("placeholder")
+    )
 
     # 流水线状态
     current_step: int = 0
     total_steps: int = 4
-    step_results: Dict[str, Any] = field(default_factory=dict)
+    step_results: dict[str, dict[str, StepResultValue]] = field(default_factory=dict)
 
     # 性能追踪
     step_durations: List[float] = field(default_factory=list)
@@ -88,7 +102,9 @@ class PipelineData:
     created_at: datetime = field(default_factory=datetime.now)
     user_id: Optional[str] = None
 
-    def get_step_result(self, step_name: str, default: Any = None) -> Any:
+    def get_step_result(
+        self, step_name: str, default: Optional[dict[str, StepResultValue]] = None
+    ) -> Optional[dict[str, StepResultValue]]:
         """安全获取步骤结果"""
         return self.step_results.get(step_name, default)
 
@@ -121,16 +137,16 @@ class PipelineResult:
 
     step_name: str
     duration: float
-    data: Dict[str, Any]
+    data: dict[str, JsonValue]
     success: bool
     status: StepStatus = StepStatus.COMPLETED
 
     # 可选的详细信息
     error_message: Optional[str] = None
     warnings: List[str] = field(default_factory=list)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, JsonValue] = field(default_factory=dict)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """设置状态"""
         if not self.success:
             self.status = StepStatus.FAILED
@@ -184,9 +200,9 @@ class InsightsData:
     """洞察数据结构 - Step3的输出"""
 
     # 三类核心洞察
-    pain_points: List[Dict[str, Any]] = field(default_factory=list)
-    competitors: List[Dict[str, Any]] = field(default_factory=list)
-    opportunities: List[Dict[str, Any]] = field(default_factory=list)
+    pain_points: list[dict[str, JsonValue]] = field(default_factory=list)
+    competitors: list[dict[str, JsonValue]] = field(default_factory=list)
+    opportunities: list[dict[str, JsonValue]] = field(default_factory=list)
 
     # 分析摘要
     analysis_summary: str = ""
@@ -201,9 +217,9 @@ class InsightsData:
         """总洞察数量"""
         return len(self.pain_points) + len(self.competitors) + len(self.opportunities)
 
-    def get_top_insights(self, limit: int = 5) -> List[Dict[str, Any]]:
+    def get_top_insights(self, limit: int = 5) -> list[dict[str, JsonValue]]:
         """获取top洞察"""
-        all_insights = []
+        all_insights: list[dict[str, JsonValue]] = []
 
         # 合并所有洞察并按分数排序
         for pain_point in self.pain_points:
@@ -215,10 +231,20 @@ class InsightsData:
         for opportunity in self.opportunities:
             all_insights.append({**opportunity, "type": "opportunity"})
 
+        # 提取可排序的分数字段
+        def _score_value(item: dict[str, JsonValue]) -> float:
+            v = item.get("score", 0)
+            if isinstance(v, (int, float)):
+                return float(v)
+            if isinstance(v, str):
+                try:
+                    return float(v)
+                except ValueError:
+                    return 0.0
+            return 0.0
+
         # 按score降序排序
-        sorted_insights = sorted(
-            all_insights, key=lambda x: x.get("score", 0), reverse=True
-        )
+        sorted_insights = sorted(all_insights, key=_score_value, reverse=True)
 
         return sorted_insights[:limit]
 
@@ -239,25 +265,27 @@ class AnalysisReport:
     # 数据源信息
     total_posts_analyzed: int = 0
     communities_scanned: List[str] = field(default_factory=list)
-    data_sources: Dict[str, int] = field(
+    data_sources: dict[str, int] = field(
         default_factory=dict
     )  # {"cache": 450, "api": 50}
 
     # 执行统计
     total_duration: float = 0.0
-    step_durations: Dict[str, float] = field(default_factory=dict)
+    step_durations: dict[str, float] = field(default_factory=dict)
 
     # 质量指标
-    data_quality_metrics: Dict[str, float] = field(default_factory=dict)
+    data_quality_metrics: dict[str, float] = field(default_factory=dict)
 
-    def get_executive_summary(self) -> Dict[str, Any]:
+    def get_executive_summary(self) -> dict[str, JsonValue]:
         """生成执行摘要"""
+        from typing import List, cast
+
         return {
             "总洞察数": self.insights.total_insights,
             "置信度": f"{self.confidence_score:.1%}",
             "分析时长": f"{self.total_duration:.1f}秒",
             "数据来源": self.data_sources,
-            "关键发现": self.insights.key_insights[:3],  # 前3个关键发现
+            "关键发现": cast(List[JsonValue], self.insights.key_insights[:3]),  # 前3个关键发现
         }
 
     def is_actionable(self) -> bool:
@@ -270,5 +298,5 @@ class AnalysisReport:
 
 
 # 便捷的类型别名
-AnalysisStepData = Dict[str, Any]  # 步骤间传递的数据
+AnalysisStepData = dict[str, JsonValue]  # 步骤间传递的数据
 AnalysisMetrics = Dict[str, float]  # 性能指标数据

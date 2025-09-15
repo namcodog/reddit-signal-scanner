@@ -1,0 +1,32 @@
+name: Type Check
+
+on:
+  pull_request:
+  push:
+    branches: [ main, master ]
+
+jobs:
+  mypy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install backend deps
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install mypy
+          # Ensure common stub packages are available to mypy
+          pip install types-PyYAML types-requests types-aiofiles || true
+
+      - name: Run mypy (backend, strict)
+        working-directory: backend
+        run: |
+          mypy --config-file mypy.ini --strict app

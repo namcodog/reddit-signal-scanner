@@ -90,9 +90,7 @@ class PRD0110ValidationRunner:
             )
 
             success = result.returncode == 0
-            print(
-                f"   {'✅' if success else '❌'} 完整性测试 - {'通过' if success else '失败'}"
-            )
+            print(f"   {'✅' if success else '❌'} 完整性测试 - {'通过' if success else '失败'}")
 
             return {
                 "status": "PASSED" if success else "FAILED",
@@ -134,9 +132,7 @@ class PRD0110ValidationRunner:
             )
 
             success = result.returncode == 0
-            print(
-                f"   {'✅' if success else '❌'} 性能测试 - {'通过' if success else '失败'}"
-            )
+            print(f"   {'✅' if success else '❌'} 性能测试 - {'通过' if success else '失败'}")
 
             return {
                 "status": "PASSED" if success else "FAILED",
@@ -178,9 +174,7 @@ class PRD0110ValidationRunner:
             )
 
             success = result.returncode == 0
-            print(
-                f"   {'✅' if success else '❌'} 综合测试 - {'通过' if success else '失败'}"
-            )
+            print(f"   {'✅' if success else '❌'} 综合测试 - {'通过' if success else '失败'}")
 
             return {
                 "status": "PASSED" if success else "FAILED",
@@ -230,9 +224,7 @@ class PRD0110ValidationRunner:
             success = result.returncode == 0 and total_coverage >= 85
 
             print(f"   📈 测试覆盖率: {total_coverage:.1f}%")
-            print(
-                f"   {'✅' if success else '❌'} 覆盖率分析 - {'达标' if success else '不达标'}"
-            )
+            print(f"   {'✅' if success else '❌'} 覆盖率分析 - {'达标' if success else '不达标'}")
 
             return {
                 "status": "PASSED" if success else "FAILED",

@@ -8,15 +8,17 @@ Linus原则：
 - 性能优先：从request.state直接获取，零开销
 """
 
-from typing import Optional, List, Annotated, Callable
+from typing import Annotated, Any, Callable, List, Optional, cast
+
 from fastapi import Depends, Request
+from pydantic import BaseModel, Field
+
 from ..core.auth import (
-    CurrentUser,
     AuthenticationError,
+    CurrentUser,
     PermissionError,
     TenantAccessError,
 )
-
 
 # ===== 核心依赖注入函数 =====
 
@@ -31,7 +33,7 @@ async def get_current_user(request: Request) -> CurrentUser:
     auth_user = getattr(request.state, "auth", None)
     if not auth_user:
         raise AuthenticationError("用户未认证或认证已过期")
-    return auth_user  # type: ignore
+    return cast(CurrentUser, auth_user)
 
 
 async def get_optional_user(request: Request) -> Optional[CurrentUser]:
@@ -42,7 +44,7 @@ async def get_optional_user(request: Request) -> Optional[CurrentUser]:
 # ===== 权限检查依赖 =====
 
 
-def require_permissions(*required_permissions: str) -> Callable:
+def require_permissions(*required_permissions: str) -> Callable[..., Any]:
     """
     权限检查装饰器工厂 - 简化版本
 
@@ -72,7 +74,7 @@ def require_permissions(*required_permissions: str) -> Callable:
     return permission_dependency
 
 
-def require_any_permission(*required_permissions: str) -> Callable:
+def require_any_permission(*required_permissions: str) -> Callable[..., Any]:
     """
     任一权限检查装饰器工厂
 
@@ -87,9 +89,7 @@ def require_any_permission(*required_permissions: str) -> Callable:
         )
 
         if not has_any_permission:
-            raise PermissionError(
-                f"需要以下权限之一: {', '.join(required_permissions)}"
-            )
+            raise PermissionError(f"需要以下权限之一: {', '.join(required_permissions)}")
 
         return current_user
 
@@ -99,7 +99,9 @@ def require_any_permission(*required_permissions: str) -> Callable:
 # ===== 租户访问控制 =====
 
 
-def require_tenant_access(tenant_id_param: str = "tenant_id") -> Callable:
+def require_tenant_access(
+    tenant_id_param: str = "tenant_id",
+) -> Callable[..., Any]:
     """
     租户访问控制装饰器工厂
 
@@ -216,7 +218,7 @@ WriteUser = Annotated[CurrentUser, Depends(require_write_permission)]
 # ===== 高级依赖组合 =====
 
 
-def require_permissions_and_tenant(*permissions: str) -> Callable:
+def require_permissions_and_tenant(*permissions: str) -> Callable[..., Any]:
     """
     同时要求权限和租户访问控制的组合依赖
 
@@ -269,7 +271,7 @@ def check_tenant_access(user: CurrentUser, tenant_id: str) -> bool:
 # ===== 依赖注入调试工具 =====
 
 
-async def get_auth_debug_dependencies(request: Request) -> dict:
+async def get_auth_debug_dependencies(request: Request) -> dict[str, Any]:
     """
     获取认证依赖的调试信息
 
@@ -302,7 +304,7 @@ async def get_auth_debug_dependencies(request: Request) -> dict:
 # ===== 迁移助手函数 =====
 
 
-def migrate_from_old_auth() -> Callable:
+def migrate_from_old_auth() -> Callable[..., Any]:
     """
     从旧的认证系统迁移的助手函数
 
@@ -310,7 +312,7 @@ def migrate_from_old_auth() -> Callable:
     """
     import warnings
 
-    def deprecated_auth_dependency() -> Callable:
+    def deprecated_auth_dependency() -> Callable[..., Any]:
         warnings.warn(
             "使用了已废弃的认证依赖，请迁移到 get_current_user",
             DeprecationWarning,
@@ -319,6 +321,128 @@ def migrate_from_old_auth() -> Callable:
         return get_current_user
 
     return deprecated_auth_dependency
+
+
+# ===== Context7兼容的Token验证依赖 =====
+
+
+class TokenUserInfo(BaseModel):
+    """Token用户信息结构 - Context7兼容格式"""
+
+    user_id: str = Field(..., description="用户ID")
+    tenant_id: str = Field(..., description="租户ID")
+    email: str = Field(..., description="用户邮箱")
+    token_type: str = Field(..., description="Token类型")
+    jti: str = Field(..., description="JWT唯一标识符")
+    expires_delta: int = Field(..., description="Token剩余有效期（秒）")
+
+
+async def verify_refresh_token_from_header(request: Request) -> TokenUserInfo:
+    """
+    从Authorization header验证refresh token - Context7模式
+
+    遵循Flask-JWT-Extended模式：
+    - 从Authorization header获取token
+    - 验证token为refresh类型
+    - 返回用户信息用于token刷新
+    """
+    import time
+
+    from jwt.exceptions import InvalidTokenError
+
+    from ..core.auth import AuthenticationError, get_token_from_request
+    from ..core.jwt_handler import get_jwt_handler
+    from ..services.token_blacklist_service import get_token_blacklist_service
+
+    # 获取token
+    token = get_token_from_request(request)
+    if not token:
+        raise AuthenticationError("缺少refresh token")
+
+    try:
+        jwt_handler = get_jwt_handler()
+        blacklist_service = get_token_blacklist_service()
+
+        # 验证refresh token
+        payload = jwt_handler.verify_refresh_token(token)
+
+        # 检查token是否在黑名单中
+        if await blacklist_service.is_token_revoked(payload.jti):
+            raise AuthenticationError("Refresh token已被撤销")
+
+        # 检查用户是否被全局撤销
+        is_globally_revoked = await blacklist_service.is_user_globally_revoked(
+            payload.user_id
+        )
+        if is_globally_revoked:
+            raise AuthenticationError("用户所有token已被撤销")
+
+        # 计算剩余有效期
+        current_time = int(time.time())
+        expires_delta = max(payload.exp - current_time, 0)
+
+        return TokenUserInfo(
+            user_id=payload.user_id,
+            tenant_id=payload.tenant_id,
+            email=payload.email,
+            token_type=payload.token_type,
+            jti=payload.jti,
+            expires_delta=expires_delta,
+        )
+
+    except InvalidTokenError as e:
+        raise AuthenticationError(f"无效的refresh token: {str(e)}")
+    except Exception as e:
+        raise AuthenticationError(f"Token验证失败: {str(e)}")
+
+
+async def verify_any_token_for_logout(request: Request) -> TokenUserInfo:
+    """
+    验证任何类型的token用于注销 - Context7模式
+
+    遵循Flask-JWT-Extended verify_type=False模式：
+    - 接受access token或refresh token
+    - 不检查token类型限制
+    - 返回token信息用于撤销操作
+    """
+    import time
+
+    from jwt.exceptions import InvalidTokenError
+
+    from ..core.auth import AuthenticationError, get_token_from_request
+    from ..core.jwt_handler import get_jwt_handler
+
+    # 获取token
+    token = get_token_from_request(request)
+    if not token:
+        raise AuthenticationError("缺少认证token")
+
+    try:
+        jwt_handler = get_jwt_handler()
+
+        # 验证token（任何类型）
+        payload = jwt_handler.verify_token(token)
+
+        # 检查token是否在黑名单中（已撤销的token仍可用于注销）
+        # Context7模式：允许已撤销token执行注销，确保操作幂等性
+
+        # 计算剩余有效期
+        current_time = int(time.time())
+        expires_delta = max(payload.exp - current_time, 0)
+
+        return TokenUserInfo(
+            user_id=payload.user_id,
+            tenant_id=payload.tenant_id,
+            email=payload.email,
+            token_type=payload.token_type,
+            jti=payload.jti,
+            expires_delta=expires_delta,
+        )
+
+    except InvalidTokenError as e:
+        raise AuthenticationError(f"无效的token: {str(e)}")
+    except Exception as e:
+        raise AuthenticationError(f"Token验证失败: {str(e)}")
 
 
 # ===== 配置和设置 =====

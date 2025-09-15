@@ -37,6 +37,9 @@ repos:
       - id: flake8
         name: Flake8代码规范
         args: [--max-line-length=88, --extend-ignore=E203,W503]
+        files: ^backend/app/.*\.py$
+        additional_dependencies:
+          - flake8-print==5.0.0
         
   # 安全检查
   - repo: https://github.com/PyCQA/bandit
@@ -46,3 +49,13 @@ repos:
         name: Bandit安全检查
         args: [-c, pyproject.toml]
         exclude: ^tests/
+
+  # 本地规则：禁止新增 Dict[str, Any]
+  - repo: local
+    hooks:
+      - id: forbid-dict-any
+        name: 禁止提交中包含 Dict[str, Any]
+        entry: bash -c 'if grep -n "Dict\\[str, Any\\]" "$@"; then echo "❌ 检测到 Dict[str, Any]，请使用 TypedDict 或 Pydantic 模型"; exit 1; else exit 0; fi'
+        language: system
+        types: [python]
+        stages: [commit]

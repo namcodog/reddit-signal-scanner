@@ -1,0 +1,153 @@
+# Worker动态扩缩容配置文件
+# 用于控制Celery Worker的自动扩缩容行为
+
+# 负载监控配置
+monitoring:
+  # 负载检查间隔（秒）
+  check_interval: 30
+  
+  # 队列长度阈值
+  queue_thresholds:
+    analysis_queue: 50
+    maintenance_queue: 20
+    cleanup_queue: 15
+    monitoring_queue: 10
+  
+  # 系统资源阈值
+  cpu_high_threshold: 80.0
+  cpu_critical_threshold: 90.0
+  memory_high_threshold: 85.0
+  memory_critical_threshold: 95.0
+  
+  # Worker超时时间（秒）
+  worker_timeout: 120
+
+# 自动扩缩容配置
+autoscaling:
+  # 是否启用自动扩缩容
+  enabled: true
+  
+  # Worker数量限制
+  min_workers: 2
+  max_workers: 10
+  
+  # 扩缩容步长
+  scale_up_step: 2
+  scale_down_step: 1
+  
+  # 扩缩容阈值（0.0-1.0）
+  scale_up_threshold: 0.8
+  scale_down_threshold: 0.3
+  
+  # 冷却时间（秒）
+  cooldown_seconds: 300
+  
+  # 目标队列列表
+  target_queues:
+    - analysis_queue
+    - maintenance_queue
+    - cleanup_queue
+    - monitoring_queue
+
+# 负载均衡配置
+load_balancing:
+  # 负载均衡策略
+  # 可选值: round_robin, least_connections, weighted_round_robin, resource_based
+  strategy: least_connections
+  
+  # 重新平衡间隔（秒）
+  rebalance_interval: 60
+  
+  # Worker权重配置
+  worker_weights:
+    # 示例配置，实际使用时可以动态配置
+    # worker1@hostname: 100
+    # worker2@hostname: 150
+  
+  # 健康检查配置
+  health_check:
+    # 过载阈值
+    overload_task_threshold: 15
+    overload_cpu_threshold: 90.0
+    
+    # 空闲阈值
+    idle_task_threshold: 3
+    idle_cpu_threshold: 50.0
+
+# 高级配置
+advanced:
+  # 是否启用预测性扩缩容
+  predictive_scaling: false
+  
+  # 历史数据保留时间（小时）
+  history_retention_hours: 24
+  
+  # 日志级别
+  log_level: INFO
+  
+  # 调试模式
+  debug_mode: false
+  
+  # 扩缩容决策记录
+  record_decisions: true
+  
+  # 最大决策历史记录数
+  max_decision_history: 100
+
+# 通知配置（可选）
+notifications:
+  # 是否启用通知
+  enabled: false
+  
+  # 通知事件类型
+  events:
+    - worker_scaled_up
+    - worker_scaled_down
+    - scaling_failed
+    - load_threshold_exceeded
+  
+  # 通知渠道配置
+  channels:
+    # 日志通知
+    log:
+      enabled: true
+      level: INFO
+    
+    # 邮件通知（需要配置SMTP）
+    email:
+      enabled: false
+      recipients: []
+      smtp_host: ""
+      smtp_port: 587
+    
+    # Webhook通知
+    webhook:
+      enabled: false
+      url: ""
+      timeout: 10
+
+# 性能调优配置
+performance:
+  # 任务分发优化
+  task_distribution:
+    # 批量任务分发大小
+    batch_size: 10
+    
+    # 分发超时时间（秒）
+    timeout: 30
+  
+  # 资源监控优化
+  resource_monitoring:
+    # 采样间隔（秒）
+    sample_interval: 5
+    
+    # 平滑窗口大小
+    smoothing_window: 5
+  
+  # 缓存配置
+  cache:
+    # 负载指标缓存时间（秒）
+    metrics_cache_ttl: 10
+    
+    # Worker状态缓存时间（秒）
+    worker_status_cache_ttl: 30

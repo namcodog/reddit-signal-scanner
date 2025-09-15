@@ -10,12 +10,14 @@
 """
 
 import logging
-from typing import Optional, Dict, Any
-from uuid import UUID
 import uuid
+from typing import Any, Callable, Dict, Optional, TypeVar
+from uuid import UUID
 
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from .types import JsonValue
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +37,7 @@ class UserContext:
         self,
         user_id: Optional[str] = None,
         is_anonymous: bool = True,
-        user_data: Optional[Dict[str, Any]] = None,
+        user_data: Optional[dict[str, JsonValue]] = None,
     ):
         """
         初始化用户上下文
@@ -58,6 +60,9 @@ class UserContext:
     @property
     def user_id(self) -> str:
         """获取用户ID"""
+        # 确保返回值不为None，如果是None则使用默认值
+        if self._user_id is None:
+            return self.ANONYMOUS_USER_ID
         return self._user_id
 
     @property
@@ -76,7 +81,7 @@ class UserContext:
         return self._user_id == self.SYSTEM_USER_ID
 
     @property
-    def user_data(self) -> Dict[str, Any]:
+    def user_data(self) -> dict[str, JsonValue]:
         """获取用户数据"""
         return self._user_data.copy()
 
@@ -119,7 +124,7 @@ class UserContext:
         # 用户只能访问自己的任务
         return str(self._user_id) == str(task_user_id)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, JsonValue]:
         """转换为字典格式"""
         return {
             "user_id": self._user_id,
@@ -133,7 +138,9 @@ class UserContext:
         user_type = (
             "system"
             if self.is_system_user
-            else "anonymous" if self.is_anonymous else "user"
+            else "anonymous"
+            if self.is_anonymous
+            else "user"
         )
         return f"UserContext({self._user_id}, {user_type})"
 
@@ -182,7 +189,7 @@ class UserContextManager:
 
     @staticmethod
     def create_authenticated_user(
-        user_id: str, user_data: Optional[Dict[str, Any]] = None
+        user_id: str, user_data: Optional[dict[str, JsonValue]] = None
     ) -> UserContext:
         """
         创建认证用户上下文
@@ -312,8 +319,13 @@ async def get_system_user_context() -> UserContext:
     return UserContextManager.create_system_user()
 
 
+T = TypeVar("T")
+
+
 # 装饰器：设置用户上下文
-def with_user_context(user_context: UserContext):
+def with_user_context(
+    user_context: UserContext,
+) -> Callable[[Callable[..., T]], Callable[..., T]]:
     """
     装饰器：为函数设置用户上下文
 
@@ -321,8 +333,8 @@ def with_user_context(user_context: UserContext):
         user_context: 要设置的用户上下文
     """
 
-    def decorator(func):
-        def wrapper(*args, **kwargs):
+    def decorator(func: Callable[..., T]) -> Callable[..., T]:
+        def wrapper(*args: Any, **kwargs: Any) -> T:
             # 保存原有上下文
             old_context = current_user_context.get()
 

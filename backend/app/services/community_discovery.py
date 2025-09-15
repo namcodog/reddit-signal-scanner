@@ -4,30 +4,74 @@
 提供高精度的社区推荐服务
 """
 
-from typing import List, Dict, Optional, Tuple, Any, Union
 import asyncio
-import logging
-import time
 import hashlib
 import json
+import logging
 import os
-from dataclasses import dataclass, asdict
+import time
+from dataclasses import asdict, dataclass
 from pathlib import Path
-import yaml
+from typing import Any, Dict, List, Mapping, Optional, Tuple, TypedDict, Union
 
 import redis.asyncio as redis
+from redis.exceptions import RedisError
+from ..core.types import TypedRedis
+import yaml
+
 from ..algorithms import (
-    KeywordExtractor,
-    ExtractedKeywords,
-    SemanticSimilarityEngine,
-    SimilarityResult,
-    CommunityRanking,
     CommunityMetadata,
+    CommunityRanking,
+    ExtractedKeywords,
+    KeywordExtractor,
     RankingConfig,
     RankingResult,
+    SemanticSimilarityEngine,
+    SimilarityResult,
 )
 
 logger = logging.getLogger(__name__)
+
+
+class CacheCoverage(TypedDict):
+    """缓存覆盖率检查结果。"""
+
+    hit_rate: float
+    hits: int
+    total: int
+
+
+class ServiceStatus(TypedDict):
+    initialized: bool
+    community_pool_size: int
+
+
+class PerformanceStats(TypedDict):
+    total_requests: int
+    cache_hits: int
+    avg_processing_time: float
+    avg_results_count: float
+    cache_hit_rate: float
+
+
+class ComponentStats(TypedDict):
+    keyword_extractor: Optional[Mapping[str, Any]]
+    similarity_engine: Optional[Mapping[str, Any]]
+    community_ranking: Optional[Mapping[str, Any]]
+
+
+class ServiceStats(TypedDict):
+    service_status: ServiceStatus
+    performance_stats: PerformanceStats
+    component_stats: ComponentStats
+
+
+class HealthStatus(TypedDict, total=False):
+    service_initialized: bool
+    community_pool_loaded: bool
+    redis_connected: bool
+    components_ready: dict[str, Any]
+    redis_error: str
 
 
 @dataclass
@@ -37,7 +81,7 @@ class DiscoveryRequest:
     product_description: str
     max_results: Optional[int] = None
     target_keywords: Optional[List[str]] = None
-    filters: Optional[Dict[str, Any]] = None
+    filters: Optional[Mapping[str, Any]] = None
     enable_cache: bool = True
 
 
@@ -45,10 +89,10 @@ class DiscoveryRequest:
 class DiscoveryResponse:
     """社区发现响应"""
 
-    communities: List[Dict[str, Any]]
+    communities: List[Mapping[str, Any]]
     total_found: int
-    algorithm_metadata: Dict[str, Any]
-    processing_stats: Dict[str, Any]
+    algorithm_metadata: Mapping[str, Any]
+    processing_stats: Mapping[str, Any]
     request_id: str
 
 
@@ -92,8 +136,8 @@ class CommunityDiscoveryService:
 
     def __init__(
         self,
-        config: Optional[Dict[str, Any]] = None,
-        redis_client: Optional[redis.Redis] = None,
+        config: Optional[Mapping[str, Any]] = None,
+        redis_client: Optional[TypedRedis] = None,
     ):
         """
         初始化社区发现服务
@@ -103,12 +147,13 @@ class CommunityDiscoveryService:
             redis_client: Redis客户端实例
         """
         self.config = {**self.DEFAULT_CONFIG, **(config or {})}
-        self.redis_client = redis_client
+        # 使用统一类型别名，避免泛型参数缺失的类型报错
+        self.redis_client: Optional[TypedRedis] = redis_client
 
         # 初始化算法组件
-        self.keyword_extractor = None
-        self.similarity_engine = None
-        self.community_ranking = None
+        self.keyword_extractor: Optional[KeywordExtractor] = None
+        self.similarity_engine: Optional[SemanticSimilarityEngine] = None
+        self.community_ranking: Optional[CommunityRanking] = None
 
         # 社区池数据
         self.community_pool: List[CommunityMetadata] = []
@@ -126,7 +171,7 @@ class CommunityDiscoveryService:
 
         logger.info("CommunityDiscoveryService实例创建完成")
 
-    async def initialize(self):
+    async def initialize(self) -> None:
         """异步初始化服务"""
         if self.is_initialized:
             logger.warning("服务已初始化，跳过重复初始化")
@@ -164,12 +209,15 @@ class CommunityDiscoveryService:
                 f"耗时: {init_time:.2f}秒"
             )
 
-        except Exception as e:
+        except RedisError as e:
+            logger.error(f"服务初始化失败（Redis异常）: {e}")
+            raise
+        except (OSError, ValueError, RuntimeError) as e:
             logger.error(f"服务初始化失败: {e}")
             raise
 
     async def discover_communities(
-        self, request: Union[DiscoveryRequest, Dict[str, Any], str]
+        self, request: Union[DiscoveryRequest, dict[str, Any], str]
     ) -> DiscoveryResponse:
         """
         执行智能社区发现
@@ -214,7 +262,7 @@ class CommunityDiscoveryService:
 
             return result
 
-        except Exception as e:
+        except (ValueError, RuntimeError) as e:
             logger.error(f"社区发现失败 (request_id: {request_id}): {e}")
             raise
 
@@ -264,12 +312,13 @@ class CommunityDiscoveryService:
         return response
 
     async def _step_1_extract_keywords(
-        self, request: DiscoveryRequest, request_id: str, stats: Dict
+        self, request: DiscoveryRequest, request_id: str, stats: dict[str, Any]
     ) -> ExtractedKeywords:
         """Step 1: TF-IDF关键词提取"""
         logger.debug(f"[{request_id}] Step 1: 关键词提取")
         step_time = time.time()
 
+        assert self.keyword_extractor is not None, "KeywordExtractor not initialized"
         extracted = self.keyword_extractor.extract_keywords(
             request.product_description, max_keywords=20
         )
@@ -288,7 +337,7 @@ class CommunityDiscoveryService:
         request: DiscoveryRequest,
         extracted: ExtractedKeywords,
         request_id: str,
-        stats: Dict,
+        stats: dict[str, Any],
     ) -> SimilarityResult:
         """Step 2: 语义相似度计算"""
         logger.debug(f"[{request_id}] Step 2: 语义相似度计算")
@@ -299,6 +348,9 @@ class CommunityDiscoveryService:
             f"{request.product_description} {' '.join(extracted.primary_keywords[:10])}"
         )
 
+        assert (
+            self.similarity_engine is not None
+        ), "SemanticSimilarityEngine not initialized"
         similarity_result = await self.similarity_engine.compute_similarity_batch(
             query_text=query_text
         )
@@ -312,7 +364,7 @@ class CommunityDiscoveryService:
         return similarity_result
 
     async def _step_3_dynamic_decision(
-        self, request: DiscoveryRequest, request_id: str, stats: Dict
+        self, request: DiscoveryRequest, request_id: str, stats: dict[str, Any]
     ) -> DynamicDecisionResult:
         """Step 3: 动态数量决策"""
         logger.debug(f"[{request_id}] Step 3: 动态数量决策")
@@ -336,12 +388,13 @@ class CommunityDiscoveryService:
         similarity_result: SimilarityResult,
         decision_result: DynamicDecisionResult,
         request_id: str,
-        stats: Dict,
+        stats: dict[str, Any],
     ) -> List[RankingResult]:
         """Step 4: 多维度评分和排序"""
         logger.debug(f"[{request_id}] Step 4: 多维度评分排序")
         step_time = time.time()
 
+        assert self.community_ranking is not None, "CommunityRanking not initialized"
         ranking_results = self.community_ranking.rank_communities(
             communities=self.community_pool,
             similarities=similarity_result.similarities.tolist(),
@@ -349,6 +402,7 @@ class CommunityDiscoveryService:
         )
 
         # 选择top-k结果
+        assert self.community_ranking is not None, "CommunityRanking not initialized"
         final_results = self.community_ranking.select_top_communities(
             ranking_results, decision_result.target_count
         )
@@ -401,7 +455,7 @@ class CommunityDiscoveryService:
             strategy=strategy,
         )
 
-    async def _check_cache_coverage(self, communities: List[str]) -> Dict[str, Any]:
+    async def _check_cache_coverage(self, communities: List[str]) -> CacheCoverage:
         """检查社区缓存覆盖情况"""
         if not self.redis_client:
             return {"hit_rate": 0.0, "hits": 0, "total": len(communities)}
@@ -416,31 +470,40 @@ class CommunityDiscoveryService:
                 if exists:
                     cache_hits += 1
 
-        except Exception as e:
-            logger.warning(f"缓存检查失败: {e}")
+        except RedisError as e:
+            logger.warning(f"缓存检查失败（Redis异常）: {e}")
             return {"hit_rate": 0.0, "hits": 0, "total": total_checked}
 
         hit_rate = cache_hits / total_checked if total_checked > 0 else 0.0
 
         return {"hit_rate": hit_rate, "hits": cache_hits, "total": total_checked}
 
-    def _format_community_result(self, ranking_result: RankingResult) -> Dict[str, Any]:
+    def _format_community_result(
+        self, ranking_result: RankingResult
+    ) -> Mapping[str, Any]:
         """格式化社区结果"""
         community_dict = ranking_result.community.to_dict()
 
         # 添加评分信息
+        explanation = (
+            self.community_ranking.explain_score(ranking_result)
+            if self.community_ranking is not None
+            else "Community ranking not initialized"
+        )
+        # 将 score_explanation 统一为 str | dict[str, Any]
+        if not isinstance(explanation, (str, dict)):
+            explanation = str(explanation)
+
         community_dict.update(
             {
                 "relevance_score": {
-                    "final_score": ranking_result.final_score,
-                    "similarity_score": ranking_result.similarity_score,
-                    "activity_score": ranking_result.activity_score,
-                    "quality_score": ranking_result.quality_score,
-                    "diversity_bonus": ranking_result.diversity_bonus,
+                    "final_score": float(ranking_result.final_score),
+                    "similarity_score": float(ranking_result.similarity_score),
+                    "activity_score": float(ranking_result.activity_score),
+                    "quality_score": float(ranking_result.quality_score),
+                    "diversity_bonus": float(ranking_result.diversity_bonus),
                 },
-                "score_explanation": self.community_ranking.explain_score(
-                    ranking_result
-                ),
+                "score_explanation": explanation,
             }
         )
 
@@ -448,12 +511,24 @@ class CommunityDiscoveryService:
 
     def _get_algorithm_metadata(
         self, extracted: ExtractedKeywords, decision: DynamicDecisionResult
-    ) -> Dict[str, Any]:
+    ) -> Mapping[str, Any]:
         """获取算法元数据"""
         return {
-            "keyword_extraction": self.keyword_extractor.get_algorithm_metadata(),
-            "semantic_similarity": self.similarity_engine.get_algorithm_metadata(),
-            "community_ranking": self.community_ranking.get_algorithm_metadata(),
+            "keyword_extraction": (
+                self.keyword_extractor.get_algorithm_metadata()
+                if self.keyword_extractor is not None
+                else {"error": "KeywordExtractor not initialized"}
+            ),
+            "semantic_similarity": (
+                self.similarity_engine.get_algorithm_metadata()
+                if self.similarity_engine is not None
+                else {"error": "SemanticSimilarityEngine not initialized"}
+            ),
+            "community_ranking": (
+                self.community_ranking.get_algorithm_metadata()
+                if self.community_ranking is not None
+                else {"error": "CommunityRanking not initialized"}
+            ),
             "dynamic_decision": {
                 "strategy": decision.strategy,
                 "target_count": decision.target_count,
@@ -467,7 +542,7 @@ class CommunityDiscoveryService:
             },
         }
 
-    async def _load_community_pool(self):
+    async def _load_community_pool(self) -> None:
         """加载社区池数据"""
         pool_path = Path(self.config["community_pool_path"])
 
@@ -489,7 +564,7 @@ class CommunityDiscoveryService:
 
             logger.info(f"社区池加载成功: {len(self.community_pool)}个社区")
 
-        except Exception as e:
+        except (yaml.YAMLError, OSError, ValueError) as e:
             logger.error(f"社区池加载失败: {e}")
             # 使用默认社区池
             self.community_pool = self._create_default_community_pool()
@@ -549,7 +624,7 @@ class CommunityDiscoveryService:
         logger.info(f"使用默认社区池: {len(default_communities)}个社区")
         return default_communities
 
-    async def _initialize_components(self):
+    async def _initialize_components(self) -> None:
         """初始化算法组件"""
         # 初始化关键词提取器
         self.keyword_extractor = KeywordExtractor()
@@ -566,13 +641,16 @@ class CommunityDiscoveryService:
 
         logger.info("算法组件初始化完成")
 
-    async def _ensure_precomputed_vectors(self):
+    async def _ensure_precomputed_vectors(self) -> None:
         """确保预计算向量存在"""
         if not self.community_pool:
             logger.warning("社区池为空，跳过预计算向量")
             return
 
         # 检查是否已有预计算向量
+        assert (
+            self.similarity_engine is not None
+        ), "SemanticSimilarityEngine not initialized"
         if self.similarity_engine.community_vectors is not None and len(
             self.similarity_engine.community_vectors
         ) == len(self.community_pool):
@@ -591,6 +669,9 @@ class CommunityDiscoveryService:
             communities_for_compute.append(community_dict)
 
         # 执行预计算
+        assert (
+            self.similarity_engine is not None
+        ), "SemanticSimilarityEngine not initialized"
         await self.similarity_engine.precompute_community_vectors(
             communities_for_compute, text_field="combined_text"
         )
@@ -614,12 +695,12 @@ class CommunityDiscoveryService:
                 result_dict = json.loads(cached_data)
                 return DiscoveryResponse(**result_dict)
 
-        except Exception as e:
+        except (RedisError, json.JSONDecodeError, TypeError, ValueError) as e:
             logger.warning(f"缓存读取失败: {e}")
 
         return None
 
-    async def _cache_result(self, request_id: str, result: DiscoveryResponse):
+    async def _cache_result(self, request_id: str, result: DiscoveryResponse) -> None:
         """缓存结果"""
         if not self.redis_client:
             return
@@ -632,10 +713,10 @@ class CommunityDiscoveryService:
                 cache_key, self.config["cache_ttl"], cached_data
             )
 
-        except Exception as e:
-            logger.warning(f"缓存写入失败: {e}")
+        except RedisError as e:
+            logger.warning(f"缓存写入失败（Redis异常）: {e}")
 
-    def _update_stats(self, processing_time: float, cache_hit: bool):
+    def _update_stats(self, processing_time: float, cache_hit: bool) -> None:
         """更新性能统计"""
         self.stats["total_requests"] += 1
 
@@ -649,40 +730,60 @@ class CommunityDiscoveryService:
             current_avg * (total_requests - 1) + processing_time
         ) / total_requests
 
-    def get_service_stats(self) -> Dict[str, Any]:
+    def get_service_stats(self) -> ServiceStats:
         """获取服务统计信息"""
         cache_hit_rate = 0.0
         if self.stats["total_requests"] > 0:
             cache_hit_rate = self.stats["cache_hits"] / self.stats["total_requests"]
 
-        return {
-            "service_status": {
-                "initialized": self.is_initialized,
-                "community_pool_size": len(self.community_pool),
-            },
-            "performance_stats": {**self.stats, "cache_hit_rate": cache_hit_rate},
-            "component_stats": {
-                "keyword_extractor": (
+        perf: PerformanceStats = {
+            "total_requests": int(self.stats["total_requests"]),
+            "cache_hits": int(self.stats["cache_hits"]),
+            "avg_processing_time": float(self.stats["avg_processing_time"]),
+            "avg_results_count": float(self.stats["avg_results_count"]),
+            "cache_hit_rate": float(cache_hit_rate),
+        }
+
+        status: ServiceStatus = {
+            "initialized": self.is_initialized,
+            "community_pool_size": len(self.community_pool),
+        }
+
+        from typing import cast
+
+        components: ComponentStats = {
+            "keyword_extractor": cast(
+                Optional[Mapping[str, Any]],
+                (
                     self.keyword_extractor.get_algorithm_metadata()
                     if self.keyword_extractor
                     else None
                 ),
-                "similarity_engine": (
-                    self.similarity_engine.get_performance_stats()
-                    if self.similarity_engine
-                    else None
-                ),
-                "community_ranking": (
+            ),
+            "similarity_engine": (
+                self.similarity_engine.get_performance_stats()
+                if self.similarity_engine
+                else None
+            ),
+            "community_ranking": cast(
+                Optional[Mapping[str, Any]],
+                (
                     self.community_ranking.get_performance_stats()
                     if self.community_ranking
                     else None
                 ),
-            },
+            ),
         }
 
-    async def health_check(self) -> Dict[str, Any]:
+        return {
+            "service_status": status,
+            "performance_stats": perf,
+            "component_stats": components,
+        }
+
+    async def health_check(self) -> HealthStatus:
         """健康检查"""
-        health_status = {
+        health_status: HealthStatus = {
             "service_initialized": self.is_initialized,
             "community_pool_loaded": len(self.community_pool) > 0,
             "redis_connected": False,
@@ -694,21 +795,20 @@ class CommunityDiscoveryService:
             try:
                 await self.redis_client.ping()
                 health_status["redis_connected"] = True
-            except Exception as e:
+            except RedisError as e:
                 health_status["redis_error"] = str(e)
 
         # 检查组件状态
         if self.is_initialized:
+            # 显式断言类型，避免 mypy 忽略
+            components_ready = health_status["components_ready"]
+
             if self.similarity_engine:
-                health_status["components_ready"][
+                components_ready[
                     "similarity_engine"
                 ] = await self.similarity_engine.health_check()
 
-            health_status["components_ready"]["keyword_extractor"] = (
-                self.keyword_extractor is not None
-            )
-            health_status["components_ready"]["community_ranking"] = (
-                self.community_ranking is not None
-            )
+            components_ready["keyword_extractor"] = self.keyword_extractor is not None
+            components_ready["community_ranking"] = self.community_ranking is not None
 
         return health_status

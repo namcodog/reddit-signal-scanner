@@ -10,14 +10,13 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import Column, String, DateTime, Text, ForeignKey, CheckConstraint
+from pydantic import BaseModel, Field
+from sqlalchemy import CheckConstraint, Column, DateTime, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
-from pydantic import BaseModel, Field
 
 from .base import Base
-
 
 # ===== SQLAlchemy ORM 模型 =====
 

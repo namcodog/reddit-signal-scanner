@@ -17,13 +17,15 @@ import asyncio
 import logging
 import time
 import uuid
-from typing import Dict, Any, Optional
+from typing import Any, Awaitable, Callable, Dict, Optional, Type
+
 from fastapi import Request, Response
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from ..core.exceptions import BaseApplicationError, RedditAPIError, DatabaseError
 from ..core.error_handlers import ERROR_HANDLERS, handle_generic_error
+from app.schemas.responses.error import ErrorStatisticsResponse
+from ..core.exceptions import BaseApplicationError, DatabaseError, RedditAPIError
 from ..core.recovery import execute_recovery_strategy
 
 logger = logging.getLogger(__name__)
@@ -40,12 +42,14 @@ class ErrorHandlingMiddleware(BaseHTTPMiddleware):
     4. 记录详细的错误指标
     """
 
-    def __init__(self, app, enable_recovery: bool = True):
+    def __init__(self, app: Any, enable_recovery: bool = True) -> None:
         super().__init__(app)
         self.enable_recovery = enable_recovery
         self.error_counts: Dict[str, int] = {}
 
-    async def dispatch(self, request: Request, call_next) -> Response:
+    async def dispatch(
+        self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
         """
         中间件主要逻辑 - 异常拦截和处理分发
 
@@ -102,8 +106,11 @@ class ErrorHandlingMiddleware(BaseHTTPMiddleware):
         3. 自动恢复：在需要时触发恢复策略
         """
 
-        # 查找专门的错误处理器
-        handler = ERROR_HANDLERS.get(type(exc))
+        # Constrain key type to BaseApplicationError subclasses
+        exc_type: Type[BaseApplicationError] | None = (
+            type(exc) if isinstance(exc, BaseApplicationError) else None
+        )
+        handler = ERROR_HANDLERS.get(exc_type) if exc_type else None
 
         if handler and isinstance(exc, BaseApplicationError):
             # 业务异常：使用专门处理器
@@ -115,8 +122,11 @@ class ErrorHandlingMiddleware(BaseHTTPMiddleware):
 
                 # 如果恢复成功，更新响应内容
                 if recovery_result and recovery_result.success:
+                    raw_body = getattr(response, "body", b"{}")
                     content = (
-                        response.body.decode() if hasattr(response, "body") else "{}"
+                        raw_body.decode()
+                        if isinstance(raw_body, (bytes, bytearray))
+                        else "{}"
                     )
                     import json
 
@@ -127,8 +137,8 @@ class ErrorHandlingMiddleware(BaseHTTPMiddleware):
                             status_code=response.status_code, content=content_dict
                         )
                     except json.JSONDecodeError:
-                        # JSON解析失败，保持原响应
-                        pass
+                        # JSON解析失败，保持原响应，但记录上下文
+                        logger.debug("恢复信息合并时JSON解析失败，保持原响应", extra={"request_id": request_id})
 
             return response
 
@@ -198,16 +208,27 @@ class ErrorHandlingMiddleware(BaseHTTPMiddleware):
                 if task_index + 1 < len(path_segments):
                     return path_segments[task_index + 1]
             except (ValueError, IndexError):
-                pass
+                logger.debug(
+                    "从URL路径提取 task_id 失败，忽略并继续",
+                    extra={"path": request.url.path},
+                )
 
         # 从查询参数提取
-        task_id = request.query_params.get("task_id")
+        task_id: Optional[str] = request.query_params.get("task_id")
         if task_id:
             return task_id
 
         # 从请求状态提取（如果业务逻辑已设置）
         if hasattr(request.state, "task_id"):
-            return request.state.task_id
+            try:
+                task_id_attr = getattr(request.state, "task_id")
+                return str(task_id_attr) if task_id_attr is not None else None
+            except (AttributeError, ValueError, TypeError) as attr_err:
+                logger.debug(
+                    "读取 request.state.task_id 失败，返回 None",
+                    extra={"error": str(attr_err)},
+                )
+                return None
 
         return None
 
@@ -252,27 +273,29 @@ class ErrorHandlingMiddleware(BaseHTTPMiddleware):
                 "client_ip": request.client.host if request.client else "unknown",
                 "error_count": self.error_counts.get(error_type, 0),
             },
-            exc_info=not isinstance(
-                exc, BaseApplicationError
-            ),  # 业务异常不需要堆栈信息
+            exc_info=not isinstance(exc, BaseApplicationError),  # 业务异常不需要堆栈信息
         )
 
-    def get_error_statistics(self) -> Dict[str, Any]:
+    def get_error_statistics(self) -> ErrorStatisticsResponse:
         """
         获取错误统计信息 - 用于监控和告警
 
         Returns:
-            包含错误类型统计的字典
+            类型安全的错误统计响应模型
         """
-
+        # type checked via import at module top
         total_errors = sum(self.error_counts.values())
+        error_breakdown = dict(self.error_counts)
+        most_common_error = (
+            max(self.error_counts.items(), key=lambda x: x[1])[0]
+            if self.error_counts
+            else None
+        )
 
-        return {
-            "total_errors": total_errors,
-            "error_breakdown": dict(self.error_counts),
-            "most_common_error": (
-                max(self.error_counts.items(), key=lambda x: x[1])[0]
-                if self.error_counts
-                else None
-            ),
-        }
+        return ErrorStatisticsResponse(
+            total_errors=total_errors,
+            total_count=total_errors,  # 继承自BaseStatisticsResponse
+            error_breakdown=error_breakdown,
+            most_common_error=most_common_error,
+            error_rate=None,  # 可以后续计算错误率
+        )

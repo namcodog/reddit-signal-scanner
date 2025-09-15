@@ -1,0 +1,60 @@
+/* 页面过渡动画 */
+.page-transition-container {
+  position: relative;
+  width: 100%;
+  min-height: 100vh;
+}
+
+/* 平滑的页面过渡效果 */
+.page-transition-container.entering {
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+.page-transition-container.entered {
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 300ms ease-in-out, transform 300ms ease-in-out;
+}
+
+.page-transition-container.exiting {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.page-transition-container.exited {
+  opacity: 0;
+  transform: translateY(-10px);
+  transition: opacity 300ms ease-in-out, transform 300ms ease-in-out;
+}
+
+/* 提供备用的纯CSS动画 */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeOutDown {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+}
+
+.page-fade-in {
+  animation: fadeInUp 300ms ease-in-out;
+}
+
+.page-fade-out {
+  animation: fadeOutDown 300ms ease-in-out;
+}

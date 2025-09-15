@@ -79,9 +79,7 @@ class TestComprehensiveValidation:
             f"\n📊 Schema验证通过率: {schema_pass_rate:.1f}% ({passed_tests}/{total_tests})"
         )
 
-        assert (
-            schema_pass_rate >= 95.0
-        ), f"Schema验证通过率{schema_pass_rate:.1f}%低于95%要求"
+        assert schema_pass_rate >= 95.0, f"Schema验证通过率{schema_pass_rate:.1f}%低于95%要求"
 
     @pytest.mark.asyncio
     async def test_complete_data_integrity_suite(self, db_session):
@@ -448,8 +446,7 @@ class TestComprehensiveValidation:
 
         # 最终断言
         assert overall_pass_rate >= 90.0, (
-            f"总体验证通过率{overall_pass_rate:.1f}%低于90%最低要求。"
-            f"详细报告请查看: {report_path}"
+            f"总体验证通过率{overall_pass_rate:.1f}%低于90%最低要求。" f"详细报告请查看: {report_path}"
         )
 
         return report

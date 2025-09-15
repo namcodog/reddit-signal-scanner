@@ -10,26 +10,26 @@
 """
 
 import logging
-from typing import Dict, Any, Optional, TYPE_CHECKING
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
+from typing import TYPE_CHECKING, Any, Dict, Mapping, Optional
 
 if TYPE_CHECKING:
     from ..core.user_context import UserContext
 
 from celery import Celery
-from celery.exceptions import Retry
-from sqlalchemy.ext.asyncio import AsyncSession
+from celery.exceptions import Retry, CeleryError
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..core.celery_app import get_celery_app
+from ..core.exceptions import DatabaseError, TaskProducerError
+from ..models.task import Task as TaskModel
 from ..schemas.task_producer import (
+    TaskConfig,
+    TaskData,
     TaskSubmissionRequest,
     TaskSubmissionResponse,
-    TaskData,
-    TaskConfig,
 )
-from ..models.task import Task as TaskModel
-from ..core.celery_app import get_celery_app
-from ..core.exceptions import TaskProducerError, DatabaseError
 
 logger = logging.getLogger(__name__)
 
@@ -88,9 +88,7 @@ class TaskProducer:
             TaskProducerError: 任务提交相关错误
             DatabaseError: 数据库操作错误
         """
-        logger.info(
-            f"开始提交分析任务，产品描述长度: {len(request.product_description)}"
-        )
+        logger.info(f"开始提交分析任务，产品描述长度: {len(request.product_description)}")
 
         try:
             # 获取或设置用户上下文
@@ -124,7 +122,10 @@ class TaskProducer:
             logger.info(f"任务提交成功: {task_data.task_id}, 用户: {user_context}")
             return response
 
-        except Exception as e:
+        except SQLAlchemyError as e:
+            logger.error(f"任务提交失败-数据库: {e}", exc_info=True)
+            raise DatabaseError(f"数据库操作失败: {e}") from e
+        except (TaskProducerError, Retry, ValueError, RuntimeError, KeyError, TypeError) as e:
             logger.error(f"任务提交失败: {e}", exc_info=True)
             raise TaskProducerError(f"任务提交失败: {e}") from e
 
@@ -184,9 +185,7 @@ class TaskProducer:
             await db.commit()
             await db.refresh(db_task)
 
-            logger.debug(
-                f"数据库任务记录创建成功: {task_data.task_id}, 用户: {user_context}"
-            )
+            logger.debug(f"数据库任务记录创建成功: {task_data.task_id}, 用户: {user_context}")
             return db_task
 
         except SQLAlchemyError as e:
@@ -221,7 +220,7 @@ class TaskProducer:
             )
             return celery_result
 
-        except Exception as e:
+        except (CeleryError, Retry, ValueError, RuntimeError, KeyError, TypeError) as e:
             logger.error(f"Celery任务提交失败: {e}", exc_info=True)
             raise TaskProducerError(f"任务队列提交失败: {e}") from e
 
@@ -256,11 +255,11 @@ class TaskProducer:
             else:
                 return datetime.now(timezone.utc)  # 立即开始
 
-        except Exception as e:
+        except (RuntimeError, ValueError, KeyError, TypeError) as e:
             logger.warning(f"估算任务开始时间失败: {e}")
             return None
 
-    def get_task_status(self, task_id: str) -> Dict[str, Any]:
+    def get_task_status(self, task_id: str) -> "Mapping[str, Any]":
         """
         获取任务状态
 
@@ -274,7 +273,7 @@ class TaskProducer:
             from ..core.celery_app import get_task_status
 
             return get_task_status(task_id)
-        except Exception as e:
+        except (RuntimeError, ValueError) as e:
             logger.error(f"获取任务状态失败 {task_id}: {e}")
             return {"task_id": task_id, "state": "UNKNOWN", "error": str(e)}
 
@@ -303,7 +302,7 @@ class TaskProducer:
             logger.info(f"任务已取消: {task_id}")
             return True
 
-        except Exception as e:
+        except (CeleryError, SQLAlchemyError, RuntimeError, ValueError) as e:
             logger.error(f"取消任务失败 {task_id}: {e}")
             return False
 
@@ -364,7 +363,7 @@ class BatchTaskProducer(TaskProducer):
 
     async def submit_batch_analysis(
         self, requests: list[TaskSubmissionRequest], batch_id: str, db: AsyncSession
-    ) -> Dict[str, Any]:
+    ) -> Mapping[str, Any]:
         """
         批量提交分析任务
 
@@ -395,7 +394,7 @@ class BatchTaskProducer(TaskProducer):
                 )
                 success_count += 1
 
-            except Exception as e:
+            except (TaskProducerError, ValueError, RuntimeError) as e:
                 logger.error(f"批量任务第{i+1}项提交失败: {e}")
                 results.append({"index": i + 1, "status": "failed", "error": str(e)})
                 failed_count += 1

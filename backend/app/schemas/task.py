@@ -7,11 +7,24 @@ PRD02-02 实现的请求响应模式：
 - TaskInfo: 任务状态信息
 """
 
+from enum import Enum
 from typing import Optional
+
 from pydantic import BaseModel, Field, validator
 
-# 导入通用响应基类
-from ..api.models import SuccessResponse, TaskStatus
+# 导入通用响应基类（新架构，无循环依赖）
+from .common.responses import ResponseStatus, SuccessResponse
+
+
+class TaskStatus(str, Enum):
+    """任务状态枚举（新架构）"""
+
+    PENDING = "pending"
+    QUEUED = "queued"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
 
 
 class AnalyzeRequest(BaseModel):
@@ -28,7 +41,7 @@ class AnalyzeRequest(BaseModel):
     )
 
     @validator("product_description")
-    def validate_content(cls, v):
+    def validate_content(cls, v: str) -> str:
         """内容安全验证 - 过滤恶意输入"""
         import re
 
@@ -62,9 +75,7 @@ class TaskInfo(BaseModel):
     progress: int = Field(default=0, ge=0, le=100, description="任务进度百分比")
     created_at: str = Field(..., description="创建时间")
     updated_at: str = Field(..., description="更新时间")
-    estimated_completion: Optional[str] = Field(
-        default=None, description="预估完成时间"
-    )
+    estimated_completion: Optional[str] = Field(default=None, description="预估完成时间")
     error_message: Optional[str] = Field(default=None, description="错误信息")
 
 

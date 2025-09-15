@@ -17,8 +17,9 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..api.models import TaskInfo, TaskStatus as ApiTaskStatus
 from ..models.task import TaskStatus as DbTaskStatus
+from ..schemas.task import TaskInfo
+from ..schemas.task import TaskStatus as ApiTaskStatus
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +43,7 @@ class TaskStatusService:
         DbTaskStatus.FAILED.value: ApiTaskStatus.FAILED,
     }
 
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: AsyncSession) -> None:
         """初始化服务
 
         Args:
@@ -98,7 +99,7 @@ class TaskStatusService:
         except SQLAlchemyError as e:
             logger.error(f"数据库查询失败 - task_id: {task_id}, error: {e}")
             return None
-        except Exception as e:
+        except (TypeError, RuntimeError) as e:
             logger.error(f"任务状态查询异常 - task_id: {task_id}, error: {e}")
             return None
 
@@ -182,7 +183,7 @@ class TaskStatusService:
             for task_uuid, original_id in id_mapping.items():
                 if original_id not in results:
                     results[original_id] = {"error": "数据库查询失败"}
-        except Exception as e:
+        except (KeyError, TypeError, RuntimeError, ValueError) as e:
             logger.error(f"批量查询异常: {e}")
             for task_uuid, original_id in id_mapping.items():
                 if original_id not in results:
@@ -237,7 +238,7 @@ class TaskStatusService:
                 error_message=row.error_message if row.error_message else None,
             )
 
-        except Exception as e:
+        except (AttributeError, KeyError, TypeError, ValueError) as e:
             logger.error(f"数据转换失败 - task_id: {task_id}, error: {e}")
             return None
 
@@ -286,7 +287,7 @@ class TaskStatusService:
             else:
                 return 0
 
-        except Exception as e:
+        except (ZeroDivisionError, TypeError, ValueError) as e:
             logger.warning(f"进度计算失败: {e}")
             return 0
 
@@ -319,7 +320,7 @@ class TaskStatusService:
 
             return estimated_time.isoformat().replace("+00:00", "Z")
 
-        except Exception as e:
+        except (AttributeError, TypeError, ValueError) as e:
             logger.warning(f"预估完成时间计算失败: {e}")
             return None
 
@@ -336,7 +337,7 @@ class TaskStatusService:
             if timestamp.tzinfo is None:
                 timestamp = timestamp.replace(tzinfo=timezone.utc)
             return timestamp.isoformat().replace("+00:00", "Z")
-        except Exception:
+        except (AttributeError, ValueError, TypeError):
             return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
     async def get_user_tasks_summary(self, user_id: str) -> Dict[str, int]:
@@ -376,8 +377,11 @@ class TaskStatusService:
 
             return summary
 
-        except Exception as e:
-            logger.error(f"用户任务统计失败 - user_id: {user_id}, error: {e}")
+        except ValueError:
+            logger.error(f"用户任务统计失败 - user_id 无效: {user_id}")
+            return {status.value: 0 for status in ApiTaskStatus}
+        except SQLAlchemyError as e:
+            logger.error(f"用户任务统计失败（数据库异常） - user_id: {user_id}, error: {e}")
             return {status.value: 0 for status in ApiTaskStatus}
 
 

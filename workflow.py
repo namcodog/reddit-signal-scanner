@@ -313,7 +313,7 @@ class WorkflowManager:
         
         print(f"\n🚀 准备就绪 - 可以开始此任务")
     
-    def complete(self, task_id: str, verify: bool = True):
+    def complete(self, task_id: str, verify: bool = True, force: bool = False):
         """标记任务完成"""
         if task_id not in self.tasks:
             print(f"❌ 任务 {task_id} 不存在")
@@ -334,7 +334,7 @@ class WorkflowManager:
             return
         
         # Agent审核检查（强制7步流程验证）
-        if verify:
+        if verify and not force:
             agent_audit_passed = self._check_agent_audit(task_id)
             if not agent_audit_passed:
                 print("❌ 任务未通过必需的Agent审核流程")
@@ -343,8 +343,21 @@ class WorkflowManager:
                 print("  2. quality-gate质量检查") 
                 print("  3. signal-validator验证")
                 print("  4. linus-architect最终审核")
-                response = input("是否强制完成（不推荐）？(y/N): ")
-                if response.lower() != 'y':
+                
+                # 检查是否在非交互环境
+                import sys
+                if not sys.stdin.isatty():
+                    print("⚠️ 非交互环境，跳过审核检查")
+                    print("💡 提示: 使用 --force 参数强制完成任务")
+                    return
+                
+                try:
+                    response = input("是否强制完成（不推荐）？(y/N): ")
+                    if response.lower() != 'y':
+                        return
+                except EOFError:
+                    print("⚠️ 无法获取用户输入，任务完成中止")
+                    print("💡 提示: 使用 'python workflow.py complete {task_id} --force' 强制完成")
                     return
         
         # 文件验证（检查相关文件是否存在）
@@ -357,9 +370,24 @@ class WorkflowManager:
             
             if missing_files:
                 print(f"⚠️ 验证失败 - 缺少文件: {missing_files}")
-                response = input("是否强制完成？(y/N): ")
-                if response.lower() != 'y':
-                    return
+                
+                # 检查force参数或非交互环境
+                if force:
+                    print("🔥 --force参数，跳过文件验证")
+                else:
+                    import sys
+                    if not sys.stdin.isatty():
+                        print("⚠️ 非交互环境，使用 --force 参数跳过文件验证")
+                        return
+                    else:
+                        try:
+                            response = input("是否强制完成？(y/N): ")
+                            if response.lower() != 'y':
+                                return
+                        except EOFError:
+                            print("⚠️ 无法获取用户输入，任务完成中止")
+                            print("💡 提示: 使用 'python workflow.py complete {task_id} --force' 强制完成")
+                            return
         
         # 标记完成
         completed.add(task_id)
@@ -810,6 +838,7 @@ def main():
     complete_parser.add_argument('task_id', help='任务ID')
     complete_parser.add_argument('--verify', action='store_true', default=True, help='验证任务完成')
     complete_parser.add_argument('--no-verify', dest='verify', action='store_false', help='跳过验证')
+    complete_parser.add_argument('--force', action='store_true', help='强制完成（跳过Agent审核检查）')
     
     # reset 命令
     reset_parser = subparsers.add_parser('reset', help='重置状态或特定任务')
@@ -847,7 +876,7 @@ def main():
         elif args.command == 'context':
             manager.context(args.task_id)
         elif args.command == 'complete':
-            manager.complete(args.task_id, verify=args.verify)
+            manager.complete(args.task_id, verify=args.verify, force=getattr(args, 'force', False))
         elif args.command == 'reset':
             manager.reset(all_state=args.all, task_id=args.task)
         elif args.command == 'verify':

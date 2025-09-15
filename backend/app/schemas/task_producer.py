@@ -9,12 +9,14 @@
 4. 零特殊情况分支 - 好品味的标志
 """
 
-from dataclasses import dataclass, field
-from typing import Dict, Any, Optional, List
-from datetime import datetime, timezone
 import uuid
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
+
+from ..core.types import JsonValue
 
 
 class TaskSubmissionRequest(BaseModel):
@@ -26,10 +28,8 @@ class TaskSubmissionRequest(BaseModel):
     product_description: str = Field(
         ..., min_length=10, max_length=2000, description="产品描述内容"
     )
-    priority: Optional[int] = Field(
-        default=1, ge=1, le=5, description="任务优先级(1-5)"
-    )
-    metadata: Optional[Dict[str, Any]] = Field(
+    priority: Optional[int] = Field(default=1, ge=1, le=5, description="任务优先级(1-5)")
+    metadata: Optional[dict[str, JsonValue]] = Field(
         default_factory=dict, description="附加元数据"
     )
 
@@ -42,9 +42,7 @@ class TaskSubmissionResponse(BaseModel):
     task_id: str = Field(..., description="任务唯一标识")
     status: str = Field(default="queued", description="任务状态")
     queue_name: str = Field(..., description="任务队列名称")
-    estimated_start_time: Optional[datetime] = Field(
-        default=None, description="预计开始时间"
-    )
+    estimated_start_time: Optional[datetime] = Field(default=None, description="预计开始时间")
     submitted_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc), description="提交时间"
     )
@@ -63,10 +61,10 @@ class TaskData:
 
     task_id: str
     task_type: str
-    payload: Dict[str, Any]
+    payload: dict[str, JsonValue]
     priority: int
     queue_name: str
-    metadata: Dict[str, Any]
+    metadata: dict[str, JsonValue]
     created_at: datetime
 
     @classmethod
@@ -74,7 +72,7 @@ class TaskData:
         cls,
         request: TaskSubmissionRequest,
         task_type: str = "analysis",
-        queue_config: Optional[Dict[str, str]] = None,
+        queue_config: Optional[dict[str, str]] = None,
     ) -> "TaskData":
         """
         从HTTP请求构造任务数据 - 单一转换点
@@ -117,7 +115,7 @@ class TaskData:
             created_at=datetime.now(timezone.utc),
         )
 
-    def to_celery_kwargs(self) -> Dict[str, Any]:
+    def to_celery_kwargs(self) -> dict[str, JsonValue]:
         """
         转换为Celery任务调用参数
 

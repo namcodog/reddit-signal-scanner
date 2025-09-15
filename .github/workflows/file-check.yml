@@ -21,7 +21,7 @@ jobs:
     - name: 🐍 设置Python环境
       uses: actions/setup-python@v4
       with:
-        python-version: '3.9'
+        python-version: '3.11'
         
     - name: 📦 安装依赖
       run: |
@@ -31,9 +31,26 @@ jobs:
     - name: 🧹 检查临时文件
       run: |
         echo "🔍 检查临时文件..."
-        if find . -name "*.tmp" -o -name "*.temp" -o -name "*_temp.*" -o -name "*_test.*" | grep -q .; then
+        # 忽略常见依赖与测试目录，避免误报（如 tests/performance/load_test.py）
+        if find . \
+          -not -path "./.git/*" \
+          -not -path "./node_modules/*" \
+          -not -path "./**/venv/*" \
+          -not -path "./backend/venv/*" \
+          -not -path "./backend/venv*/**" \
+          -not -path "./.mypy_cache/*" \
+          -not -path "./tests/*" \
+          \( -name "*.tmp" -o -name "*.temp" -o -name "*_temp.*" -o -name "*_test.*" \) | grep -q .; then
           echo "❌ 发现临时文件，请清理："
-          find . -name "*.tmp" -o -name "*.temp" -o -name "*_temp.*" -o -name "*_test.*"
+          find . \
+            -not -path "./.git/*" \
+            -not -path "./node_modules/*" \
+            -not -path "./**/venv/*" \
+            -not -path "./backend/venv/*" \
+            -not -path "./backend/venv*/**" \
+            -not -path "./.mypy_cache/*" \
+            -not -path "./tests/*" \
+            \( -name "*.tmp" -o -name "*.temp" -o -name "*_temp.*" -o -name "*_test.*" \)
           echo ""
           echo "💡 使用以下命令清理："
           echo "make clean-temp"
@@ -92,6 +109,23 @@ jobs:
             forbidden_found=true
           fi
         done
+
+        # 检查可疑文件名（单独的连字符、以连字符开头的文件）
+        suspicious=$(find . -type f \( -name "-" -o -name "-*" \) -not -path "./.git/*" -not -path "./node_modules/*")
+        if [ -n "$suspicious" ]; then
+          echo "❌ 发现可疑文件名（可能为误提交或产物）："
+          echo "$suspicious"
+          forbidden_found=true
+        fi
+
+        # 检查不应被跟踪的前端产物（Cypress视频/截图）
+        tracked_cypress=$(git ls-files -- "frontend/cypress/videos" "frontend/cypress/screenshots" 2>/dev/null || true)
+        if [ -n "$tracked_cypress" ]; then
+          echo "❌ 发现被跟踪的E2E产物（应通过.gitignore忽略）："
+          echo "$tracked_cypress"
+          echo "💡 请将 frontend/cypress/{videos,screenshots}/ 加入 .gitignore 并清理已跟踪文件"
+          forbidden_found=true
+        fi
         
         if [ "$forbidden_found" = true ]; then
           echo ""
@@ -187,7 +221,7 @@ jobs:
     - name: 🐍 设置Python环境
       uses: actions/setup-python@v4
       with:
-        python-version: '3.9'
+        python-version: '3.11'
         
     - name: 📦 安装依赖
       run: |

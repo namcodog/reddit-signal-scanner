@@ -1,0 +1,12 @@
+{
+  "task_id": "test-analysis-123",
+  "status": "processing",
+  "progress": 75,
+  "step": 3,
+  "total_steps": 4,
+  "current_step_name": "Analyzing Reddit data",
+  "message": "Processing Reddit posts and comments...",
+  "elapsed_time": "1m 45s",
+  "estimated_remaining": "30s",
+  "timestamp": "2025-09-11T10:01:45Z"
+}

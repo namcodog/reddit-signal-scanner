@@ -13,22 +13,28 @@ PRD-03 缓存优先架构的核心组件
 
 import asyncio
 import json
+import logging
 import time
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Set, Tuple, Any
 from decimal import Decimal
-import logging
+from typing import Any, Dict, List, Mapping, Optional, Set, Tuple, cast
 
 import redis.asyncio as redis
+from redis.exceptions import RedisError
+from sqlalchemy import and_, delete, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update, delete, and_, or_
 from sqlalchemy.orm import selectinload
+from sqlalchemy.sql.elements import ColumnElement
+from sqlalchemy.exc import SQLAlchemyError
+from pydantic import ValidationError
 
-from ..core.database import get_async_db
-from ..core.redis_client import get_redis_client
 from ..core.config import get_settings
+from ..core.database import get_db
+from ..core.redis_client import get_redis_client
+from ..core.sqlalchemy_typing import as_bool_clause
 from ..models.community_cache import CommunityCache
-from ..schemas.reddit_data import RedditPost, CacheStatus
+from ..schemas.reddit_data import CacheStatus, RedditPost
+from ..core.types import TypedRedis
 
 logger = logging.getLogger(__name__)
 
@@ -43,9 +49,9 @@ class CacheManager:
     - 元数据同步：Redis数据与PostgreSQL元数据一致性
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.settings = get_settings()
-        self.redis_client: Optional[redis.Redis] = None
+        self.redis_client: Optional[TypedRedis] = None
         self.db_session: Optional[AsyncSession] = None
 
         # 缓存配置
@@ -61,18 +67,40 @@ class CacheManager:
             "rate_limit": "ratelimit:api:{client_id}",
         }
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> "CacheManager":
         """异步上下文管理器入口"""
-        self.redis_client = await get_redis_client()
-        self.db_session = await anext(get_async_db())
+        # 获取包装器并使用其底层原生 AsyncRedis 客户端
+        rc_wrapper = await get_redis_client()
+        self.redis_client = rc_wrapper.client
+        self.db_session = await anext(get_db())
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(
+        self,
+        exc_type: Optional[type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[object],
+    ) -> None:
         """异步上下文管理器出口"""
-        if self.redis_client:
-            await self.redis_client.close()
+        # 不在此处关闭全局 Redis 连接（共享连接池由应用生命周期管理）
         if self.db_session:
             await self.db_session.close()
+
+    # 运行期保障：确保资源已初始化
+    def _require_redis(self) -> TypedRedis:
+        if self.redis_client is None:
+            raise RuntimeError(
+                "Redis client is not initialized. Use 'async with CacheManager()' or call create_cache_manager()."
+            )
+        # 在 __aenter__ 中已将 self.redis_client 设为底层原生 AsyncRedis 客户端
+        return cast(TypedRedis, self.redis_client)
+
+    def _require_db(self) -> AsyncSession:
+        if self.db_session is None:
+            raise RuntimeError(
+                "DB session is not initialized. Use 'async with CacheManager()' or call create_cache_manager()."
+            )
+        return self.db_session
 
     async def get_community_posts(
         self, community: str, freshness_threshold: float = 0.7
@@ -92,8 +120,9 @@ class CacheManager:
         )
 
         try:
+            rc = self._require_redis()
             # 获取缓存数据
-            cached_data = await self.redis_client.get(cache_key)
+            cached_data = await rc.get(cache_key)
 
             # 获取缓存元数据
             cache_status = await self._get_cache_metadata(clean_community)
@@ -103,7 +132,13 @@ class CacheManager:
                 return [], cache_status
 
             # 解析缓存数据
-            cache_content = json.loads(cached_data)
+            try:
+                cache_content = json.loads(cached_data)
+            except json.JSONDecodeError as jde:
+                logger.warning(
+                    "缓存JSON解析失败: %s (%s)", clean_community, jde
+                )
+                return [], cache_status
             posts_data = cache_content.get("posts", [])
             cached_at = cache_content.get("cached_at", 0)
 
@@ -112,9 +147,7 @@ class CacheManager:
             freshness_score = max(0.0, 1.0 - (cache_age_hours / 24))
 
             if freshness_score < freshness_threshold:
-                logger.debug(
-                    f"缓存过期: {clean_community}, 新鲜度: {freshness_score:.2f}"
-                )
+                logger.debug(f"缓存过期: {clean_community}, 新鲜度: {freshness_score:.2f}")
                 cache_status.is_fresh = False
 
             # 转换为RedditPost对象
@@ -123,8 +156,8 @@ class CacheManager:
                 try:
                     post = RedditPost(**post_data)
                     posts.append(post)
-                except Exception as e:
-                    logger.warning(f"解析帖子数据失败: {e}")
+                except (ValidationError, TypeError, ValueError) as e:
+                    logger.warning("解析帖子数据失败: %s (%s)", post_data, e)
                     continue
 
             # 更新缓存命中统计
@@ -133,8 +166,8 @@ class CacheManager:
             logger.debug(f"缓存命中: {clean_community}, 帖子数: {len(posts)}")
             return posts, cache_status
 
-        except Exception as e:
-            logger.error(f"获取缓存数据失败 {clean_community}: {e}")
+        except (RedisError, SQLAlchemyError) as e:
+            logger.error("获取缓存数据失败 %s: %s", clean_community, e)
             return [], CacheStatus(community=clean_community)
 
     async def set_community_posts(
@@ -170,12 +203,17 @@ class CacheManager:
             }
 
             # 设置Redis缓存
-            cache_json = json.dumps(
-                cache_data, ensure_ascii=False, separators=(",", ":")
-            )
+            try:
+                cache_json = json.dumps(
+                    cache_data, ensure_ascii=False, separators=(",", ":")
+                )
+            except (TypeError, ValueError) as se:
+                logger.error("缓存数据序列化失败 %s: %s", clean_community, se)
+                return False
             ttl_value = ttl or self.default_ttl
 
-            await self.redis_client.setex(cache_key, ttl_value, cache_json)
+            rc = self._require_redis()
+            await rc.setex(cache_key, ttl_value, cache_json)
 
             # 更新数据库元数据
             await self._update_cache_metadata(clean_community, len(posts))
@@ -183,8 +221,8 @@ class CacheManager:
             logger.info(f"缓存更新成功: {clean_community}, 帖子数: {len(posts)}")
             return True
 
-        except Exception as e:
-            logger.error(f"设置缓存失败 {clean_community}: {e}")
+        except (RedisError, SQLAlchemyError) as e:
+            logger.error("设置缓存失败 %s: %s", clean_community, e)
             return False
 
     async def get_multiple_communities(
@@ -211,7 +249,7 @@ class CacheManager:
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         # 组织结果
-        community_data = {}
+        community_data: Dict[str, Tuple[List[RedditPost], CacheStatus]] = {}
         for i, result in enumerate(results):
             community = communities[i]
             clean_community = self._clean_community_name(community)
@@ -223,7 +261,7 @@ class CacheManager:
                     CacheStatus(community=clean_community),
                 )
             else:
-                posts, cache_status = result
+                posts, cache_status = cast(Tuple[List[RedditPost], CacheStatus], result)
                 community_data[clean_community] = (posts, cache_status)
 
         return community_data
@@ -243,24 +281,28 @@ class CacheManager:
         )
 
         try:
+            rc = self._require_redis()
+            db = self._require_db()
             # 删除Redis缓存
-            deleted = await self.redis_client.delete(cache_key)
+            deleted = await rc.delete(cache_key)
 
             # 更新数据库元数据
             update_stmt = (
                 update(CommunityCache)
-                .where(CommunityCache.community_name == clean_community)
+                .where(
+                    self._as_clause(CommunityCache.community_name == clean_community)
+                )
                 .values(posts_cached=0, last_crawled_at=None)
             )
 
-            await self.db_session.execute(update_stmt)
-            await self.db_session.commit()
+            await db.execute(update_stmt)
+            await db.commit()
 
             logger.info(f"缓存失效: {clean_community}")
             return bool(deleted)
 
-        except Exception as e:
-            logger.error(f"缓存失效失败 {clean_community}: {e}")
+        except (RedisError, SQLAlchemyError) as e:
+            logger.error("缓存失效失败 %s: %s", clean_community, e)
             return False
 
     async def cleanup_expired_cache(self, max_items: int = 100) -> int:
@@ -278,16 +320,26 @@ class CacheManager:
                 select(CommunityCache)
                 .where(
                     and_(
-                        CommunityCache.last_crawled_at.isnot(None),
-                        CommunityCache.last_crawled_at
-                        < datetime.utcnow()
-                        - timedelta(seconds=CommunityCache.ttl_seconds),
+                        self._as_clause(
+                            cast(Any, CommunityCache.last_crawled_at).isnot(None)
+                        ),
+                        self._as_clause(
+                            (cast(Any, CommunityCache.last_crawled_at))
+                            < (
+                                datetime.utcnow()
+                                - timedelta(
+                                    seconds=cast(Any, CommunityCache.ttl_seconds)
+                                )
+                            )
+                        ),
                     )
                 )
                 .limit(max_items)
             )
 
-            expired_records = await self.db_session.execute(expired_query)
+            db = self._require_db()
+            rc = self._require_redis()
+            expired_records = await db.execute(expired_query)
             expired_communities = expired_records.scalars().all()
 
             if not expired_communities:
@@ -301,29 +353,32 @@ class CacheManager:
                 for record in expired_communities
             ]
 
-            deleted_count = (
-                await self.redis_client.delete(*cache_keys) if cache_keys else 0
-            )
+            deleted_raw = (await rc.delete(*cache_keys)) if cache_keys else 0
+            deleted_count: int = int(deleted_raw)
 
             # 更新数据库记录
             community_names = [record.community_name for record in expired_communities]
             update_stmt = (
                 update(CommunityCache)
-                .where(CommunityCache.community_name.in_(community_names))
+                .where(
+                    self._as_clause(
+                        cast(Any, CommunityCache.community_name).in_(community_names)
+                    )
+                )
                 .values(posts_cached=0, last_crawled_at=None)
             )
 
-            await self.db_session.execute(update_stmt)
-            await self.db_session.commit()
+            await db.execute(update_stmt)
+            await db.commit()
 
             logger.info(f"清理过期缓存: {deleted_count} 个项目")
             return deleted_count
 
-        except Exception as e:
+        except (SQLAlchemyError, RedisError, TypeError, ValueError) as e:
             logger.error(f"清理过期缓存失败: {e}")
             return 0
 
-    async def get_cache_statistics(self) -> Dict[str, Any]:
+    async def get_cache_statistics(self) -> dict[str, Any]:
         """获取缓存统计信息
 
         Returns:
@@ -331,18 +386,20 @@ class CacheManager:
         """
         try:
             # 数据库统计
+            db = self._require_db()
+            rc = self._require_redis()
             total_communities_stmt = select(CommunityCache)
-            total_result = await self.db_session.execute(total_communities_stmt)
+            total_result = await db.execute(total_communities_stmt)
             total_communities = len(total_result.scalars().all())
 
             cached_communities_stmt = select(CommunityCache).where(
-                CommunityCache.posts_cached > 0
+                self._as_clause(CommunityCache.posts_cached > 0)
             )
-            cached_result = await self.db_session.execute(cached_communities_stmt)
+            cached_result = await db.execute(cached_communities_stmt)
             cached_communities = cached_result.scalars().all()
 
             # Redis统计
-            redis_info = await self.redis_client.info("memory")
+            redis_info = await rc.info("memory")
             memory_used_mb = redis_info.get("used_memory", 0) / (1024 * 1024)
 
             # 计算统计信息
@@ -372,8 +429,8 @@ class CacheManager:
                 "timestamp": datetime.utcnow().isoformat(),
             }
 
-        except Exception as e:
-            logger.error(f"获取缓存统计失败: {e}")
+        except (SQLAlchemyError, RedisError) as e:
+            logger.error("获取缓存统计失败: %s", e)
             return {"error": str(e)}
 
     # 私有辅助方法
@@ -385,14 +442,20 @@ class CacheManager:
             clean_name = f"r/{clean_name}"
         return clean_name
 
+    @staticmethod
+    def _as_clause(expr: Any) -> ColumnElement[bool]:
+        """将任意表达式视为 SQLAlchemy 布尔子句以满足类型检查。"""
+        return cast(ColumnElement[bool], expr)
+
     async def _get_cache_metadata(self, community: str) -> CacheStatus:
         """获取社区缓存元数据"""
         try:
             query = select(CommunityCache).where(
-                CommunityCache.community_name == community
+                as_bool_clause(CommunityCache.community_name == community)
             )
 
-            result = await self.db_session.execute(query)
+            db = self._require_db()
+            result = await db.execute(query)
             cache_record = result.scalars().first()
 
             if not cache_record:
@@ -408,18 +471,19 @@ class CacheManager:
                 hit_count=cache_record.hit_count,
             )
 
-        except Exception as e:
-            logger.error(f"获取缓存元数据失败 {community}: {e}")
+        except SQLAlchemyError as e:
+            logger.error("获取缓存元数据失败 %s: %s", community, e)
             return CacheStatus(community=community)
 
-    async def _update_cache_metadata(self, community: str, posts_count: int):
+    async def _update_cache_metadata(self, community: str, posts_count: int) -> None:
         """更新缓存元数据"""
         try:
             # 检查是否存在记录
             query = select(CommunityCache).where(
-                CommunityCache.community_name == community
+                self._as_clause(CommunityCache.community_name == community)
             )
-            result = await self.db_session.execute(query)
+            db = self._require_db()
+            result = await db.execute(query)
             existing_record = result.scalars().first()
 
             if existing_record:
@@ -433,31 +497,33 @@ class CacheManager:
                     last_crawled_at=datetime.utcnow(),
                     quality_score=Decimal("0.8"),
                 )
-                self.db_session.add(new_record)
+                db.add(new_record)
 
-            await self.db_session.commit()
+            await db.commit()
 
-        except Exception as e:
-            logger.error(f"更新缓存元数据失败 {community}: {e}")
-            await self.db_session.rollback()
+        except SQLAlchemyError as e:
+            logger.error("更新缓存元数据失败 %s: %s", community, e)
+            db = self._require_db()
+            await db.rollback()
 
-    async def _update_hit_statistics(self, community: str):
+    async def _update_hit_statistics(self, community: str) -> None:
         """更新缓存命中统计"""
         try:
             update_stmt = (
                 update(CommunityCache)
-                .where(CommunityCache.community_name == community)
+                .where(as_bool_clause(CommunityCache.community_name == community))
                 .values(
                     hit_count=CommunityCache.hit_count + 1,
                     last_hit_at=datetime.utcnow(),
                 )
             )
 
-            await self.db_session.execute(update_stmt)
-            await self.db_session.commit()
+            db = self._require_db()
+            await db.execute(update_stmt)
+            await db.commit()
 
-        except Exception as e:
-            logger.error(f"更新命中统计失败 {community}: {e}")
+        except SQLAlchemyError as e:
+            logger.error("更新命中统计失败 %s: %s", community, e)
 
 
 # 工厂函数

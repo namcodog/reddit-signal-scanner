@@ -139,10 +139,7 @@ def upgrade() -> None:
         sa.CheckConstraint(
             "hit_count >= 0", name="ck_community_cache_hit_count_non_negative"
         ),
-        comment=(
-            "社区缓存元数据表 - Reddit社区数据的缓存状态管理，"
-            "支持LRU + TTL + Priority三重缓存策略"
-        ),
+        comment=("社区缓存元数据表 - Reddit社区数据的缓存状态管理，" "支持LRU + TTL + Priority三重缓存策略"),
     )
 
     # ====================================================================

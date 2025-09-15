@@ -314,10 +314,14 @@ export class GlobalErrorHandler {
   ): Promise<void> {
     try {
       // TODO: 实际项目中发送到错误监控服务
-      console.group('🚨 Error Report');
-      console.error('Error:', errorInfo);
-      console.log('Context:', context);
-      console.groupEnd();
+      try {
+        const { default: logger } = await import('@/utils/logger');
+        logger.error('Error:', errorInfo);
+        logger.warn('Context:', context);
+      } catch {
+        // eslint-disable-next-line no-console
+        console.error('Error:', errorInfo);
+      }
 
       // 模拟上报API调用
       // await fetch('/api/errors', {
@@ -325,7 +329,13 @@ export class GlobalErrorHandler {
       //   body: JSON.stringify({ error: errorInfo, context })
       // });
     } catch (reportError) {
-      console.error('Failed to report error:', reportError);
+      try {
+        const { default: logger } = await import('@/utils/logger');
+        logger.error('Failed to report error:', reportError as Error);
+      } catch {
+        // eslint-disable-next-line no-console
+        console.error('Failed to report error:', reportError);
+      }
     }
   }
 
@@ -376,11 +386,14 @@ export function handleError(
 /**
  * 异步操作错误处理装饰器
  */
-export function withErrorHandling<T extends (...args: any[]) => Promise<any>>(
-  fn: T,
+export function withErrorHandling<
+  A extends unknown[],
+  R
+>(
+  fn: (...args: A) => Promise<R>,
   context?: Partial<ErrorContext>
-): T {
-  return (async (...args: any[]) => {
+): (...args: A) => Promise<R> {
+  return (async (...args: A) => {
     try {
       return await fn(...args);
     } catch (error) {
@@ -391,7 +404,7 @@ export function withErrorHandling<T extends (...args: any[]) => Promise<any>>(
       });
       throw new Error(errorInfo.userMessage);
     }
-  }) as T;
+  });
 }
 
 export default GlobalErrorHandler;

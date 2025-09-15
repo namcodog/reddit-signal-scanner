@@ -2,7 +2,7 @@
 # 基于Linus Torvalds哲学：简单、实用、不破坏任何东西
 # 更新日期: 2025-08-21
 
-.PHONY: help clean-temp clean-cache clean-deprecated clean-all verify install test git-setup git-status git-commit git-flow git-help
+.PHONY: help clean-temp clean-cache clean-deprecated clean-all verify install test test-framework-verify test-framework-check git-setup git-status git-commit git-flow git-help branch-protect
 
 # 默认目标：显示帮助
 help:
@@ -22,11 +22,25 @@ help:
 	@echo "  git-commit      交互式提交"
 	@echo "  git-flow        Git工作流管理"
 	@echo "  git-help        显示Git命令帮助"
+	@echo "  branch-protect  配置分支保护（需要 GITHUB_TOKEN）"
 	@echo ""
 	@echo "🔧 开发环境命令："
 	@echo "  install         安装依赖"
 	@echo "  test            运行测试"
+	@echo "  test-framework-verify  验证测试框架"
+	@echo "  test-framework-check   测试框架自检"
 	@echo "  status          查看项目状态"
+	@echo "  type-check      严格类型检查 (backend/app)"
+	@echo "  tech-debt-metrics  输出技术债指标 (mypy/Dict[Any]/无类型函数)"
+	@echo ""
+	@echo "🧪 本地CI："
+	@echo "  ci-lint        运行 flake8/black-check/isort-check"
+	@echo "  ci-type        运行 mypy --strict (backend/app + tests)"
+	@echo "  ci-test        运行单元/系统基础测试 (可传 LABELS=...)"
+	@echo "  ci-integration 运行集成/系统测试 (需本地服务)"
+	@echo "  ci-perf        运行性能与Chaos用例并生成基线"
+	@echo "  ci-perf-gate   对比性能基线 (需传 PREV=/path/to/prev.json TOL=10 MODE=soft|hard)"
+	@echo "  ci-all         本地质量闸门 (lint+type+快速测试)"
 	@echo ""
 	@echo "🛡️  安全提示：所有清理操作都有确认提示"
 
@@ -147,6 +161,128 @@ test:
 	fi
 	@echo "✅ 测试完成"
 
+# ================================
+# 代码质量命令（Claude Code专用）
+# ================================
+
+# 快速类型检查（单文件）
+check-types:
+	@echo "🔍 运行严格类型检查..."
+	@if [ -z "$(FILE)" ]; then \
+		echo "用法: make check-types FILE=backend/app/your_file.py"; \
+	else \
+		cd backend && bash scripts/enforce_types.sh $(FILE); \
+	fi
+
+# 质量门控检查
+check-quality:
+	@echo "🎯 运行质量门控检查..."
+	@cd backend && python scripts/quality_gate.py --all-files
+
+# 自动修复代码格式
+fix-format:
+	@echo "🎨 自动修复代码格式..."
+	@cd backend && black app/ && isort app/
+	@echo "✅ 代码格式修复完成"
+
+# 修复类型问题（交互式）
+fix-types:
+	@echo "🔧 类型问题修复向导..."
+	@echo "1. 运行MyPy检查找出问题"
+	@cd backend && mypy --strict app/ --show-error-codes || true
+	@echo ""
+	@echo "2. 自动格式化代码"
+	@cd backend && black app/ && isort app/
+	@echo ""
+	@echo "3. 重新运行类型检查"
+	@cd backend && mypy --strict app/ --show-error-codes
+	@echo "✅ 请根据上述错误信息手动修复类型问题"
+
+# 严格类型检查 - 后端专用
+type-check:
+	@echo "🔍 MyPy 严格类型检查 (backend/app) ..."
+	@mypy --config-file backend/mypy.ini --strict backend/app || true
+
+# ================================
+# 本地CI命令
+# ================================
+
+ci-lint:
+	@python3 tests/ci/test_runner.py lint
+
+ci-type:
+	@python3 tests/ci/test_runner.py type
+
+ci-test:
+	@python3 tests/ci/test_runner.py test --labels "$(LABELS)"
+
+ci-integration:
+	@python3 tests/ci/test_runner.py integration
+
+ci-perf:
+	@python3 tests/ci/test_runner.py perf
+
+ci-perf-gate:
+	@if [ -z "$(PREV)" ]; then \
+		echo "用法: make ci-perf-gate PREV=/path/to/prev.json [TOL=10] [MODE=soft|hard]"; \
+		exit 1; \
+	fi
+	@python3 tests/ci/test_runner.py perf_gate --prev "$(PREV)" --tol "$(TOL)" --mode "$(MODE)"
+
+ci-all: ci-lint ci-type
+	@python3 tests/ci/test_runner.py test --labels "unit or security or system and not slow"
+
+# 100%全栈质量检查 - 前后端统一标准
+quality-check-full:
+	@echo "🎯 100%全栈质量检查 - 前后端统一"
+	@echo "==========================================="
+	@echo "🐍 后端质量检查..."
+	@mypy --config-file backend/mypy.ini --strict backend/app 2>&1 | head -20 || true
+	@echo ""
+	@echo "⚛️  前端质量检查..."
+	@cd frontend && npm run type-check 2>&1 | head -20 || true
+	@cd frontend && npm run lint 2>&1 | head -20 || true
+	@echo "==========================================="
+	@echo "✅ 质量检查完成，查看详细指标请运行: make tech-debt-metrics"
+
+
+# 技术债指标 - 100%覆盖前后端（便于日报/周报追踪）
+tech-debt-metrics:
+	@echo "📊 技术债指标 - 全栈覆盖"
+	@echo "==========================================="
+	@echo "🐍 后端 (backend/app)"
+	@echo "-------------------------------------------"
+	@echo "📈 MyPy错误统计:" && \
+	 mypy --config-file backend/mypy.ini --strict backend/app 2>&1 | grep "error" | wc -l | xargs echo "  当前错误数:" || true
+	@echo "📦 Dict[str, Any] 使用统计:" && \
+	 grep -R "Dict\[str, Any\]" backend/app --include="*.py" | wc -l | xargs echo "  当前使用数:" || true
+	@echo "🧩 无类型函数统计:" && \
+	 mypy --config-file backend/mypy.ini --strict backend/app 2>&1 | grep "no-untyped-def" | wc -l | xargs echo "  当前数量:" || true
+	@echo ""
+	@echo "⚛️  前端 (frontend/src)"  
+	@echo "-------------------------------------------"
+	@echo "📈 TypeScript错误统计:" && \
+	 (cd frontend && npm run type-check 2>&1 | grep "error" | wc -l | xargs echo "  当前错误数:") || echo "  当前错误数: 检查失败"
+	@echo "⚠️  ESLint错误统计:" && \
+	 (cd frontend && npm run lint 2>&1 | grep "error" | wc -l | xargs echo "  当前错误数:") || echo "  当前错误数: 检查失败" 
+	@echo "❌ any类型使用统计:" && \
+	 grep -R ": any" frontend/src --include="*.ts" --include="*.tsx" --exclude="*.test.*" | wc -l | xargs echo "  当前使用数:" || true
+	@echo "🧪 测试覆盖率:" && \
+	 find frontend/src -name "*.test.ts*" | wc -l | xargs echo "  测试文件数:" || true
+	@echo "==========================================="
+
+# 验证测试框架
+test-framework-verify:
+	@echo "🔍 验证测试框架..."
+	@echo "==========================================="
+	@python tests/verify_framework.py
+
+# 测试框架自检
+test-framework-check:
+	@echo "🧪 测试框架自检..."
+	@echo "==========================================="
+	@pytest tests/test_framework_self_check.py -v --tb=short
+
 # 项目状态报告
 status:
 	@echo "📊 项目状态报告"
@@ -236,3 +372,12 @@ git-quick:
 	@python3 infrastructure/scripts/commit_helper.py suggest
 	@echo ""
 	@echo "💡 使用 'make git-commit' 进行完整的交互式提交"
+
+# 分支保护（自动化）
+branch-protect:
+	@echo "🛡️  配置分支保护 (main, develop) ..."
+	@if [ -z "$(GITHUB_TOKEN)" ]; then \
+		echo "❌ 需要环境变量 GITHUB_TOKEN (repo admin 权限)"; \
+		exit 1; \
+	fi
+	@python3 infrastructure/scripts/setup_branch_protection.py || true

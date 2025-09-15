@@ -10,19 +10,44 @@
 """
 
 import logging
-from typing import Dict, Any
+from typing import Any, Callable, Dict, Optional, TypeVar
 
 from celery import Celery
 from celery.schedules import crontab
-from celery.signals import worker_ready, worker_shutdown, task_prerun, task_postrun
+from celery.signals import task_postrun, task_prerun, worker_ready, worker_shutdown
 
 from .celery_config import get_celery_settings
 from .task_base import BaseUnifiedTask
+from .types import ActiveTasksOverview, CeleryTaskStatusInfo
+
+F = TypeVar("F", bound=Callable[..., Any])
+
+
+def on_worker_ready(func: F) -> F:
+    """Typed wrapper for worker_ready.connect to preserve function typing."""
+    worker_ready.connect(func)
+    return func
+
+
+def on_worker_shutdown(func: F) -> F:
+    worker_shutdown.connect(func)
+    return func
+
+
+def on_task_prerun(func: F) -> F:
+    task_prerun.connect(func)
+    return func
+
+
+def on_task_postrun(func: F) -> F:
+    task_postrun.connect(func)
+    return func
+
 
 logger = logging.getLogger(__name__)
 
 # 全局唯一Celery应用实例
-celery_app: Celery = None
+celery_app: Optional[Celery] = None
 
 
 def create_celery_app() -> Celery:
@@ -147,43 +172,50 @@ def _register_signal_handlers() -> None:
     基于Linus原则：统一处理，消除重复的信号处理逻辑
     """
 
-    @worker_ready.connect
-    def worker_ready_handler(sender=None, **kwargs):
+    @on_worker_ready
+    def worker_ready_handler(sender: Optional[Any] = None, **kwargs: Any) -> None:
         """Worker启动信号处理"""
         logger.info(f"Celery Worker已启动: {sender}")
 
         # 可以在这里执行初始化检查
         _perform_startup_checks()
 
-    @worker_shutdown.connect
-    def worker_shutdown_handler(sender=None, **kwargs):
+    @on_worker_shutdown
+    def worker_shutdown_handler(sender: Optional[Any] = None, **kwargs: Any) -> None:
         """Worker关闭信号处理"""
         logger.info(f"Celery Worker正在关闭: {sender}")
 
         # 可以在这里执行清理工作
         _perform_shutdown_cleanup()
 
-    @task_prerun.connect
-    def task_prerun_handler(task_id=None, task=None, args=None, kwargs=None, **extra):
+    @on_task_prerun
+    def task_prerun_handler(
+        task_id: Optional[Any] = None,
+        task: Optional[Any] = None,
+        args: Optional[Any] = None,
+        kwargs: Optional[Any] = None,
+        **extra: Any,
+    ) -> None:
         """任务执行前信号处理"""
         logger.debug(f"任务开始执行: {task.name if task else 'unknown'} [{task_id}]")
 
         # 记录任务开始时间（用于持续时间计算）
         if task and hasattr(task, "request"):
-            task.request.started_at = str(
-                task.request.called_directly or task.request.eta
-            )
+            # 记录ISO时间戳作为开始时间
+            from datetime import datetime, timezone
 
-    @task_postrun.connect
+            task.request.started_at = datetime.now(timezone.utc).isoformat()
+
+    @on_task_postrun
     def task_postrun_handler(
-        task_id=None,
-        task=None,
-        args=None,
-        kwargs=None,
-        retval=None,
-        state=None,
-        **extra,
-    ):
+        task_id: Optional[Any] = None,
+        task: Optional[Any] = None,
+        args: Optional[Any] = None,
+        kwargs: Optional[Any] = None,
+        retval: Optional[Any] = None,
+        state: Optional[Any] = None,
+        **extra: Any,
+    ) -> None:
         """任务执行后信号处理"""
         logger.debug(
             f"任务执行完成: {task.name if task else 'unknown'} [{task_id}] - 状态: {state}"
@@ -194,21 +226,30 @@ def _perform_startup_checks() -> None:
     """执行启动时的系统检查"""
     try:
         # 检查Redis连接
+        import asyncio
+
         from ..core.redis_client import get_redis_client
 
-        redis_client = get_redis_client()
-        redis_client.ping()
+        async def _check_redis() -> None:
+            client = await get_redis_client()
+            if client.client is None:
+                raise RuntimeError("Redis client not connected")
+            await client.client.ping()
+
+        asyncio.run(_check_redis())
         logger.info("Redis连接检查通过")
 
         # 检查数据库连接
-        from ..core.database import SessionLocal
+        from ..core.database import get_session_sync
 
-        with SessionLocal() as db:
-            db.execute("SELECT 1")
+        with get_session_sync() as db:
+            from sqlalchemy import text
+
+            db.execute(text("SELECT 1"))
         logger.info("数据库连接检查通过")
 
         # 检查任务注册
-        registered_tasks = list(celery_app.tasks.keys())
+        registered_tasks = list((celery_app or get_celery_app()).tasks.keys())
         logger.info(f"已注册任务数量: {len(registered_tasks)}")
 
     except Exception as e:
@@ -228,7 +269,7 @@ def _perform_shutdown_cleanup() -> None:
 
 
 # 任务状态查询工具函数
-def get_task_status(task_id: str) -> Dict[str, Any]:
+def get_task_status(task_id: str) -> CeleryTaskStatusInfo:
     """
     获取任务状态信息
 
@@ -255,7 +296,7 @@ def get_task_status(task_id: str) -> Dict[str, Any]:
     }
 
 
-def get_active_tasks() -> Dict[str, Any]:
+def get_active_tasks() -> ActiveTasksOverview:
     """
     获取活跃任务信息
 
@@ -266,61 +307,73 @@ def get_active_tasks() -> Dict[str, Any]:
 
     # 获取活跃任务
     inspect = app.control.inspect()
-    active_tasks = inspect.active()
-    scheduled_tasks = inspect.scheduled()
-    reserved_tasks = inspect.reserved()
+    active_tasks = inspect.active() or {}
+    scheduled_tasks = inspect.scheduled() or {}
+    reserved_tasks = inspect.reserved() or {}
 
     return {
         "active": active_tasks,
         "scheduled": scheduled_tasks,
         "reserved": reserved_tasks,
-        "total_active": sum(len(tasks) for tasks in (active_tasks or {}).values()),
-        "total_scheduled": sum(
-            len(tasks) for tasks in (scheduled_tasks or {}).values()
-        ),
-        "total_reserved": sum(len(tasks) for tasks in (reserved_tasks or {}).values()),
+        "total_active": sum(len(tasks) for tasks in active_tasks.values()),
+        "total_scheduled": sum(len(tasks) for tasks in scheduled_tasks.values()),
+        "total_reserved": sum(len(tasks) for tasks in reserved_tasks.values()),
     }
 
 
 def get_queue_lengths() -> Dict[str, int]:
     """
-    获取队列长度信息
+    获取队列长度信息 - 基于Celery官方API
+
+    使用inspect.reserved()获取队列中等待的任务数量
+    这符合Celery最佳实践，避免直接查询Redis
 
     Returns:
         Dict: 各队列的任务数量
     """
     try:
-        from ..core.redis_client import get_redis_client
+        app = get_celery_app()
+        inspect = app.control.inspect()
 
-        redis_client = get_redis_client()
+        # 获取所有worker的reserved任务（队列中等待的任务）
+        reserved_tasks = inspect.reserved() or {}
 
-        queues = [
-            "analysis_queue",
-            "maintenance_queue",
-            "cleanup_queue",
-            "monitoring_queue",
-        ]
-        queue_lengths = {}
+        # 统计每个队列的任务数量
+        queue_lengths: Dict[str, int] = {
+            "analysis_queue": 0,
+            "maintenance_queue": 0,
+            "cleanup_queue": 0,
+            "monitoring_queue": 0,
+        }
 
-        for queue in queues:
-            length = redis_client.llen(queue)
-            queue_lengths[queue] = length
+        # 遍历所有worker的reserved任务
+        for worker_name, tasks in reserved_tasks.items():
+            for task in tasks:
+                # 根据routing_key或其他标识确定队列
+                queue_name = task.get("routing_key", "analysis_queue")
+                if queue_name in queue_lengths:
+                    queue_lengths[queue_name] += 1
 
         return queue_lengths
 
     except Exception as e:
-        logger.error(f"获取队列长度失败: {e}")
-        return {}
+        logger.error("获取队列长度失败: %s", e)
+        return {
+            "analysis_queue": 0,
+            "maintenance_queue": 0,
+            "cleanup_queue": 0,
+            "monitoring_queue": 0,
+        }
 
 
 # 立即创建全局实例（延迟导入时使用）
-def init_celery_app():
+def init_celery_app() -> Celery:
     """初始化Celery应用（供外部调用）"""
     return create_celery_app()
 
 
 # 向后兼容性：导出celery_app实例
-def get_legacy_celery_app():
+def get_legacy_celery_app() -> Celery:
     """
     获取向后兼容的celery_app实例
     用于现有代码的平滑迁移

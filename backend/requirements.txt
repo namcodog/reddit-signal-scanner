@@ -26,20 +26,26 @@ cryptography==41.0.7
 httpx==0.25.2
 pydantic==2.4.2
 pydantic-settings==2.0.3
+aiohttp==3.9.5
 
 # NLP & Data Analysis
 nltk==3.8.1
 textblob==0.17.1
 pandas==2.1.3
 numpy==1.25.2
+scikit-learn==1.3.2
+sentence-transformers==2.2.2
 
 # Development & Testing
 pytest==7.4.3
-pytest-asyncio==0.21.1
+pytest-asyncio==0.23.5
 pytest-cov==4.1.0
+pytest-celery==1.1.0
 black==23.10.1
 flake8==6.1.0
+flake8-print==5.0.0
 mypy==1.7.0
+isort==5.13.2
 
 # Security & Validation
 bleach==6.0.0
@@ -47,3 +53,11 @@ bleach==6.0.0
 # Utilities
 python-dotenv==1.0.0
 pyyaml==6.0.1
+aiofiles==23.2.1
+psutil==6.0.0
+
+# Type stubs and validators (type-check only)
+email-validator
+types-PyYAML
+types-requests
+types-aiofiles

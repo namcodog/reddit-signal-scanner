@@ -10,12 +10,12 @@ Linus设计原则: "好品味数据结构 + 消除特殊情况"
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import Boolean, Column, String, TIMESTAMP, Index, CheckConstraint
+from sqlalchemy import TIMESTAMP, Boolean, CheckConstraint, Column, Index, String
 from sqlalchemy.dialects.postgresql import UUID as PostgreSQL_UUID
-from sqlalchemy.sql import func
-from .base import Base
-
 from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
+
+from .base import Base
 
 
 class User(Base):
@@ -30,7 +30,7 @@ class User(Base):
     __tablename__ = "users"
 
     # 主键：UUID类型，数据库生成
-    id: UUID = Column(
+    id = Column(
         PostgreSQL_UUID(as_uuid=True),
         primary_key=True,
         server_default=func.gen_random_uuid(),
@@ -38,7 +38,7 @@ class User(Base):
     )
 
     # 多租户隔离：永远不为NULL，个人用户使用个人tenant_id
-    tenant_id: UUID = Column(
+    tenant_id = Column(
         PostgreSQL_UUID(as_uuid=True),
         nullable=False,
         server_default=func.gen_random_uuid(),  # 个人用户默认生成个人tenant
@@ -46,37 +46,35 @@ class User(Base):
     )
 
     # 用户凭证：在tenant内唯一
-    email: str = Column(
+    email = Column(
         String(320),  # RFC 5321标准：64@255+1 = 320
         nullable=False,
         comment="用户邮箱地址",
     )
 
-    password_hash: str = Column(
+    password_hash = Column(
         String(255),  # BCrypt哈希固定长度60，预留空间
         nullable=False,
         comment="BCrypt密码哈希值",
     )
 
     # 邮箱验证：简化状态管理
-    email_verified: bool = Column(
+    email_verified = Column(
         Boolean, nullable=False, server_default="false", comment="邮箱是否已验证"
     )
 
     # 用户状态：活跃用户优先查询
-    is_active: bool = Column(
-        Boolean, nullable=False, server_default="true", comment="用户是否激活"
-    )
+    is_active = Column(Boolean, nullable=False, server_default="true", comment="用户是否激活")
 
     # 审计字段：自动维护，不允许应用修改
-    created_at: datetime = Column(
+    created_at = Column(
         TIMESTAMP(timezone=True),
         nullable=False,
         server_default=func.current_timestamp(),
         comment="创建时间",
     )
 
-    updated_at: datetime = Column(
+    updated_at = Column(
         TIMESTAMP(timezone=True),
         nullable=False,
         server_default=func.current_timestamp(),
