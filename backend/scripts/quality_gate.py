@@ -100,7 +100,7 @@ class QualityGate:
             [line for line in result.stdout.split("\n") if " error:" in line]
         )
 
-        # type: ignore 也算作错误
+        # 'type: ignore' 也算作错误
         total_errors = error_count + type_ignore_count
 
         output = result.stdout

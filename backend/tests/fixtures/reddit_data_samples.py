@@ -8,7 +8,7 @@ Reddit真实数据样本 - PRD03-08
 - 禁止type: ignore
 """
 
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Union, cast
 from datetime import datetime, timedelta
 import random
 
@@ -191,14 +191,14 @@ class RedditDataSamples:
             template = templates[i % len(templates)]
 
             # 添加变化以创建唯一的帖子
-            post = {
+            post: Dict[str, Union[str, int, float, bool]] = {
                 "id": f"post_{subreddit}_{i}",
-                "title": f"{template['title']} #{i+1}" if i > 0 else template["title"],
-                "selftext": template["selftext"],
-                "score": template["score"] + random.randint(-50, 50),
-                "num_comments": template["num_comments"] + random.randint(-10, 10),
+                "title": f"{template['title']} #{i+1}" if i > 0 else cast(str, template["title"]),
+                "selftext": cast(str, template["selftext"]),
+                "score": cast(int, template["score"]) + random.randint(-50, 50),
+                "num_comments": cast(int, template["num_comments"]) + random.randint(-10, 10),
                 "upvote_ratio": max(
-                    0.5, min(1.0, template["upvote_ratio"] + random.uniform(-0.1, 0.1))
+                    0.5, min(1.0, cast(float, template["upvote_ratio"]) + random.uniform(-0.1, 0.1))
                 ),
                 "subreddit": subreddit,
                 "created_utc": int(
@@ -238,7 +238,7 @@ class RedditDataSamples:
 
         comments = []
         for i in range(count):
-            comment = {
+            comment: Dict[str, Union[str, int, bool]] = {
                 "id": f"comment_{post_id}_{i}",
                 "parent_id": post_id,
                 "body": comment_templates[i % len(comment_templates)],

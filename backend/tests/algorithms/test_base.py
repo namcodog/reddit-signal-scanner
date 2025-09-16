@@ -10,12 +10,9 @@ from app.models.analysis_pipeline import PipelineData, PipelineResult, StepStatu
 from app.core.analyzer_config import StepConfig
 
 
-def create_test_pipeline_data(analysis_id: str = "test") -> PipelineData:
+def create_test_pipeline_data(product_description: str = "test product") -> PipelineData:
     return PipelineData(
-        analysis_id=analysis_id,
-        input_data={},
-        intermediate_results={},
-        context={},
+        product_description=product_description,
     )
 
 
@@ -30,12 +27,12 @@ def assert_pipeline_result(
     assert result.success is success
 
 
-def create_mock_redis_client():
+def create_mock_redis_client() -> Any:
     class _Mock:
-        def __init__(self):
+        def __init__(self) -> None:
             self._store: Dict[str, bytes] = {}
 
-        def set(self, key: str, value: bytes | str, ex: int | None = None):
+        def set(self, key: str, value: bytes | str, ex: int | None = None) -> None:
             self._store[key] = (
                 value if isinstance(value, bytes) else str(value).encode()
             )
