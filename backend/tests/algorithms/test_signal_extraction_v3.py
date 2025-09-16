@@ -21,7 +21,7 @@ from app.services.analysis.signal_extractor import (
     RedditSignalExtractor,
     UnifiedSignalDetector,
 )
-from tests.algorithms.test_base_v3 import (
+from .test_base_v3 import (
     create_test_pipeline_data,
     create_test_reddit_posts,
     create_test_signal_patterns,

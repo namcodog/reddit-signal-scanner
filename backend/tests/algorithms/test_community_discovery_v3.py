@@ -10,7 +10,7 @@ import pytest
 from app.core.analyzer_config import StepConfig
 from app.models.analysis_pipeline import PipelineData, StepStatus
 from app.services.analysis.community_discovery_step import CommunityDiscoveryStep
-from tests.algorithms.test_base_v3 import (
+from .test_base_v3 import (
     create_test_pipeline_data,
     create_test_step_config,
 )
