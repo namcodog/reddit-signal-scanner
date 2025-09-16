@@ -6,9 +6,10 @@ concurrency:
 
 on:
   push:
-    branches: [ main, develop, feature/** ]
-  pull_request:
-    branches: [ main, develop ]
+    branches: [ main ]
+  schedule:
+    - cron: '0 5 * * *'
+  workflow_dispatch:
 
 jobs:
   backend-unit:
@@ -81,6 +82,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install --prefer-binary -r backend/requirements.txt
+          pip install aiosqlite
           pip install pytest-xdist
 
       - name: Run tests with coverage (root config)
