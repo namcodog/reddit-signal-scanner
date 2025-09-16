@@ -60,9 +60,7 @@ def upgrade() -> None:
             comment="任务状态：pending/processing/completed/failed",
         ),
         # 错误信息：失败时记录具体原因
-        sa.Column(
-            "error_message", sa.Text(), nullable=True, comment="失败时的错误详情"
-        ),
+        sa.Column("error_message", sa.Text(), nullable=True, comment="失败时的错误详情"),
         # 审计字段：自动维护
         sa.Column(
             "created_at",
@@ -158,21 +156,15 @@ def upgrade() -> None:
     )
 
     # 添加表和列注释
-    op.execute(
-        "COMMENT ON TABLE tasks IS '用户分析任务表 - 支持完整生命周期管理和多租户数据隔离'"
-    )
+    op.execute("COMMENT ON TABLE tasks IS '用户分析任务表 - 支持完整生命周期管理和多租户数据隔离'")
     op.execute("COMMENT ON COLUMN tasks.id IS '任务唯一标识'")
     op.execute("COMMENT ON COLUMN tasks.user_id IS '任务所属用户，实现多租户隔离'")
-    op.execute(
-        "COMMENT ON COLUMN tasks.product_description IS '用户输入的产品描述，10-2000字符'"
-    )
+    op.execute("COMMENT ON COLUMN tasks.product_description IS '用户输入的产品描述，10-2000字符'")
     op.execute(
         "COMMENT ON COLUMN tasks.status IS '任务状态：pending/processing/completed/failed'"
     )
     op.execute("COMMENT ON COLUMN tasks.error_message IS '失败时的错误详情'")
-    op.execute(
-        "COMMENT ON COLUMN tasks.completed_at IS '任务完成时间，只有completed状态时才设置'"
-    )
+    op.execute("COMMENT ON COLUMN tasks.completed_at IS '任务完成时间，只有completed状态时才设置'")
 
 
 def downgrade() -> None:

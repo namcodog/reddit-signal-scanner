@@ -4,14 +4,16 @@ Step 1: 智能社区发现算法集成到分析引擎
 基于TF-IDF + 语义相似度 + 多维度评分的精准社区推荐
 """
 
-from typing import Dict, Any, Optional, List
+import asyncio
 import logging
 import time
-import asyncio
+from typing import Any, List, Mapping, Optional
+from app.core.types import StepInfo
 
-from app.core.step_base import BaseAnalysisStep, step_performance_monitor
-from app.models.analysis_pipeline import PipelineData, PipelineResult, StepStatus
 from app.core.analyzer_config import StepConfig
+from app.core.step_base import BaseAnalysisStep
+from app.models.analysis_pipeline import PipelineData, PipelineResult, StepStatus
+
 from ..community_discovery import (
     CommunityDiscoveryService,
     DiscoveryRequest,
@@ -38,7 +40,7 @@ class CommunityDiscoveryStep(BaseAnalysisStep):
     - processing_stats: 性能统计信息
     """
 
-    def __init__(self, config: StepConfig):
+    def __init__(self, config: StepConfig) -> None:
         """初始化社区发现步骤"""
         super().__init__(config)
 
@@ -55,7 +57,7 @@ class CommunityDiscoveryStep(BaseAnalysisStep):
 
         logger.info(f"CommunityDiscoveryStep初始化完成: {self.name}")
 
-    async def _initialize_service_if_needed(self):
+    async def _initialize_service_if_needed(self) -> None:
         """延迟初始化社区发现服务"""
         if self.discovery_service is None:
             try:
@@ -63,7 +65,7 @@ class CommunityDiscoveryStep(BaseAnalysisStep):
                 self.discovery_service = CommunityDiscoveryService()
                 await self.discovery_service.initialize()
                 self.logger.info("CommunityDiscoveryService初始化成功")
-            except Exception as e:
+            except (RuntimeError, ValueError, TypeError) as e:
                 self.logger.error(f"社区发现服务初始化失败: {e}")
                 raise
 
@@ -94,7 +96,6 @@ class CommunityDiscoveryStep(BaseAnalysisStep):
         self.logger.debug(f"输入验证通过，产品描述长度: {len(product_description)}")
         return True
 
-    @step_performance_monitor
     async def _process_step(self, data: PipelineData) -> PipelineResult:
         """
         执行智能社区发现核心逻辑
@@ -119,8 +120,11 @@ class CommunityDiscoveryStep(BaseAnalysisStep):
                 f"开始执行社区发现: {discovery_request.product_description[:50]}..."
             )
 
+            # mypy: self.discovery_service 已在上方初始化，但类型仍为 Optional；此处做一次局部收敛
+            service = self.discovery_service
+            assert service is not None
             discovery_response = await self._execute_with_timeout(
-                self.discovery_service.discover_communities(discovery_request),
+                service.discover_communities(discovery_request),
                 timeout=self.config.max_duration - 5,  # 留5秒缓冲时间
             )
 
@@ -160,7 +164,7 @@ class CommunityDiscoveryStep(BaseAnalysisStep):
             self.add_error(data, error_msg)
             return self._create_error_result(error_msg, StepStatus.TIMEOUT)
 
-        except Exception as e:
+        except (ValueError, RuntimeError, TypeError) as e:
             error_msg = f"社区发现执行异常: {str(e)}"
             self.add_error(data, error_msg)
             self.logger.error(error_msg, exc_info=True)
@@ -169,19 +173,24 @@ class CommunityDiscoveryStep(BaseAnalysisStep):
     def _build_discovery_request(self, data: PipelineData) -> DiscoveryRequest:
         """构建社区发现请求"""
 
-        # 获取用户配置的社区数量
+        # 获取用户配置的社区数量（来自 PipelineData.analysis_config）
         max_communities = None
-        if hasattr(data.config, "max_communities") and data.config.max_communities:
-            max_communities = data.config.max_communities
+        if (
+            getattr(data, "analysis_config", None)
+            and data.analysis_config.max_communities
+        ):
+            max_communities = data.analysis_config.max_communities
 
         # 构建请求
         request = DiscoveryRequest(
             product_description=data.product_description,
             target_keywords=(
-                data.config.target_keywords if data.config.target_keywords else None
+                data.analysis_config.target_keywords
+                if data.analysis_config.target_keywords
+                else None
             ),
             max_results=max_communities,
-            enable_cache=getattr(data.config, "enable_cache", True),
+            enable_cache=getattr(data.analysis_config, "enable_cache", True),
             filters=None,  # 后续版本支持
         )
 
@@ -190,7 +199,7 @@ class CommunityDiscoveryStep(BaseAnalysisStep):
 
     async def _process_discovery_response(
         self, response: DiscoveryResponse, data: PipelineData
-    ) -> Dict[str, Any]:
+    ) -> Mapping[str, Any]:
         """处理和验证发现响应"""
 
         # 基础验证
@@ -213,8 +222,7 @@ class CommunityDiscoveryStep(BaseAnalysisStep):
                 high_quality_communities.append(community)
             else:
                 self.logger.debug(
-                    f"过滤低质量社区: {community.get('name')} "
-                    f"(分数: {final_score:.3f})"
+                    f"过滤低质量社区: {community.get('name')} " f"(分数: {final_score:.3f})"
                 )
 
         # 记录过滤统计
@@ -231,8 +239,7 @@ class CommunityDiscoveryStep(BaseAnalysisStep):
         if filtered_count < 5 and original_count > 5:
             self.add_warning(
                 data,
-                f"高质量社区数量较少({filtered_count}个)，"
-                f"建议优化产品描述以获得更精准的结果",
+                f"高质量社区数量较少({filtered_count}个)，" f"建议优化产品描述以获得更精准的结果",
             )
             high_quality_communities = response.communities[:10]  # 取前10个
 
@@ -248,7 +255,7 @@ class CommunityDiscoveryStep(BaseAnalysisStep):
             },
         }
 
-    def _calculate_step_confidence(self, processed_result: Dict[str, Any]) -> float:
+    def _calculate_step_confidence(self, processed_result: Mapping[str, Any]) -> float:
         """计算步骤置信度"""
         communities_count = processed_result["total_found"]
 
@@ -256,15 +263,15 @@ class CommunityDiscoveryStep(BaseAnalysisStep):
             return 0.0
 
         # 基础置信度：基于找到的社区数量
-        count_confidence = min(1.0, communities_count / 15)  # 15个社区为满分
+        count_confidence: float = min(1.0, communities_count / 15)  # 15个社区为满分
 
         # 算法置信度：基于关键词提取和产品类型识别的置信度
         algorithm_meta = processed_result.get("algorithm_metadata", {})
         extracted_info = algorithm_meta.get("extracted_info", {})
-        keyword_confidence = extracted_info.get("confidence", 0.5)
+        keyword_confidence: float = float(extracted_info.get("confidence", 0.5))
 
         # 质量置信度：基于平均评分
-        avg_score = 0.0
+        avg_score: float = 0.0
         if communities_count > 0:
             total_score = sum(
                 community.get("relevance_score", {}).get("final_score", 0.0)
@@ -273,13 +280,15 @@ class CommunityDiscoveryStep(BaseAnalysisStep):
             avg_score = total_score / communities_count
 
         # 综合置信度
-        final_confidence = (
+        final_confidence: float = (
             count_confidence * 0.4 + keyword_confidence * 0.3 + avg_score * 0.3
         )
 
-        return min(1.0, final_confidence)
+        return float(min(1.0, final_confidence))
 
-    def _generate_recommendations(self, processed_result: Dict[str, Any]) -> List[str]:
+    def _generate_recommendations(
+        self, processed_result: Mapping[str, Any]
+    ) -> List[str]:
         """生成改进建议"""
         recommendations = []
 
@@ -288,9 +297,7 @@ class CommunityDiscoveryStep(BaseAnalysisStep):
 
         # 基于社区数量的建议
         if communities_count == 0:
-            recommendations.append(
-                "未找到相关社区，建议：1) 简化产品描述；2) 使用更通用的关键词"
-            )
+            recommendations.append("未找到相关社区，建议：1) 简化产品描述；2) 使用更通用的关键词")
         elif communities_count < 5:
             recommendations.append("相关社区较少，建议补充产品的应用场景和目标用户信息")
         elif communities_count > 25:
@@ -301,16 +308,12 @@ class CommunityDiscoveryStep(BaseAnalysisStep):
         product_type = extracted_info.get("product_type", "unknown")
 
         if product_type == "general":
-            recommendations.append(
-                "产品类型识别不够明确，建议明确说明产品属于SaaS、移动应用还是硬件产品"
-            )
+            recommendations.append("产品类型识别不够明确，建议明确说明产品属于SaaS、移动应用还是硬件产品")
 
         # 基于置信度的建议
         confidence = extracted_info.get("confidence", 0.5)
         if confidence < 0.6:
-            recommendations.append(
-                "关键词提取置信度较低，建议使用更具体和专业的产品描述"
-            )
+            recommendations.append("关键词提取置信度较低，建议使用更具体和专业的产品描述")
 
         return recommendations
 
@@ -348,15 +351,13 @@ class CommunityDiscoveryStep(BaseAnalysisStep):
         total_count = result_data["total_found"]
 
         if len(communities_list) != total_count:
-            self.logger.error(
-                f"社区列表长度({len(communities_list)})与总数({total_count})不匹配"
-            )
+            self.logger.error(f"社区列表长度({len(communities_list)})与总数({total_count})不匹配")
             return False
 
         self.logger.debug("结果验证通过")
         return True
 
-    async def health_check(self) -> Dict[str, Any]:
+    async def health_check(self) -> Mapping[str, Any]:
         """健康检查"""
         health_status = {
             "step_name": self.name,
@@ -372,7 +373,7 @@ class CommunityDiscoveryStep(BaseAnalysisStep):
                         "ready": service_health.get("service_initialized", False),
                     }
                 )
-            except Exception as e:
+            except (RuntimeError, ValueError, TypeError) as e:
                 health_status.update(
                     {"service_health": {"error": str(e)}, "ready": False}
                 )
@@ -381,26 +382,7 @@ class CommunityDiscoveryStep(BaseAnalysisStep):
 
         return health_status
 
-    def get_step_info(self) -> Dict[str, Any]:
+    def get_step_info(self) -> StepInfo:
         """获取步骤信息"""
-        base_info = super().get_step_info()
-        base_info.update(
-            {
-                "description": "智能社区发现 - 基于AI算法匹配最相关的Reddit社区",
-                "algorithm": "TF-IDF + Sentence Transformers + Multi-dimensional Ranking",
-                "output_format": {
-                    "communities": "List[Dict] - 排序的社区推荐列表",
-                    "total_found": "int - 找到的社区总数",
-                    "algorithm_metadata": "Dict - 算法执行元数据",
-                    "confidence_score": "float - 结果置信度 (0-1)",
-                },
-                "performance_targets": {
-                    "max_duration": self.config.max_duration,
-                    "typical_duration": "15-30s",
-                    "communities_per_second": "~20",
-                    "accuracy_target": "85%+",
-                },
-            }
-        )
-
-        return base_info
+        # 仅返回基础 StepInfo（与父类签名一致），扩展信息另行暴露
+        return super().get_step_info()

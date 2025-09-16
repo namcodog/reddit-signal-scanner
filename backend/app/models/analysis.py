@@ -10,17 +10,18 @@
 
 from datetime import datetime
 from decimal import Decimal
-from typing import List, Dict, Any, Union
+from typing import Any, Dict, List, Union
 from uuid import UUID
 
-from sqlalchemy import Column, DateTime, Integer, Numeric, ForeignKey, CheckConstraint
-from sqlalchemy.dialects.postgresql import UUID as PostgresUUID, JSONB
+from pydantic import BaseModel, Field, ValidationError, model_validator, validator
+from sqlalchemy import CheckConstraint, Column, DateTime, ForeignKey, Integer, Numeric
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.orm import relationship, validates
 from sqlalchemy.sql import func
-from pydantic import BaseModel, Field, validator, model_validator
 
+from ..core.types import JsonValue
 from .base import Base
-
 
 # ===== SQLAlchemy ORM 模型 =====
 
@@ -79,7 +80,7 @@ class Analysis(Base):
         return f"<Analysis(id={self.id}, task_id={self.task_id}, confidence={self.confidence_score})>"
 
     @validates("confidence_score")
-    def validate_confidence_score(self, key, confidence_score):
+    def validate_confidence_score(self, key: str, confidence_score: Any) -> Any:
         """验证置信度范围"""
         del key  # 标记key参数为已使用，避免Pylance警告
         if not (0.0 <= float(confidence_score) <= 1.0):
@@ -87,7 +88,7 @@ class Analysis(Base):
         return confidence_score
 
     @validates("analysis_version")
-    def validate_analysis_version(self, key, version):
+    def validate_analysis_version(self, key: str, version: Any) -> Any:
         """验证分析版本"""
         del key  # 标记key参数为已使用，避免Pylance警告
         if version <= 0:
@@ -100,7 +101,7 @@ class Analysis(Base):
         return float(self.confidence_score) * 100
 
     @property
-    def insights_summary(self) -> Dict[str, int]:
+    def insights_summary(self) -> dict[str, int]:
         """洞察摘要统计"""
         if not self.insights:
             return {"pain_points": 0, "competitors": 0, "opportunities": 0}
@@ -112,7 +113,7 @@ class Analysis(Base):
         }
 
     @property
-    def data_coverage(self) -> Dict[str, Union[int, float]]:
+    def data_coverage(self) -> dict[str, Union[int, float]]:
         """数据覆盖统计"""
         if not self.sources:
             return {"posts_analyzed": 0, "communities": 0, "cache_hit_rate": 0.0}
@@ -134,10 +135,10 @@ class PainPoint(BaseModel):
     sentiment_score: float = Field(..., ge=0.0, le=1.0, description="情感分数 0.0-1.0")
     frequency: int = Field(..., ge=1, description="出现频次")
     evidence_posts: List[str] = Field(
-        default_factory=list, max_items=10, description="证据帖子ID"
+        default_factory=list, max_length=10, description="证据帖子ID"
     )
     categories: List[str] = Field(
-        default_factory=list, max_items=5, description="痛点分类标签"
+        default_factory=list, max_length=5, description="痛点分类标签"
     )
 
     class Config:
@@ -159,10 +160,10 @@ class Competitor(BaseModel):
     mention_count: int = Field(..., ge=0, description="提及次数")
     sentiment_score: float = Field(..., ge=0.0, le=1.0, description="用户情感倾向")
     strengths: List[str] = Field(
-        default_factory=list, max_items=10, description="优势列表"
+        default_factory=list, max_length=10, description="优势列表"
     )
     weaknesses: List[str] = Field(
-        default_factory=list, max_items=10, description="劣势列表"
+        default_factory=list, max_length=10, description="劣势列表"
     )
     price_mentions: List[str] = Field(default_factory=list, description="价格相关提及")
     market_position: str = Field(
@@ -196,15 +197,15 @@ class Opportunity(BaseModel):
     urgency_score: float = Field(..., ge=0.0, le=1.0, description="紧迫性分数")
     feasibility_score: float = Field(..., ge=0.0, le=1.0, description="可行性分数")
     target_communities: List[str] = Field(
-        default_factory=list, max_items=10, description="目标社区"
+        default_factory=list, max_length=10, description="目标社区"
     )
     related_keywords: List[str] = Field(
-        default_factory=list, max_items=20, description="相关关键词"
+        default_factory=list, max_length=20, description="相关关键词"
     )
     estimated_demand: int = Field(ge=0, description="需求量估算")
 
     @validator("urgency_score", "feasibility_score")
-    def validate_scores(cls, v):
+    def validate_scores(cls, v: float) -> float:
         if not (0.0 <= v <= 1.0):
             raise ValueError("分数必须在0.0-1.0之间")
         return v
@@ -228,25 +229,25 @@ class InsightsSchema(BaseModel):
     """洞察结果Schema - 对应insights JSONB字段"""
 
     pain_points: List[PainPoint] = Field(
-        default_factory=list, max_items=50, description="痛点列表"
+        default_factory=list, max_length=50, description="痛点列表"
     )
     competitors: List[Competitor] = Field(
-        default_factory=list, max_items=30, description="竞争对手列表"
+        default_factory=list, max_length=30, description="竞争对手列表"
     )
     opportunities: List[Opportunity] = Field(
-        default_factory=list, max_items=20, description="商业机会列表"
+        default_factory=list, max_length=20, description="商业机会列表"
     )
 
     # 聚合统计
-    analysis_summary: Dict[str, Any] = Field(
+    analysis_summary: dict[str, JsonValue] = Field(
         default_factory=dict, description="分析摘要"
     )
     key_insights: List[str] = Field(
-        default_factory=list, max_items=10, description="关键洞察"
+        default_factory=list, max_length=10, description="关键洞察"
     )
 
     @model_validator(mode="after")
-    def validate_non_empty_insights(self):
+    def validate_non_empty_insights(self) -> "InsightsSchema":
         """确保至少有一种类型的洞察"""
         pain_points = self.pain_points
         competitors = self.competitors
@@ -303,7 +304,7 @@ class SourcesSchema(BaseModel):
 
     # 数据来源信息
     communities: List[str] = Field(
-        ..., min_items=1, max_items=50, description="分析的社区列表"
+        ..., min_length=1, max_length=50, description="分析的社区列表"
     )
     posts_analyzed: int = Field(..., ge=1, description="分析的帖子总数")
     comments_analyzed: int = Field(default=0, ge=0, description="分析的评论总数")
@@ -315,9 +316,7 @@ class SourcesSchema(BaseModel):
     reddit_api_calls: int = Field(..., ge=0, description="Reddit API调用次数")
 
     # 数据质量指标
-    data_quality_score: float = Field(
-        default=1.0, ge=0.0, le=1.0, description="数据质量分数"
-    )
+    data_quality_score: float = Field(default=1.0, ge=0.0, le=1.0, description="数据质量分数")
     filtered_spam_posts: int = Field(default=0, ge=0, description="过滤的垃圾帖子数")
     language_distribution: Dict[str, int] = Field(
         default_factory=dict, description="语言分布"
@@ -325,18 +324,18 @@ class SourcesSchema(BaseModel):
 
     # 算法版本和配置
     algorithm_version: str = Field(..., description="使用的算法版本")
-    processing_parameters: Dict[str, Any] = Field(
+    processing_parameters: dict[str, JsonValue] = Field(
         default_factory=dict, description="处理参数配置"
     )
 
     @validator("cache_hit_rate", "data_quality_score")
-    def validate_rate_scores(cls, v):
+    def validate_rate_scores(cls, v: float) -> float:
         if not (0.0 <= v <= 1.0):
             raise ValueError("比率和分数必须在0.0-1.0之间")
         return v
 
     @validator("communities")
-    def validate_communities_format(cls, v):
+    def validate_communities_format(cls, v: List[str]) -> List[str]:
         """验证社区名称格式"""
         for community in v:
             if not community.startswith("r/"):
@@ -427,9 +426,7 @@ class AnalysisStatsResponse(BaseModel):
     total_analyses: int = Field(..., description="分析总数")
     avg_confidence: float = Field(..., description="平均置信度")
     confidence_distribution: Dict[str, int] = Field(..., description="置信度分布")
-    top_communities: List[Dict[str, Union[str, int]]] = Field(
-        ..., description="热门社区"
-    )
+    top_communities: List[Dict[str, Union[str, int]]] = Field(..., description="热门社区")
     recent_analyses: int = Field(..., description="最近7天分析数")
 
     class Config:
@@ -454,7 +451,7 @@ class AnalysisStatsResponse(BaseModel):
 # ===== 工具函数 =====
 
 
-def create_analysis_from_dict(data: Dict[str, Any]) -> Analysis:
+def create_analysis_from_dict(data: dict[str, JsonValue]) -> Analysis:
     """从字典创建分析对象"""
     return Analysis(
         task_id=data["task_id"],
@@ -465,13 +462,16 @@ def create_analysis_from_dict(data: Dict[str, Any]) -> Analysis:
     )
 
 
-def validate_analysis_data(insights: Dict[str, Any], sources: Dict[str, Any]) -> bool:
+def validate_analysis_data(
+    insights: dict[str, JsonValue], sources: dict[str, JsonValue]
+) -> bool:
     """验证分析数据有效性"""
     try:
-        InsightsSchema(**insights)
-        SourcesSchema(**sources)
+        # 使用 Pydantic v2 推荐的校验入口，避免 **kwargs 构造导致的边界行为
+        InsightsSchema.model_validate(insights)
+        SourcesSchema.model_validate(sources)
         return True
-    except Exception:
+    except ValidationError:
         return False
 
 

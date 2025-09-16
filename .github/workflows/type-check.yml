@@ -1,0 +1,43 @@
+name: Type Check
+
+on:
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - 'backend/**'
+      - 'tests/**'
+      - 'backend/mypy.ini'
+      - '.github/workflows/type-check.yml'
+  push:
+    branches: [ main, master ]
+    paths:
+      - 'backend/**'
+      - 'tests/**'
+      - 'backend/mypy.ini'
+      - '.github/workflows/type-check.yml'
+
+jobs:
+  mypy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install backend deps
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install mypy
+          pip install types-PyYAML types-requests types-aiofiles || true
+
+      - name: Run mypy (backend + tests, strict)
+        working-directory: backend
+        run: |
+          python -m mypy --config-file mypy.ini --strict app tests
+

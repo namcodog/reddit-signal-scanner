@@ -1,256 +1,248 @@
-# PRD-07: Admin后台设计 - 任务拆分
-# 基于 Linus Torvalds 设计哲学：只读监控+Git配置，避免Admin写操作破坏审计
+# PRD-07: Admin智能反馈与学习中心 - 任务拆分
+# 基于 Linus Torvalds 设计哲学：简洁统一配置+产品决策支撑，实现数据驱动的持续优化
 
 tasks:
   - id: prd07-01
-    name: "设计Admin后台基础架构"
-    desc: "建立独立的Admin后台应用，实现单用户只读监控界面"
+    name: "统一配置文件系统"
+    desc: "实现admin_config.yml单一配置文件，支持Git版本管理和热更新"
     size: "M"
-    deps: ["prd02-01", "prd04-04"]
+    deps: ["prd01-02", "prd02-01"]
     files:
-      - admin/package.json
-      - admin/src/App.tsx
-      - admin/src/config/admin.config.ts
-      - admin/src/types/admin.types.ts
+      - config/admin_config.yml
+      - backend/app/core/admin_config.py
+      - backend/app/utils/yaml_validator.py
+      - backend/app/utils/config_watcher.py
     context: |
-      设计Admin后台架构：
-      1. 独立React应用：
-         - 单独的admin目录和构建
-         - 简化的依赖管理
-         - 开发/生产环境分离
-      2. 单用户认证：
-         - 硬编码管理员账户
-         - 简单的密码认证
-         - 无复杂权限系统
-      3. 基础组件：
-         - 仪表板布局
-         - 侧边栏导航
-         - 数据表格组件
-      4. 设计原则：
-         - 只读操作为主
-         - 清晰的信息展示
-         - 异常状态突出显示
+      实现统一配置管理：
+      1. 单一配置文件：
+         - admin_config.yml包含所有配置
+         - 社区池管理、建议队列、A/B测试配置
+         - Git版本控制，配置即代码
+      2. 配置验证：
+         - YAML格式验证
+         - 配置项完整性检查
+         - 参数合理性验证
+      3. 热更新机制：
+         - 文件监听自动重载
+         - 5秒间隔检查更新
+         - 原子性配置应用
+      4. Linus简洁原则：
+         - 3个配置文件合并为1个
+         - 消除配置复杂性
+         - 统一管理入口
       
-      这是运维监控的基础界面。
+      这是Admin系统的配置基础架构。
 
   - id: prd07-02
-    name: "实现系统健康度监控面板"
-    desc: "创建实时系统状态监控，展示关键健康指标"
+    name: "精简API端点实现"
+    desc: "实现4个核心Admin API端点，支持统一数据获取和决策处理"
     size: "M"
-    deps: ["prd07-01"]
+    deps: ["prd07-01", "prd02-01", "prd04-04"]
     files:
-      - admin/src/pages/Dashboard.tsx
-      - admin/src/components/SystemMetrics.tsx
-      - admin/src/components/HealthIndicators.tsx
-      - admin/src/services/metrics.service.ts
+      - backend/app/api/v1/endpoints/admin.py
+      - backend/app/schemas/admin.py
+      - backend/app/services/admin_data.py
     context: |
-      实现健康监控：
-      1. 核心指标监控：
-         - API响应时间和成功率
-         - 数据库连接状态
-         - Redis队列长度
-         - Worker进程状态
-      2. 实时数据展示：
-         - WebSocket实时更新
-         - 图表可视化（Chart.js）
-         - 颜色编码状态指示
-      3. 异常告警：
-         - 阈值超标高亮显示
-         - 故障状态红色警告
-         - 性能下降黄色提醒
-      4. 历史趋势：
-         - 24小时趋势图
-         - 性能基线对比
-         - 异常时间点标记
+      实现精简API设计：
+      1. 4个核心端点（Linus简洁原则）：
+         - GET /admin/dashboard - 统一数据获取
+         - POST /admin/decision - 统一决策处理
+         - GET /admin/experiments - A/B测试查看
+         - POST /admin/config - 配置更新
+      2. 统一数据响应：
+         - 单一dashboard端点返回所有数据
+         - 减少前端API调用复杂度
+         - 优化网络请求性能
+      3. 决策处理逻辑：
+         - 统一approve/reject处理
+         - 自动Git配置更新
+         - 操作审计日志
+      4. 错误处理：
+         - 统一错误响应格式
+         - 详细错误信息返回
+         - API降级机制
       
-      提供系统健康状态的实时可视化。
+      这是Admin系统的API基础架构。
 
   - id: prd07-03
-    name: "实现任务队列监控界面"
-    desc: "展示Celery任务队列状态，监控任务执行情况"
+    name: "算法性能追踪系统"
+    desc: "基于analyses表数据，追踪算法置信度和用户满意度趋势"
     size: "M"
-    deps: ["prd07-02", "prd04-04"]
+    deps: ["prd07-02", "prd01-03"]
     files:
-      - admin/src/pages/TaskMonitor.tsx
-      - admin/src/components/QueueStatus.tsx
-      - admin/src/components/WorkerList.tsx
-      - admin/src/components/TaskHistory.tsx
+      - backend/app/services/algorithm_tracker.py
+      - backend/app/services/performance_analyzer.py
+      - backend/app/models/performance_metrics.py
     context: |
-      实现任务监控：
-      1. 队列状态显示：
-         - 等待队列长度
-         - 正在处理任务数
-         - 失败任务统计
-         - 队列积压告警
-      2. Worker监控：
-         - 活跃Worker列表
-         - Worker CPU/内存使用
-         - 处理任务计数
-         - Worker健康状态
-      3. 任务历史：
-         - 最近任务列表
-         - 任务执行时间
-         - 成功/失败统计
-         - 错误信息查看
-      4. 实时更新：
-         - 自动刷新机制
-         - 状态变化通知
-         - 异常任务突出显示
+      实现算法性能追踪：
+      1. 置信度分析：
+         - 基于analyses表confidence_score
+         - 30天滚动平均计算
+         - 置信度趋势分析
+         - 异常值检测和告警
+      2. 用户满意度推测：
+         - 基于任务完成率
+         - 用户重复使用率
+         - 分析结果质量评估
+      3. 算法效果评估：
+         - 痛点识别准确率
+         - 竞品发现覆盖率
+         - 机会洞察相关性
+      4. 性能基准对比：
+         - 历史性能基线
+         - 同期对比分析
+         - 改进效果量化
       
-      提供任务系统的全面监控视图。
+      提供算法效果的客观数据支撑。
 
   - id: prd07-04
-    name: "实现用户活动监控面板"
-    desc: "展示用户使用情况，分析系统使用模式"
+    name: "社区池动态管理系统"
+    desc: "实现社区分层(T1-T4)管理和基于性能的动态调整机制"
     size: "M"
-    deps: ["prd07-03", "prd06-05"]
+    deps: ["prd07-03", "prd01-04"]
     files:
-      - admin/src/pages/UserActivity.tsx
-      - admin/src/components/UserStats.tsx
-      - admin/src/components/UsageAnalytics.tsx
-      - admin/src/components/TenantMetrics.tsx
+      - backend/app/services/community_manager.py
+      - backend/app/tasks/community_evaluation.py
+      - backend/app/utils/community_scorer.py
     context: |
-      实现用户监控：
-      1. 用户统计：
-         - 注册用户总数
-         - 活跃用户数量
-         - 新用户增长趋势
-         - 用户留存率
-      2. 使用分析：
-         - 任务提交量统计
-         - 分析完成率
-         - 平均处理时间
-         - 高频使用时段
-      3. 多租户指标：
-         - 各租户使用量
-         - 数据隔离验证
-         - 异常访问检测
-      4. 业务洞察：
-         - 热门产品类型
-         - 分析质量评分
-         - 用户反馈统计
+      实现社区池管理：
+      1. 分层管理系统：
+         - T1核心社区（权重1.2-1.5）
+         - T2标准社区（权重1.0）
+         - T3实验社区（权重0.5-0.9）
+         - T4待移除社区（权重<0.5）
+      2. 动态评估机制：
+         - 基于community_cache表数据
+         - 30天性能评估周期
+         - 晋升/降级阈值管理
+      3. 性能评分算法：
+         - 使用频率权重40%
+         - 置信度得分30%
+         - 用户反馈30%
+      4. 自动调整建议：
+         - 系统生成优化建议
+         - PM决策队列推送
+         - A/B测试验证效果
       
-      提供业务运营的数据支持。
+      实现数据驱动的社区池优化。
 
   - id: prd07-05
-    name: "实现Git配置管理界面"
-    desc: "展示当前配置文件，支持通过Git进行配置更新"
+    name: "PM决策支撑系统"
+    desc: "实现决策队列生成、建议收集和优先级排序系统"
     size: "L"
-    deps: ["prd07-04"]
+    deps: ["prd07-04", "prd06-05"]
     files:
-      - admin/src/pages/ConfigManager.tsx
-      - admin/src/components/ConfigViewer.tsx
-      - admin/src/components/GitStatus.tsx
-      - admin/src/services/config.service.ts
+      - backend/app/services/decision_queue.py
+      - backend/app/services/suggestion_collector.py
+      - backend/app/services/priority_ranker.py
     context: |
-      实现配置管理：
-      1. 配置文件展示：
-         - YAML配置文件只读展示
-         - 语法高亮显示
-         - 配置项说明文档
-      2. Git集成：
-         - 当前Git commit信息
-         - 配置变更历史
-         - 分支状态显示
-      3. 配置验证：
-         - 配置文件语法检查
-         - 参数有效性验证
-         - 配置冲突检测
-      4. 更新流程：
-         - Git pull操作指引
-         - 配置热加载状态
-         - 更新后验证结果
+      实现PM决策支撑：
+      1. 决策队列生成：
+         - 系统自动检测需决策事项
+         - 基于性能数据生成建议
+         - 优先级智能排序
+      2. 建议收集系统：
+         - 运营人员反馈收集
+         - 用户行为模式分析
+         - 算法性能异常检测
+      3. 智能优先级排序：
+         - 影响范围评估（40%）
+         - 紧急程度判定（30%）
+         - 实施难度评估（30%）
+      4. 人在环路决策：
+         - PM最终审核和决策
+         - 决策理由记录
+         - 效果追踪和反馈
       
-      注意：Admin不支持直接修改，只展示和指引Git操作。
+      实现数据驱动的产品决策支撑。
 
   - id: prd07-06
-    name: "实现日志查看和分析工具"
-    desc: "提供日志查看界面，支持日志搜索和异常分析"
+    name: "A/B测试框架实现"
+    desc: "实现实验配置、流量分割和统计显著性测试系统"
     size: "M"
     deps: ["prd07-05"]
     files:
-      - admin/src/pages/LogViewer.tsx
-      - admin/src/components/LogSearch.tsx
-      - admin/src/components/ErrorAnalysis.tsx
-      - admin/src/services/log.service.ts
+      - backend/app/services/ab_testing.py
+      - backend/app/utils/statistics.py
+      - backend/app/models/experiment.py
     context: |
-      实现日志查看：
-      1. 日志展示：
-         - 分级日志显示（ERROR, WARN, INFO）
-         - 时间过滤和搜索
-         - 关键词高亮
-      2. 错误分析：
-         - 异常堆栈展示
-         - 错误频率统计
-         - 常见错误模式识别
-      3. 日志搜索：
-         - 全文搜索功能
-         - 时间范围筛选
-         - 日志级别过滤
-      4. 实时监控：
-         - 实时日志流
-         - 新错误告警
-         - 关键事件通知
+      实现A/B测试框架：
+      1. 实验配置管理：
+         - 实验假设和目标定义
+         - 流量分割配置（20%实验流量）
+         - 对照组和实验组参数
+      2. 统计分析引擎：
+         - 置信区间计算
+         - p值显著性检验
+         - 最小样本量要求
+      3. 实验效果监控：
+         - 实时指标追踪
+         - 显著性检验报告
+         - 实验提前终止机制
+      4. 决策支持：
+         - 实验结果解读
+         - 生产环境应用建议
+         - 配置自动更新
       
-      提供系统问题诊断的重要工具。
+      提供科学的算法优化验证机制。
 
   - id: prd07-07
-    name: "实现系统维护操作界面"
-    desc: "提供系统维护操作入口，支持安全的维护任务"
+    name: "统一Admin React组件"
+    desc: "实现单一AdminDashboard组件，扁平化结构设计"
     size: "M"
-    deps: ["prd07-06"]
+    deps: ["prd07-06", "prd05-03"]
     files:
-      - admin/src/pages/Maintenance.tsx
-      - admin/src/components/MaintenanceActions.tsx
-      - admin/src/components/OperationHistory.tsx
+      - frontend/src/components/AdminDashboard.tsx
+      - frontend/src/styles/admin.css
+      - frontend/src/services/admin.service.ts
     context: |
-      实现维护操作：
-      1. 安全操作：
-         - 缓存清理操作
-         - 数据库连接池重置
-         - Worker进程重启
-      2. 批处理任务：
-         - 数据清理任务触发
-         - 缓存预热操作
-         - 报告重新生成
-      3. 操作审计：
-         - 所有操作记录日志
-         - 操作时间和用户记录
-         - 操作结果验证
-      4. 安全限制：
-         - 危险操作确认机制
-         - 操作频率限制
-         - 权限验证
+      实现统一前端组件：
+      1. Linus简洁设计：
+         - 单一AdminDashboard组件
+         - 扁平化组件结构
+         - 统一状态管理
+      2. 功能集成：
+         - 决策队列展示和处理
+         - 算法性能数据可视化
+         - A/B测试进度监控
+      3. 交互优化：
+         - 单一API调用获取数据
+         - 简化的用户操作流程
+         - 清晰的视觉层次
+      4. 响应式设计：
+         - 桌面端优化
+         - 数据密集型显示
+         - 快速决策交互
       
-      提供安全可控的系统维护能力。
+      实现高效的Admin操作界面。
 
   - id: prd07-08
-    name: "编写Admin后台集成测试"
-    desc: "创建Admin后台的功能测试和性能验证"
+    name: "日常分析任务和集成测试"
+    desc: "实现Celery定时任务、配置热更新和完整测试覆盖"
     size: "L"
-    deps: ["prd07-07"]
+    deps: ["prd07-07", "prd08-01"]
     files:
-      - admin/src/__tests__/pages/
-      - admin/src/__tests__/components/
-      - admin/src/__tests__/services/
-      - admin/cypress/integration/
+      - backend/app/tasks/daily_analysis.py
+      - backend/app/tasks/config_sync.py
+      - backend/tests/test_admin/
+      - frontend/tests/admin.test.tsx
     context: |
-      实现Admin测试：
-      1. 组件单元测试：
-         - 监控面板组件测试
-         - 数据展示准确性验证
-         - 用户交互测试
-      2. 集成测试：
-         - API调用集成测试
-         - 数据更新流程测试
-         - 错误处理测试
-      3. E2E测试：
-         - 完整监控流程测试
-         - 异常场景处理测试
-         - 性能监控验证
-      4. 安全测试：
-         - 认证机制测试
+      实现日常任务和测试：
+      1. 日常分析任务：
+         - 每日社区性能评估
+         - 决策建议自动生成
+         - A/B测试数据收集
+      2. 配置管理任务：
+         - Git配置变更检测
+         - 配置热更新执行
+         - 配置一致性验证
+      3. 集成测试覆盖：
+         - API端点完整测试
+         - 决策流程端到端测试
+         - 配置更新集成测试
+      4. 性能和安全测试：
+         - Admin系统性能基准
          - 权限控制验证
-         - 数据访问安全测试
+         - 数据隔离安全测试
       
-      确保Admin后台的可靠性和安全性。
+      确保Admin系统的稳定运行和质量保证。

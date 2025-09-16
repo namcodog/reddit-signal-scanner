@@ -15,21 +15,33 @@ Linus设计哲学实现：
 """
 
 from contextlib import asynccontextmanager
+import logging
 from datetime import datetime, timezone
-from typing import Any, AsyncGenerator, Dict
+from typing import Any, AsyncGenerator, Mapping, Sequence
 
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 
-from .api.middleware import setup_exception_handlers, setup_middleware
-from .api.models import HealthResponse, HealthStatus, ResponseStatus
+# 移除已删除的api.middleware依赖 - 功能已迁移到新架构
 from .api.v1.router import router as v1_router
 from .core.config import get_settings
-from .core.monitoring import get_health_status, get_monitoring_service
-from .core.redis_client import get_redis_client, close_redis_client
+from .core.logging_config import configure_logging
+from .core.monitoring import get_monitoring_service
+from .core.redis_client import close_redis_client, get_redis_client
+from .middleware.analysis_monitor import (
+    AnalysisMonitoringMiddleware,
+    RateLimitMiddleware,
+)
+from .middleware.error_middleware import ErrorHandlingMiddleware
+from .middleware.jwt_middleware import JWTMiddleware
 from .middleware.performance_middleware import PerformanceMiddleware
+from .schemas.common.responses import ResponseStatus
+from .schemas.responses.health import HealthResponse, HealthStatus
 
 # 获取配置
 settings = get_settings()
+configure_logging(debug=settings.debug, log_level=settings.log_level)
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -48,30 +60,30 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """
 
     # 启动阶段
-    print("🚀 Reddit Signal Scanner API 启动中...")
-    print(f"📝 环境: {settings.environment}")
-    print(f"🔧 调试模式: {settings.debug}")
+    logger.info("🚀 Reddit Signal Scanner API 启动中...")
+    logger.info(f"📝 环境: {settings.environment}")
+    logger.info(f"🔧 调试模式: {settings.debug}")
 
     # TODO: prd01-04完成后，添加数据库初始化
     # Redis连接初始化
     try:
-        redis_client = await get_redis_client()
-        print(f"✅ Redis连接成功: {settings.redis_url}")
+        await get_redis_client()
+        logger.info(f"✅ Redis连接成功: {settings.redis_url}")
     except Exception as e:
-        print(f"⚠️ Redis连接失败: {e}")
+        logger.warning(f"⚠️ Redis连接失败: {e}")
     # TODO: prd02-02完成后，添加Celery任务队列启动
 
     yield  # 应用运行期间
 
     # 关闭阶段
-    print("⏹️ Reddit Signal Scanner API 正在关闭...")
+    logger.info("⏹️ Reddit Signal Scanner API 正在关闭...")
 
     # Redis连接清理
     try:
         await close_redis_client()
-        print("✅ Redis连接已关闭")
+        logger.info("✅ Redis连接已关闭")
     except Exception as e:
-        print(f"⚠️ Redis关闭异常: {e}")
+        logger.warning(f"⚠️ Redis关闭异常: {e}")
 
     # TODO: 添加其他资源清理逻辑
 
@@ -119,17 +131,45 @@ app = FastAPI(
 # PRD02-08: 添加API性能监控中间件
 app.add_middleware(PerformanceMiddleware)
 
-# 设置中间件（顺序很重要）
-setup_middleware(app)
+# PRD03-07: 添加分析引擎监控中间件
+app.add_middleware(AnalysisMonitoringMiddleware)
+app.add_middleware(RateLimitMiddleware)
 
-# 设置全局异常处理器
-setup_exception_handlers(app)
+# PRD06-05: 添加多租户数据隔离中间件 - 基于Context7最佳实践
+try:
+    from .middleware.tenant_middleware import TenantIsolationMiddleware
+
+    app.add_middleware(
+        TenantIsolationMiddleware,
+        skip_paths=["/", "/health", "/docs", "/openapi.json", "/favicon.ico"],
+        require_tenant=False,  # 设为False以支持未认证用户访问部分API
+    )
+    logger.info("✅ 多租户数据隔离中间件已启用")
+except ImportError as e:
+    logger.warning(f"⚠️ 租户隔离中间件导入失败: {e}")
+
+# 统一中间件（新架构优先）
+# 使用默认CORS配置（可后续从配置中心/安全配置加载）
+allow_origins: Sequence[str] = ["*"]
+allow_methods: Sequence[str] = ["*"]
+allow_headers: Sequence[str] = ["*"]
+allow_credentials: bool = True
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allow_origins,
+    allow_credentials=allow_credentials,
+    allow_methods=allow_methods,
+    allow_headers=allow_headers,
+)
+app.add_middleware(JWTMiddleware)
+app.add_middleware(ErrorHandlingMiddleware)
 
 
 # ===== 核心路由注册 =====
 
-# 注册API v1路由：/api/v1/*
-app.include_router(v1_router, prefix="/api")
+# 注册API v1路由：/api/v1/*（前缀配置化）
+app.include_router(v1_router, prefix=settings.api_base)
 
 
 # ===== 根路径和健康检查 =====
@@ -174,9 +214,7 @@ async def read_root(request: Request) -> HealthResponse:
     )
 
 
-@app.get(
-    "/health", response_model=HealthResponse, tags=["健康检查"], summary="系统健康检查"
-)
+@app.get("/health", response_model=HealthResponse, tags=["健康检查"], summary="系统健康检查")
 async def health_check(request: Request) -> HealthResponse:
     """
     系统健康检查端点
@@ -225,7 +263,7 @@ async def health_check(request: Request) -> HealthResponse:
 
 
 @app.get("/monitoring/health", tags=["监控"], summary="数据清理服务健康状态")
-async def get_cleanup_monitoring_health():
+async def get_cleanup_monitoring_health() -> "Mapping[str, Any]":
     """
     获取数据清理服务的详细监控状态
 
@@ -257,7 +295,7 @@ async def get_cleanup_monitoring_health():
 
 
 @app.get("/monitoring/alerts", tags=["监控"], summary="获取活跃告警")
-async def get_active_alerts():
+async def get_active_alerts() -> "Mapping[str, Any]":
     """获取当前活跃的告警信息"""
     try:
         monitoring_service = get_monitoring_service()
@@ -292,7 +330,7 @@ async def get_active_alerts():
 
 
 @app.get("/api", tags=["API v1"], summary="API信息概览")
-async def get_api_info(request: Request) -> Dict[str, Any]:
+async def get_api_info(request: Request) -> "Mapping[str, Any]":
     """
     API信息概览，展示所有可用的端点和功能
 
@@ -316,7 +354,11 @@ async def get_api_info(request: Request) -> Dict[str, Any]:
             "redoc": "/api/redoc",
             "openapi_schema": "/api/openapi.json",
         },
-        "endpoints": {"health": "/health", "api_info": "/api", "version_1": "/api/v1"},
+        "endpoints": {
+            "health": "/health",
+            "api_info": "/api",
+            "version_1": settings.api_prefix,
+        },
         "features": [
             "异步任务处理",
             "实时SSE推送",
@@ -337,7 +379,7 @@ async def get_api_info(request: Request) -> Dict[str, Any]:
 if settings.is_development:
 
     @app.get("/dev/config", tags=["开发工具"], summary="配置信息（仅开发环境）")
-    async def get_dev_config() -> Dict[str, Any]:
+    async def get_dev_config() -> "Mapping[str, Any]":
         """开发环境专用：查看当前配置信息"""
 
         return {
@@ -366,7 +408,7 @@ if settings.is_development:
 if __name__ == "__main__":
     import uvicorn
 
-    print(
+    logger.info(
         f"""
 🔥 Reddit Signal Scanner API Server
 ================================

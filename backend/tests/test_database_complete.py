@@ -289,9 +289,7 @@ class TestDatabaseComplete:
         assert status == "pending", "任务状态查询结果错误"
         assert query_time < 50, f"状态查询耗时{query_time:.1f}ms，超过50ms目标"
 
-        logger.info(
-            f"✅ 性能验证通过 - 创建:{create_time:.1f}ms, 查询:{query_time:.1f}ms"
-        )
+        logger.info(f"✅ 性能验证通过 - 创建:{create_time:.1f}ms, 查询:{query_time:.1f}ms")
 
         logger.info("🎉 数据库完整验收测试通过 - 所有功能正常工作")
 

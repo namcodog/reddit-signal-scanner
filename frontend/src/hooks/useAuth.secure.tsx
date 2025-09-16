@@ -17,6 +17,7 @@ import React, {
   ReactNode,
 } from 'react';
 import { SecureStorage, secureApiFetch } from '@/utils/security';
+import logger from '@/utils/logger';
 
 // 用户类型定义
 export interface User {
@@ -94,7 +95,7 @@ export const SecureAuthProvider: React.FC<AuthProviderProps> = ({
 
       return response.ok;
     } catch (error) {
-      console.error('Token verification failed:', error);
+      logger.error('Token verification failed:', error as Error);
       return false;
     }
   };
@@ -127,7 +128,7 @@ export const SecureAuthProvider: React.FC<AuthProviderProps> = ({
         setAuthState(prev => ({ ...prev, isLoading: false }));
       }
     } catch (error) {
-      console.error('Failed to initialize auth:', error);
+      logger.error('Failed to initialize auth:', error as Error);
       clearAuthData();
     }
   };
@@ -163,7 +164,7 @@ export const SecureAuthProvider: React.FC<AuthProviderProps> = ({
         isAuthenticated: true,
       });
     } catch (error) {
-      console.error('Token refresh failed:', error);
+      logger.error('Token refresh failed:', error as Error);
       clearAuthData();
     }
   };
@@ -278,7 +279,7 @@ export const SecureAuthProvider: React.FC<AuthProviderProps> = ({
           method: 'POST',
         }).catch(() => {
           // 忽略服务端注销错误，确保客户端清理
-          console.warn('Server logout failed, proceeding with client cleanup');
+          logger.warn('Server logout failed, proceeding with client cleanup');
         });
       }
     } finally {

@@ -9,12 +9,12 @@ Reddit Signal Scanner - 数据模型模块
 导出所有模型类供Alembic自动检测
 """
 
-from .base import Base
-from .user import User
-from .task import Task
 from .analysis import Analysis
-from .report import Report
+from .base import Base
 from .community_cache import CommunityCache
+from .report import Report
+from .task import Task
+from .user import User
 
 # 导出所有模型，供Alembic检测
 __all__ = [

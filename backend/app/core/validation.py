@@ -9,7 +9,10 @@ Linus原则："安全第一，但不要过度设计"
 
 import re
 from typing import Any, Dict, List, Pattern
+
 from bleach import clean
+
+from .types import JsonValue
 
 
 class ContentValidator:
@@ -26,7 +29,7 @@ class ContentValidator:
     ALLOWED_ATTRIBUTES: Dict[str, List[str]] = {}
 
     # 恶意模式检测（编译一次，重复使用）
-    BLOCKED_PATTERNS: List[Pattern] = [
+    BLOCKED_PATTERNS: List[Pattern[str]] = [
         # 脚本注入检测
         re.compile(r"<script[^>]*>.*?</script>", re.IGNORECASE | re.DOTALL),
         re.compile(r"javascript\s*:", re.IGNORECASE),
@@ -47,7 +50,7 @@ class ContentValidator:
     ]
 
     # 业务特定模式（产品描述不应包含的内容）
-    BUSINESS_BLOCKED_PATTERNS: List[Pattern] = [
+    BUSINESS_BLOCKED_PATTERNS: List[Pattern[str]] = [
         # 垃圾信息模式
         re.compile(r"(click here|buy now|free money|guaranteed)", re.IGNORECASE),
         re.compile(r"(\$\d+|\d+\$).*?(guaranteed|easy|fast)", re.IGNORECASE),
@@ -170,7 +173,7 @@ class APIValidator:
             raise ValueError("请求必须使用JSON格式，Content-Type: application/json")
 
     @staticmethod
-    def validate_task_creation_request(request_data: Dict[str, Any]) -> None:
+    def validate_task_creation_request(request_data: Dict[str, JsonValue]) -> None:
         """任务创建请求验证
 
         PRD02-02专用验证逻辑
@@ -189,7 +192,7 @@ class APIValidator:
 
 
 # 性能优化：预编译正则表达式，避免重复编译
-def _compile_patterns():
+def _compile_patterns() -> None:
     """预编译正则表达式模式，提升验证性能"""
     # 这个函数在模块加载时执行，确保模式只编译一次
     pass

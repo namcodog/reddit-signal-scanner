@@ -15,7 +15,7 @@ module.exports = {
     'eslint:recommended',
     'plugin:@typescript-eslint/recommended'
   ],
-  ignorePatterns: ['dist', '.eslintrc.js', '**/*.d.ts'],
+  ignorePatterns: ['dist', '.eslintrc.js', '**/*.d.ts', 'src/__tests__/**'],
   rules: {
     'react-refresh/only-export-components': [
       'warn',
@@ -24,5 +24,6 @@ module.exports = {
     '@typescript-eslint/no-unused-vars': 'warn',
     '@typescript-eslint/no-explicit-any': 'warn',
     'no-unused-vars': 'off', // 使用TypeScript版本
+    'no-console': ['error', { allow: ['warn', 'error'] }],
   },
 }

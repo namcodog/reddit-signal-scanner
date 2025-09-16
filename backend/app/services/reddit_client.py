@@ -13,15 +13,16 @@ PRD-03 缓存优先架构的API补充组件
 
 import asyncio
 import json
-import time
-from datetime import datetime, timedelta
-from typing import List, Optional, Dict, Any
-from dataclasses import dataclass
 import logging
+import time
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
+from typing import Any, Dict, List, Mapping, Optional
 
 import aiohttp
-from aiohttp import ClientTimeout, ClientSession
-from dataclasses import dataclass, field
+from aiohttp import ClientSession, ClientTimeout
+from pathlib import Path
+import importlib.util
 
 from ..core.config import get_settings
 from ..schemas.reddit_data import RedditPost
@@ -58,7 +59,7 @@ class APIRateLimit:
 
         return True
 
-    def record_request(self):
+    def record_request(self) -> None:
         """记录API请求"""
         self.last_request_time = time.time()
         self.requests_made += 1
@@ -79,7 +80,7 @@ class RedditAPIClient:
     - 完整的错误处理和降级
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.settings = get_settings()
         self.rate_limiter = APIRateLimit()
         self.session: Optional[ClientSession] = None
@@ -90,7 +91,7 @@ class RedditAPIClient:
         self.client_secret = getattr(self.settings, "REDDIT_CLIENT_SECRET", None)
         self.user_agent = "RedditSignalScanner/1.0 by cache_first_architecture"
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> "RedditAPIClient":
         """异步上下文管理器入口"""
         timeout = ClientTimeout(total=30, connect=10)
         headers = {"User-Agent": self.user_agent}
@@ -98,12 +99,17 @@ class RedditAPIClient:
         self.session = aiohttp.ClientSession(timeout=timeout, headers=headers)
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(
+        self,
+        exc_type: Optional[type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[Any],
+    ) -> None:
         """异步上下文管理器出口"""
         if self.session:
             await self.session.close()
 
-    async def close(self):
+    async def close(self) -> None:
         """显式关闭客户端"""
         if self.session:
             await self.session.close()
@@ -144,7 +150,7 @@ class RedditAPIClient:
             clean_subreddit = subreddit.replace("r/", "").strip("/")
             url = f"{self.base_url}/r/{clean_subreddit}/{sort}.json"
 
-            params = {
+            params: dict[str, str | int | float] = {
                 "limit": min(limit, 100),  # Reddit API限制
                 "t": time_filter,
                 "raw_json": 1,  # 避免HTML实体编码
@@ -181,13 +187,13 @@ class RedditAPIClient:
             raise APIRequestError(f"API响应解析失败: {str(e)}")
 
     def _parse_reddit_response(
-        self, data: Dict[str, Any], subreddit: str
+        self, data: Mapping[str, Any], subreddit: str
     ) -> List[RedditPost]:
         """解析Reddit API响应数据
 
         将Reddit的复杂JSON结构转换为统一的RedditPost模型
         """
-        posts = []
+        posts: List[RedditPost] = []
 
         try:
             if not data or "data" not in data:
@@ -238,7 +244,7 @@ class RedditAPIClient:
                     )
                     continue
 
-        except Exception as e:
+        except (KeyError, TypeError, ValueError) as e:
             logger.error(f"解析Reddit响应失败 {subreddit}: {str(e)}")
 
         logger.info(f"成功解析 r/{subreddit} 的 {len(posts)} 个帖子")
@@ -261,7 +267,7 @@ class RedditAPIClient:
                 return False
             raise
 
-    async def get_community_info(self, subreddit: str) -> Optional[Dict[str, Any]]:
+    async def get_community_info(self, subreddit: str) -> Optional[Mapping[str, Any]]:
         """获取社区基本信息
 
         Args:
@@ -305,8 +311,14 @@ class RedditAPIClient:
                     "lang": community_data.get("lang", "en"),
                 }
 
-        except Exception as e:
-            logger.error(f"获取社区信息失败 r/{subreddit}: {str(e)}")
+        except asyncio.TimeoutError as e:
+            logger.error(f"获取社区信息超时 r/{subreddit}: {str(e)}")
+            return None
+        except aiohttp.ClientError as e:
+            logger.error(f"获取社区信息网络异常 r/{subreddit}: {str(e)}")
+            return None
+        except json.JSONDecodeError as e:
+            logger.error(f"获取社区信息解析失败 r/{subreddit}: {str(e)}")
             return None
 
 
@@ -324,8 +336,34 @@ class APIRequestError(Exception):
 
 
 # 工厂函数
+from typing import cast
+
+
 async def create_reddit_client() -> RedditAPIClient:
     """创建Reddit API客户端的工厂函数"""
-    client = RedditAPIClient()
+    settings = get_settings()
+    if getattr(settings, "use_mocks", True):
+        # 动态加载测试目录中的 Mock 客户端
+        tests_mock_path = (
+            Path(__file__).resolve().parents[2]
+            / "tests"
+            / "mocks"
+            / "reddit_client_mock.py"
+        )
+        if tests_mock_path.exists():
+            spec = importlib.util.spec_from_file_location(
+                "reddit_client_mock", str(tests_mock_path)
+            )
+            if spec and spec.loader:
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+                MockClient = getattr(module, "RedditAPIClientMock")
+                client = cast(RedditAPIClient, MockClient())
+            else:
+                client = RedditAPIClient()
+        else:
+            client = RedditAPIClient()
+    else:
+        client = RedditAPIClient()
     await client.__aenter__()
     return client

@@ -8,14 +8,15 @@
 - Never break userspace：零破坏性，纯监控功能
 """
 
-import time
 import logging
 import re
-from typing import Callable, Any
-from fastapi import Request, Response
-from fastapi.middleware.base import BaseHTTPMiddleware
+import time
+from typing import Any, Awaitable, Callable, Iterator
 
-from ..core.monitoring import record_metric, MetricType
+from fastapi import Request, Response
+from starlette.middleware.base import BaseHTTPMiddleware
+
+from ..core.monitoring import MetricType, record_metric
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +43,9 @@ class PerformanceMiddleware(BaseHTTPMiddleware):
             "GET:/metrics",
         }
 
-    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+    async def dispatch(
+        self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
         """处理请求并记录性能指标"""
 
         # 记录开始时间 - 使用高精度性能计数器
@@ -151,7 +154,7 @@ from contextlib import contextmanager
 
 
 @contextmanager
-def monitor_execution(metric_name: str):
+def monitor_execution(metric_name: str) -> Iterator[None]:
     """
     性能监控上下文管理器 - Linus风格的简洁实现
 

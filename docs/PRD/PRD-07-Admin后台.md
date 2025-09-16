@@ -1,607 +1,458 @@
-# PRD-07: Admin后台设计
+文档版本：v1.0
+最后更新：2025‑09‑16
+适用范围：与 PRD‑01~08 配套；仅覆盖 Admin 的 MVP 能力：
+1）社区验收；2）算法验收；3）用户反馈汇总与回流；4）配置补丁（YAML Patch）生成与合并。
 
-## 1. 问题陈述
+⸻
 
-### 1.1 背景
-Reddit Signal Scanner需要一个内部管理工具，用于监控系统健康状态、分析用户行为模式、优化产品配置。但是，**Admin后台绝对不能成为数据破坏的风险源**。所有的系统配置和优化都必须通过Git管理的配置文件进行，而不是数据库直接操作。
+1. 背景与问题
+	•	当前 Admin 过度开发，未聚焦关键闭环：社区是否值得长期监控、算法产出是否可交付、真实用户如何反馈修正。
+	•	现阶段仅内部人员使用（产品/运营），无需复杂大盘与实验平台。
+	•	真相源（监控社区列表）存放在 Git 配置，不直接写库；需要“事件记录 + Patch 生成 + 合并后生效”的工作流。
 
-**核心约束**：
-- Admin后台只能"读取"，不能"写入"
-- 所有配置修改通过Git工作流
-- 单用户设计（内部团队使用）
-- 保护用户隐私，只展示聚合数据
+⸻
 
-### 1.2 目标
-设计一个纯读取的Admin监控面板：
-- **系统监控**：实时展示系统健康状态和性能指标
-- **用户分析**：匿名化的用户行为和产品使用模式
-- **配置管理**：查看当前配置，但修改通过Git
-- **数据洞察**：为产品优化提供数据支持
-- **故障排查**：快速定位和诊断系统问题
+2. 目标（MVP 的 KR）
+	•	KR1：社区池可控：任意一天，完成对新/边缘社区的人工审查与决策，生成 Patch 并合并；黑名单社区在下一次分析中不再出现；新增核心社区被纳入抓取与分析。
+	•	KR2：算法验收可判：每次任务具备门槛判定（✔/✖）与 A‑Score，能一键重跑（仅核心社区）；连续失败自动提示“需调参”。
+	•	KR3：用户反馈可用：前台“赞/踩+原因”与洞察标注汇总在 Admin 可见，支持按原因回看样本任务。
+	•	KR4：闭环留痕：所有决策与反馈落到统一事件表，可审计、可回滚。
 
-### 1.3 非目标
-- **绝对禁止**：任何数据库写入操作
-- **绝对禁止**：用户数据的直接修改
-- **绝对禁止**：生产配置的在线修改
-- **不支持**：多用户权限管理（单用户足够）
+⸻
 
-## 2. 解决方案
+3. 非目标（MVP 不做）
+	•	不做复杂效果大盘、A/B 管理、在线调参台。
+	•	不做跨模型横评面板。
+	•	不做可视化图表（先表格 + 简单指标）。
 
-### 2.1 核心设计：只读监控 + Git配置
+⸻
 
-基于"配置即代码"哲学，实现管理和监控的完全分离：
+4. 角色与权限
+	•	Admin：产品/运营（内部）可访问 /admin/*；可查看与操作；可导出 Patch。
+	•	匿名/普通用户：仅产生用户反馈事件（前台埋点），不能访问 /admin/*。
+	•	认证沿用 PRD‑06；鉴权规则：非 Admin 角色拒绝访问（HTTP 403）。
 
-```
-监控面板 ← 只读查询 ← 生产数据库
-    ↓
-配置展示 ← 只读 ← Git仓库配置文件
-    ↓
-优化建议 → Pull Request → 配置更新 → 自动部署
-```
+⸻
 
-**核心原则**：
-- **读写分离**：Admin只能读，配置文件控制写
-- **审计完整**：所有配置变更都有Git记录
-- **零数据风险**：即使Admin被入侵，也无法破坏数据
-- **团队协作**：配置修改通过代码审查流程
+5. 关键术语
+	•	C‑Score：社区综合评分（0~100），由相关度、活跃度、新鲜度、低垃圾、低去重加权。
+	•	A‑Score：一次任务/报告的质量评分（0~100），由相关性、覆盖广度、证据强度、新鲜度、清洁度、多样性加权。
+	•	Must Gates（必选门槛）：硬性阈值；任一不达标即“不通过”。
+	•	YAML Patch：Admin 的社区决策汇总成配置补丁，由人或机器人合并到 Git 仓库后生效。
+	•	反馈事件：统一写入 feedback_events 表，承载社区决策、算法验收、用户赞/踩、洞察标注等。
 
-### 2.2 功能模块
+⸻
 
-#### 系统健康监控
-```
-仪表盘概览
-├── 系统状态指标
-│   ├── API响应时间（P50, P95, P99）
-│   ├── 任务队列长度和处理速度
-│   ├── 数据库连接池状态
-│   └── Redis缓存命中率
-├── 错误监控
-│   ├── 最近24小时错误趋势
-│   ├── 高频错误类型统计
-│   └── 任务失败率和重试成功率
-└── 资源使用
-    ├── CPU和内存使用率
-    ├── 磁盘空间和网络流量
-    └── 外部API调用配额使用
-```
+6. 整体流程（文字版时序）
+	1.	定时/手动拉取社区与任务数据 → Admin 三页展示（社区验收 / 算法验收 / 用户反馈）。
+	2.	程序先算灯号与分数（C‑Score / A‑Score + Must Gates）。
+	3.	人工抽检与决策：
+	•	社区：通过/实验/黑名单 + 标签 → 生成 community_decision 事件 → 导出 YAML Patch → 合并。
+	•	算法：满意/不满意 + 失败原因 → 记录 analysis_rating → 不通过可“仅核心社区重跑”。
+	•	用户：汇总前台赞/踩、标注等事件，辅助判断“问题出在召回/去噪/摘要哪一环”。
+	4.	合并 Patch 后，下一次分析读取最新配置；事件沉淀用于周度阈值微调与审计。
 
-#### 用户行为分析（匿名化）
-```
-用户洞察
-├── 使用统计
-│   ├── 日活跃用户数和注册趋势
-│   ├── 分析任务创建频率
-│   └── 用户留存率（7天、30天）
-├── 产品描述模式
-│   ├── 高频关键词和行业分布
-│   ├── 描述长度和质量分析
-│   └── 成功分析的产品类型
-└── 报告质量评估
-    ├── 用户满意度指标（推断）
-    ├── 报告查看时长统计
-    └── 重复分析行为模式
-```
+⸻
 
-### 2.3 关键决策
+7. 信息架构（仅三页）
 
-#### 决策1：只读 vs 管理功能
-**选择**：纯只读设计
-**理由**：避免人为错误，确保配置变更的可审计性
-**代价**：配置修改需要额外的Git工作流，但换取了系统的稳定性
+7.1 社区验收（目标①）
 
-#### 决策2：单用户 vs 多用户权限
-**选择**：单用户设计
-**理由**：内部团队小，多用户权限增加复杂性而价值有限
-**代价**：所有团队成员共享访问权限，但简化了开发和维护
+表格列
+社区名 | hit_7d | last_crawled_at | dup_ratio | spam_ratio | topic_score | C‑Score | 状态灯 | 当前标签 | 证据
 
-#### 决策3：实时数据 vs 定期刷新
-**选择**：5分钟定期刷新
-**理由**：Admin监控不需要秒级精度，降低对生产系统的负载
-**代价**：不是绝对实时，但满足监控需求
+操作
+	•	通过/核心、进实验、暂停/黑名单、打标签（状态/主题/风险）、新增社区（手输标识）
+	•	右上角：生成 YAML Patch（预览/下载/一键开 PR）
 
-## 3. 技术规范
+筛选/排序
+	•	筛：红/黄/绿、标签、活跃度区间
+	•	排：C‑Score 降序、近7天命中数降序
 
-### 3.1 后端API设计
+抽检按钮
+	•	抽样3条：打开 3~5 条样例贴链接窗口（仅链接与元信息）
 
-```python
-# api/v1/endpoints/admin.py
-from fastapi import APIRouter, HTTPException
-from datetime import datetime, timedelta
-import json
+7.2 算法验收（目标②）
 
-router = APIRouter()
+列表列
+task_id | 开始时间 | 用时 | 覆盖社区数 | A‑Score | Must Gates(✔/✖) | 满意度 | 操作
 
-@router.get("/dashboard/overview")
-async def get_dashboard_overview():
-    """获取系统概览数据（只读）"""
-    with get_db() as db:
-        # 系统健康指标
-        total_users = db.execute("SELECT COUNT(*) as count FROM users").fetchone()["count"]
-        active_tasks = db.execute("SELECT COUNT(*) as count FROM task WHERE status IN ('pending', 'processing')").fetchone()["count"]
-        completed_today = db.execute(
-            "SELECT COUNT(*) as count FROM task WHERE status = 'completed' AND DATE(completed_at) = DATE('now')"
-        ).fetchone()["count"]
-        
-        # 错误统计
-        failed_tasks = db.execute(
-            "SELECT COUNT(*) as count FROM task WHERE status = 'failed' AND created_at > datetime('now', '-24 hours')"
-        ).fetchone()["count"]
-        
-        return {
-            "system_health": {
-                "total_users": total_users,
-                "active_tasks": active_tasks,
-                "completed_today": completed_today,
-                "error_rate": failed_tasks / max(completed_today + failed_tasks, 1)
-            },
-            "last_updated": datetime.utcnow().isoformat()
-        }
+详情侧栏
+	•	关键指标：evidence_coverage、fresh_median_days、relevance_pass_rate、dup_ratio、spam_ratio、evidence_per_insight_avg、diversity_score
+	•	失败原因 Top3（近 30 天统计）
+	•	按钮：满意/不满意（枚举原因）、仅核心社区重跑
 
-@router.get("/analytics/user-patterns")
-async def get_user_patterns():
-    """获取用户行为模式（匿名化）"""
-    with get_db() as db:
-        # 注册趋势（最近30天）
-        registration_trend = db.execute("""
-            SELECT DATE(created_at) as date, COUNT(*) as new_users
-            FROM users 
-            WHERE created_at > datetime('now', '-30 days')
-            GROUP BY DATE(created_at)
-            ORDER BY date
-        """).fetchall()
-        
-        # 产品描述关键词分析
-        top_keywords = db.execute("""
-            SELECT 
-                CASE 
-                    WHEN product_description LIKE '%AI%' THEN 'AI'
-                    WHEN product_description LIKE '%app%' OR product_description LIKE '%应用%' THEN 'App'
-                    WHEN product_description LIKE '%SaaS%' OR product_description LIKE '%软件%' THEN 'SaaS'
-                    ELSE 'Other'
-                END as category,
-                COUNT(*) as count
-            FROM task
-            WHERE created_at > datetime('now', '-30 days')
-            GROUP BY category
-            ORDER BY count DESC
-        """).fetchall()
-        
-        return {
-            "registration_trend": [
-                {"date": row["date"], "count": row["new_users"]} 
-                for row in registration_trend
-            ],
-            "product_categories": [
-                {"category": row["category"], "count": row["count"]}
-                for row in top_keywords
-            ]
-        }
+7.3 用户反馈（目标③）
 
-@router.get("/system/performance")
-async def get_system_performance():
-    """获取系统性能指标"""
-    with get_db() as db:
-        # 任务处理时间统计
-        task_durations = db.execute("""
-            SELECT 
-                AVG((julianday(completed_at) - julianday(started_at)) * 24 * 60) as avg_minutes,
-                MAX((julianday(completed_at) - julianday(started_at)) * 24 * 60) as max_minutes,
-                MIN((julianday(completed_at) - julianday(started_at)) * 24 * 60) as min_minutes
-            FROM task 
-            WHERE status = 'completed' 
-            AND completed_at > datetime('now', '-24 hours')
-        """).fetchone()
-        
-        # 队列长度历史
-        queue_stats = db.execute("""
-            SELECT 
-                strftime('%H', created_at) as hour,
-                COUNT(*) as tasks_created
-            FROM task
-            WHERE created_at > datetime('now', '-24 hours')
-            GROUP BY strftime('%H', created_at)
-            ORDER BY hour
-        """).fetchall()
-        
-        return {
-            "task_performance": {
-                "avg_duration_minutes": round(task_durations["avg_minutes"] or 0, 2),
-                "max_duration_minutes": round(task_durations["max_minutes"] or 0, 2),
-                "min_duration_minutes": round(task_durations["min_minutes"] or 0, 2)
-            },
-            "hourly_load": [
-                {"hour": int(row["hour"]), "count": row["tasks_created"]}
-                for row in queue_stats
-            ]
-        }
+汇总卡片
+	•	近 30 天：用户赞/踩比、完成阅读率、不满原因 Top5、被标注最多的洞察类型
+	•	可点击某原因 → 拉出最近 10 条相关任务做抽样回看
 
-@router.get("/config/current")
-async def get_current_config():
-    """获取当前配置文件内容（只读）"""
-    import yaml
-    
-    try:
-        # 读取分析引擎配置
-        with open("config/analysis_engine.yml", "r") as f:
-            analysis_config = yaml.safe_load(f)
-        
-        # 读取系统配置
-        with open("config/system.yml", "r") as f:
-            system_config = yaml.safe_load(f)
-        
-        return {
-            "analysis_engine": analysis_config,
-            "system": system_config,
-            "last_git_commit": get_last_git_commit(),
-            "config_version": get_config_version()
-        }
-        
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=500, detail=f"配置文件不存在: {str(e)}")
+⸻
 
-def get_last_git_commit():
-    """获取最后一次Git提交信息"""
-    import subprocess
-    try:
-        result = subprocess.run(
-            ["git", "log", "-1", "--format=%H|%s|%cr"], 
-            capture_output=True, 
-            text=True
-        )
-        if result.returncode == 0:
-            hash, subject, date = result.stdout.strip().split("|")
-            return {
-                "hash": hash[:8],
-                "subject": subject,
-                "date": date
-            }
-    except Exception:
-        pass
-    return {"hash": "unknown", "subject": "未知", "date": "未知"}
-```
+8. 规则与阈值（实现口径）
 
-### 3.2 前端Dashboard设计
+8.1 社区验证（Must + C‑Score）
 
-```jsx
-// src/components/AdminDashboard.jsx
-function AdminDashboard() {
-    const [overview, setOverview] = useState(null);
-    const [performance, setPerformance] = useState(null);
-    const [config, setConfig] = useState(null);
-    
-    useEffect(() => {
-        // 每5分钟刷新一次数据
-        const fetchData = async () => {
-            const [overviewRes, performanceRes, configRes] = await Promise.all([
-                fetch('/api/admin/dashboard/overview'),
-                fetch('/api/admin/system/performance'),
-                fetch('/api/admin/config/current')
-            ]);
-            
-            setOverview(await overviewRes.json());
-            setPerformance(await performanceRes.json());
-            setConfig(await configRes.json());
-        };
-        
-        fetchData();
-        const interval = setInterval(fetchData, 5 * 60 * 1000);
-        return () => clearInterval(interval);
-    }, []);
-    
-    return (
-        <div className="admin-dashboard">
-            <Header />
-            
-            <div className="dashboard-grid">
-                <SystemHealthCard data={overview?.system_health} />
-                <PerformanceChart data={performance} />
-                <UserAnalytics />
-                <ConfigurationPanel config={config} />
-                <RecentErrors />
-                <OptimizationSuggestions />
-            </div>
-        </div>
-    );
+Must Gates（任一失败判红）
+	•	freshness_hours_max = 48
+	•	min_hits_7d = 30
+	•	max_dup_ratio = 0.15
+	•	max_spam_ratio = 0.10
+	•	min_topic_score = 0.60
+
+C‑Score 计算（0~100）
+C = 35%*topic + 25%*activity + 20%*freshness + 10%*(1-spam) + 10%*(1-dup)
+activity = min(hit_7d/50,1)*100
+freshness = max(0,1-hours_since_last_crawl/48)*100
+topic = topic_score*100
+
+阈值与动作
+	•	C ≥ 70 连续两周 → 核心
+	•	55 ≤ C < 70 → 实验（观察两周）
+	•	< 55 或 Must 失败 → 黑名单/暂停
+
+8.2 算法验证（Must + A‑Score）
+
+Must Gates
+	•	evidence_coverage ≥ 0.80
+	•	fresh_median_days ≤ 7
+	•	relevance_pass_rate ≥ 0.70
+	•	dup_ratio ≤ 0.15
+	•	安全合规通过（PII/NSFW脱敏）
+
+A‑Score 计算（0~100）
+
+A = 30%*relevance + 20%*coverage + 20%*evidence_strength + 15%*freshness + 10%*cleanliness + 5%*diversity
+where:
+- relevance = 平均洞察相关性分（0~100）
+- coverage = 目标主题Top-K覆盖率（K=10，0~100）
+- evidence_strength = min(2, 证据数均值)/2 * 100
+- freshness = max(0,1 - median_days/7)*100
+- cleanliness = 100*(1-dup_ratio)*(1-spam_ratio)
+- diversity = (1 - Σ source_share^2) 映射到 0~100
+
+阈值与动作
+	•	A ≥ 75 → 通过并留档
+	•	60 ≤ A < 75 → Beta（边交付边收集反馈）
+	•	< 60 或 Must 失败 → 不通过，默认“仅核心社区重跑”
+	•	连续 3 次不通过 → 弹出“需调参/规则修正”提醒
+
+失败原因枚举
+覆盖率低 | 不相关 | 证据不足 | 样本过旧 | 重复/噪声高 | 总结太泛
+
+⸻
+
+9. 数据模型（最小改动）
+
+9.1 统一反馈事件表 feedback_events（PostgreSQL）
+
+CREATE TABLE feedback_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  source TEXT NOT NULL CHECK (source IN ('admin','user')),
+  event_type TEXT NOT NULL CHECK (event_type IN ('community_decision','analysis_rating','insight_flag','metric')),
+  user_id UUID NULL,
+  task_id UUID NULL,
+  payload JSONB NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- 常用索引
+CREATE INDEX idx_feedback_events_type_time ON feedback_events(event_type, created_at DESC);
+CREATE INDEX idx_feedback_events_task ON feedback_events(task_id);
+CREATE INDEX idx_feedback_events_payload_community ON feedback_events ((payload->>'community'));
+
+payload 约定
+	•	community_decision：{community, action:'approve|experiment|pause|blacklist', labels:[…], reason, actor}
+	•	analysis_rating：{is_satisfied:boolean, reasons:[…], notes}
+	•	insight_flag：{insight_id, flag:'不相关|错误', notes}
+	•	metric：{metric:'dwell_seconds'|'read_complete', value:number}
+
+不新增社区主数据表；监控社区依旧以 Git 配置为真相源。
+
+9.2 视图/物化视图（建议）
+	•	vw_community_7d：近 7 天的 hit_7d / dup_ratio / spam_ratio / topic_score / last_crawled_at 聚合视图
+	•	vw_analysis_metrics：每个 task_id 的 Must 指标与 A‑Score 预计算结果（或实时计算）
+
+⸻
+
+10. API 设计（MVP 必要 5 个 + 1 个聚合）
+
+所有响应统一包一层：{ "code":0, "data":{…}, "trace_id":"…" }；错误 code != 0 并带 message。
+
+10.1 GET /admin/communities/summary
+
+用途：社区页表格数据（含灯号与 C‑Score）。
+查询参数：q? status?=green|yellow|red tag? sort?=cscore_desc|hit_desc page?=1 page_size?=50
+响应示例
+
+{
+  "code": 0,
+  "data": {
+    "items": [
+      {
+        "community": "r/startups",
+        "hit_7d": 83,
+        "last_crawled_at": "2025-09-15T11:20:00Z",
+        "dup_ratio": 0.08,
+        "spam_ratio": 0.06,
+        "topic_score": 0.74,
+        "c_score": 82,
+        "status_color": "green",
+        "labels": ["状态:核心","主题:创业"],
+        "evidence_samples": [
+          "https://reddit.com/…1",
+          "https://reddit.com/…2",
+          "https://reddit.com/…3"
+        ]
+      }
+    ],
+    "total": 245
+  }
+}
+10.2 POST /admin/decisions/community
+
+用途：记录一次社区决策（写入 feedback_events），不直接改配置。
+请求体
+
+{
+  "community": "r/technology",
+  "action": "blacklist",
+  "labels": ["状态:黑名单","风险:广告多"],
+  "reason": "垃圾率高且与主题不符"
+}
+响应
+{ "code": 0, "data": { "event_id": "uuid-..." } }
+
+10.3 GET /admin/config/patch
+
+用途：汇总最近的 community_decision 事件生成 YAML Patch（文本下载）。
+参数：since?=ISO8601（缺省=24h 内）
+响应（Content-Type: text/yaml）：返回文本，如：
+core:
+  - r/startups
+experimental:
+  - r/ArtificialIntelligence
+blacklist:
+  - r/technology
+labels:
+  r/startups: ["主题:创业","状态:核心"]
+  r/technology: ["状态:黑名单","风险:广告多"]
+
+备选：POST /admin/config/patch/pr（可选）在有 Token 的情况下自动开 PR。
+
+10.4 POST /admin/feedback/analysis
+
+用途：Admin 对任务的满意/不满意与原因（写 feedback_events）。
+请求体
+
+{
+  "task_id": "uuid-...",
+  "is_satisfied": false,
+  "reasons": ["覆盖率低","重复/噪声高"],
+  "notes": "建议仅核心社区重跑"
 }
 
-function SystemHealthCard({ data }) {
-    if (!data) return <div className="card loading">加载中...</div>;
-    
-    const healthScore = calculateHealthScore(data);
-    
-    return (
-        <div className="card system-health">
-            <h3>系统健康状态</h3>
-            <div className={`health-indicator ${getHealthClass(healthScore)}`}>
-                {healthScore}分
-            </div>
-            <div className="metrics">
-                <div className="metric">
-                    <label>总用户数</label>
-                    <value>{data.total_users}</value>
-                </div>
-                <div className="metric">
-                    <label>活跃任务</label>
-                    <value>{data.active_tasks}</value>
-                </div>
-                <div className="metric">
-                    <label>今日完成</label>
-                    <value>{data.completed_today}</value>
-                </div>
-                <div className="metric">
-                    <label>错误率</label>
-                    <value>{(data.error_rate * 100).toFixed(1)}%</value>
-                </div>
-            </div>
-        </div>
-    );
+响应：{ "code":0, "data": { "event_id":"uuid-..." } }
+
+10.5 GET /admin/feedback/summary?days=30
+
+用途：用户与 Admin 的反馈汇总。
+响应
+
+{
+  "code": 0,
+  "data": {
+    "analysis_satisfaction_rate": 0.68,
+    "top_fail_reasons": [
+      {"reason":"覆盖率低","count":21},
+      {"reason":"不相关","count":18}
+    ],
+    "user_like_ratio": 0.61,
+    "read_complete_rate": 0.47,
+    "top_flagged_insight_types": [
+      {"type":"不相关","count":33}
+    ]
+  }
 }
 
-function ConfigurationPanel({ config }) {
-    if (!config) return <div className="card loading">加载配置...</div>;
-    
-    return (
-        <div className="card configuration">
-            <h3>当前配置</h3>
-            <div className="config-info">
-                <div className="git-info">
-                    <strong>最新提交:</strong> {config.last_git_commit.hash}
-                    <br />
-                    <span>{config.last_git_commit.subject}</span>
-                    <br />
-                    <small>{config.last_git_commit.date}</small>
-                </div>
-                
-                <div className="config-summary">
-                    <h4>分析引擎配置</h4>
-                    <ul>
-                        <li>目标社区数: {config.analysis_engine.discovery.max_communities_to_scan}</li>
-                        <li>痛点权重: {config.analysis_engine.ranking.pain_point_weight}</li>
-                        <li>机会权重: {config.analysis_engine.ranking.opportunity_signal_weight}</li>
-                    </ul>
-                </div>
-                
-                <div className="config-notice">
-                    <strong>⚠️ 注意：</strong>配置修改请通过Git提交，不支持在线修改。
-                </div>
-            </div>
-        </div>
-    );
+10.6（聚合）GET /admin/analysis/{task_id}
+
+用途：返回该任务的 QA 指标与 A‑Score（方便前端详情侧栏展示）。
+响应
+
+{
+  "code": 0,
+  "data": {
+    "task_id": "uuid-...",
+    "must": {
+      "evidence_coverage": 0.86,
+      "fresh_median_days": 3,
+      "relevance_pass_rate": 0.74,
+      "dup_ratio": 0.12,
+      "safety_pass": true
+    },
+    "metrics": {
+      "evidence_per_insight_avg": 1.7,
+      "diversity_score": 62
+    },
+    "a_score": 78,
+    "must_pass": true
+  }
 }
-```
 
-### 3.3 配置文件管理
+重跑沿用 PRD‑04 的任务创建接口：POST /tasks/{task_id}/rerun?core_only=true
 
-```yaml
-# config/analysis_engine.yml - 分析引擎配置
-version: "1.2"
-last_updated: "2025-01-21T10:00:00Z"
-updated_by: "team@example.com"
+⸻
 
-discovery:
-  max_communities_to_scan: 20
-  community_relevance_threshold: 0.7
-  cache_fallback_enabled: true
+11. 前端规格（页面级）
 
-ranking:
-  pain_point_weight: 1.5
-  competitor_mention_weight: 1.2
-  opportunity_signal_weight: 1.8
-  recency_boost_factor: 1.1
+11.1 社区验收页
+	•	表格列：见 7.1。
+	•	行内操作：通过/实验/暂停/黑名单/打标签/证据。
+	•	顶部操作：筛选器、排序器、生成 Patch。
+	•	空态：提示“暂无候选社区，去新增或扩大抓取策略”。
+	•	错误态：请求失败显示 trace_id 与“重试”按钮。
 
-nlp:
-  model_name: "reddit-sentiment-analysis/roberta-base-reddit"
-  fallback_model: "cardiffnlp/twitter-roberta-base-sentiment"
-  confidence_threshold: 0.8
+11.2 算法验收页
+	•	列表列：见 7.2。
+	•	详情侧栏：Must Gates ✔/✖、A‑Score、关键指标与“失败原因 Top3”。
+	•	行内操作：满意/不满意（必选原因）、仅核心社区重跑。
+	•	抽样按钮：随机抽样10条洞察 展示证据链接。
 
-caching:
-  redis_ttl_hours: 24
-  cache_warming_enabled: true
-  cache_hit_ratio_target: 0.9
-```
+11.3 用户反馈页
+	•	汇总卡片 + 原因列表；点击原因下钻最近 10 条任务。
+	•	支持按日期范围筛选。
 
-```yaml
-# config/system.yml - 系统配置
-version: "1.0"
-deployment_environment: "production"
+⸻
 
-celery:
-  worker_concurrency: 2
-  max_retries: 3
-  retry_delay_seconds: 60
+12. 埋点要求（前台+Admin）
 
-monitoring:
-  max_queue_length: 50
-  max_task_duration_minutes: 10
-  max_failure_rate: 0.1
-  alert_email: "alerts@example.com"
+12.1 前台（配合 PRD‑05）
+	•	analysis_rating：{is_satisfied, reasons[], task_id}
+	•	metric：{metric:'dwell_seconds'|'read_complete', value}
+	•	insight_flag：{insight_id, flag, notes?}
 
-api:
-  rate_limit_per_user: 100  # 每小时请求限制
-  jwt_expiration_hours: 24
-  max_concurrent_tasks_per_user: 1
+12.2 Admin
+	•	community_decision：每次动作都写事件
+	•	analysis_rating：满意/不满意与原因
+	•	页面性能：加载耗时（仅日志，不上报三方）
 
-reddit_api:
-  requests_per_minute: 50
-  fallback_strategy: "cache_only"
-  quota_warning_threshold: 0.8
-```
+⸻
 
-### 3.4 配置更新工作流
+13. YAML Patch 规范（MVP）
 
-```bash
-#!/bin/bash
-# scripts/deploy_config.sh - 配置部署脚本
+core:            # 列表：加入核心监控
+  - r/startups
+experimental:    # 列表：进入实验
+  - r/ArtificialIntelligence
+blacklist:       # 列表：暂停/黑名单
+  - r/technology
+labels:          # 可选：社区标签
+  r/startups: ["主题:创业","状态:核心"]
+  r/technology: ["状态:黑名单","风险:广告多"]
 
-echo "🔍 验证配置文件格式..."
-python scripts/validate_config.py
+# 可选：审计字段（便于回溯）
+_meta:
+  patch_id: "2025-09-16T10:00:00Z-ops-key"
+  actor: "key@company.com"
+  comment: "垃圾率高且不相关"
 
-if [ $? -ne 0 ]; then
-    echo "❌ 配置文件验证失败，请检查YAML格式"
-    exit 1
-fi
+14. 人工验证 SOP（落地法）
+	•	社区：红灯全检、黄灯抽 50%、绿灯抽 10%，每个 ≤3 分钟；动作后导出 Patch 并合并。
+	•	算法：先看 Must ✔/✖；抽样 10 条洞察看证据；A‑Score ≥75 通过，60~74 Beta，<60 不通过并重跑。
+	•	模板：
+	•	社区抽检模板 CSV
+	•	算法/报告抽检模板 CSV
 
-echo "📝 创建配置备份..."
-cp config/analysis_engine.yml config/backups/analysis_engine_$(date +%Y%m%d_%H%M%S).yml
-cp config/system.yml config/backups/system_$(date +%Y%m%d_%H%M%S).yml
+⸻
 
-echo "🚀 重启相关服务..."
-sudo systemctl reload reddit-scanner
-sudo systemctl restart celery-worker
+15. E2E 验收用例（写入 PRD‑08）
+	1.	社区验收流：决策→Patch→合并→下一次分析按配置生效。
+	2.	社区回滚：移出→合并→缺失→恢复→合并→恢复命中。
+	3.	算法不通过纠偏：记录原因→仅核心重跑→指标改善或提示需调参。
+	4.	用户反馈采集：前台踩/标注→Admin 汇总可见。
+	5.	洞察标注聚合：被标注最多的类型在 30 天榜单可见。
+	6.	权限与隐私：非 Admin 403；样例贴仅展示链接与元信息。
+	7.	指标一致性：Admin 显示的 C‑Score/A‑Score 与后端计算一致。
+	8.	Patch 审计：Patch 含 _meta 审计信息，可追溯到决策事件 id。
 
-echo "✅ 配置部署完成"
-echo "📊 请检查Admin面板确认配置生效"
-```
+⸻
 
-## 4. 验收标准
+16. 非功能需求
+	•	性能：
+	•	/admin/communities/summary 首屏 ≤ 1s（1k 行以内）；分页 50 条/页。
+	•	/admin/analysis/{task_id} ≤ 800ms（缓存或预计算）。
+	•	稳定性：API 99.9% 月可用。
+	•	安全：所有 /admin/* 需 Token；操作写事件；不泄露 PII/NSFW 原文。
+	•	可观测：每个请求输出 trace_id；关键错误带原因栈。
 
-### 4.1 功能要求
+⸻
 
-**监控面板**：
-- ✅ 实时显示系统健康评分（0-100）
-- ✅ 展示用户数、任务数、完成率等关键指标
-- ✅ 错误率和性能趋势图表
-- ✅ 5分钟自动刷新机制
+17. 里程碑与交付
+	•	M1（后端 / 3 天）：feedback_events 表上线 + 5 个 API + 聚合接口。
+	•	M2（前端 / 3 天）：三页表格 + 详情侧栏 + 操作按钮 + Patch 预览下载。
+	•	M3（集成 / 2 天）：与任务系统重跑联调；前台埋点落库联调。
+	•	M4（E2E / 1 天）：8 条用例通过，上线验收。
 
-**用户分析**：
-- ✅ 匿名化用户行为统计（无个人信息）
-- ✅ 产品描述模式和关键词分析
-- ✅ 用户留存和活跃度趋势
+⸻
 
-**配置管理**：
-- ✅ 只读展示当前配置文件内容
-- ✅ 显示最新Git提交信息
-- ✅ 配置修改提示和文档链接
-- ✅ **禁止**任何在线配置修改功能
+18. 风险与应对
+	•	阈值不稳 → 采用分位数自适应（周更），并保留手工固定值开关。
+	•	事件泛滥 → 以 since 拉取增量生成 Patch；事件保留期 90 天，冷数据归档。
+	•	Git 合并冲突 → Patch 以“增量 + 去重”生成；失败时回退到“下载手工合并”。
 
-**故障排查**：
-- ✅ 最近错误日志和频次统计
-- ✅ 任务失败原因分析
-- ✅ 性能瓶颈识别和建议
+⸻
 
-### 4.2 安全标准
+19. 附录
 
-| 安全项 | 要求 | 验证方法 |
-|--------|------|----------|
-| 数据库写权限 | 绝对禁止写操作 | 代码审查，数据库权限检查 |
-| 用户隐私保护 | 只显示聚合数据 | 数据脱敏检查 |
-| 配置文件权限 | 只读访问 | 文件系统权限验证 |
-| Admin访问控制 | 单用户，IP限制 | 网络配置检查 |
+19.1 配置（示例）
+community_qa:
+  freshness_hours_max: 48
+  min_hits_7d: 30
+  max_dup_ratio: 0.15
+  max_spam_ratio: 0.10
+  min_topic_score: 0.60
+  cscore_weights: {topic: 0.35, activity: 0.25, freshness: 0.20, anti_spam: 0.10, anti_dup: 0.10}
+  cscore_thresholds: {core: 70, exp: 55}
 
-### 4.3 测试用例
+analysis_qa:
+  must:
+    min_evidence_coverage: 0.80
+    max_fresh_median_days: 7
+    min_relevance_pass_rate: 0.70
+    max_dup_ratio: 0.15
+    safety: {enforce_pii_scrub: true, enforce_nsfw_block: true}
+  ascore_weights: {relevance: 0.30, coverage: 0.20, evidence: 0.20, freshness: 0.15, cleanliness: 0.10, diversity: 0.05}
+  ascore_thresholds: {pass: 75, beta: 60}
+  rerun_policy: {core_only_on_fail: true, max_consecutive_fail: 3}
 
-```python
-# tests/test_admin.py
-def test_admin_readonly_access():
-    """测试Admin只读访问"""
-    response = client.get("/api/admin/dashboard/overview")
-    assert response.status_code == 200
-    data = response.json()
-    
-    # 验证返回数据结构
-    assert "system_health" in data
-    assert "last_updated" in data
-    assert data["system_health"]["total_users"] >= 0
+  19.2 计算伪代码
 
-def test_no_write_endpoints():
-    """确保没有写入端点"""
-    # 尝试POST请求到Admin端点
-    response = client.post("/api/admin/config/update", json={"test": "data"})
-    assert response.status_code == 404  # 端点不存在
-    
-    # 尝试PUT请求
-    response = client.put("/api/admin/users/disable", json={"user_id": "test"})
-    assert response.status_code == 404  # 端点不存在
+  def c_score(hit_7d, last_crawled_hours, dup_ratio, spam_ratio, topic_score):
+    activity = min(hit_7d/50,1)*100
+    freshness = max(0,1-last_crawled_hours/48)*100
+    topic = topic_score*100
+    return 0.35*topic + 0.25*activity + 0.20*freshness + 0.10*(100*(1-spam_ratio)) + 0.10*(100*(1-dup_ratio))
 
-def test_user_data_anonymization():
-    """测试用户数据匿名化"""
-    response = client.get("/api/admin/analytics/user-patterns")
-    data = response.json()
-    
-    # 确保没有用户个人信息
-    json_str = json.dumps(data)
-    assert "@" not in json_str  # 不包含邮箱
-    assert "user_id" not in json_str  # 不包含用户ID
-```
+def a_score(relevance, coverage, evidence_avg, median_days, dup_ratio, spam_ratio, diversity):
+    evidence_strength = min(2, evidence_avg)/2*100
+    freshness = max(0,1-median_days/7)*100
+    cleanliness = 100*(1-dup_ratio)*(1-spam_ratio)
+    return 0.30*relevance + 0.20*coverage + 0.20*evidence_strength + 0.15*freshness + 0.10*cleanliness + 0.05*diversity
 
-## 5. 风险管理
+19.3 CSV 模板（下载）
+	•	社区抽检模板
+	•	算法/报告抽检模板
 
-### 5.1 技术风险
+⸻
 
-**风险1：配置文件损坏**
-- **影响**：系统无法读取配置，服务异常
-- **缓解**：配置文件版本控制，自动备份机制
-- **降级方案**：硬编码默认配置，确保系统基本可用
-
-**风险2：Admin面板故障**
-- **影响**：无法监控系统状态
-- **缓解**：独立部署，不依赖主系统
-- **降级方案**：直接查询数据库，命令行工具
-
-**风险3：数据隐私泄露**
-- **影响**：用户个人信息通过Admin面板泄露
-- **缓解**：严格的数据脱敏，只显示聚合统计
-- **降级方案**：关闭用户分析功能，只保留系统监控
-
-### 5.2 降级方案
-
-**完全降级：命令行监控**
-```bash
-#!/bin/bash
-# scripts/emergency_status.sh
-echo "=== 紧急系统状态检查 ==="
-
-echo "用户总数:"
-sqlite3 data/reddit.db "SELECT COUNT(*) FROM users;"
-
-echo "今日完成任务:"
-sqlite3 data/reddit.db "SELECT COUNT(*) FROM task WHERE status='completed' AND DATE(completed_at)=DATE('now');"
-
-echo "失败任务:"
-sqlite3 data/reddit.db "SELECT COUNT(*) FROM task WHERE status='failed' AND created_at > datetime('now', '-24 hours');"
-
-echo "当前配置版本:"
-git log -1 --format="%h %s %cr"
-```
-
-**部分降级：最小监控面板**
-```html
-<!-- 当React Admin不可用时的静态HTML -->
-<!DOCTYPE html>
-<html>
-<head><title>System Status</title></head>
-<body>
-    <h1>Reddit Scanner - Emergency Status</h1>
-    <div id="status">Loading...</div>
-    
-    <script>
-        fetch('/api/admin/dashboard/overview')
-            .then(r => r.json())
-            .then(data => {
-                document.getElementById('status').innerHTML = `
-                    <p>Total Users: ${data.system_health.total_users}</p>
-                    <p>Active Tasks: ${data.system_health.active_tasks}</p>
-                    <p>Error Rate: ${(data.system_health.error_rate * 100).toFixed(1)}%</p>
-                `;
-            });
-    </script>
-</body>
-</html>
-```
-
----
-
-## 总结
-
-这个Admin后台设计**严格遵循了"只读监控"的安全哲学**：
-
-1. **安全第一**：零写入权限，配置通过Git管理，杜绝人为破坏
-2. **数据透明**：完整的系统监控和用户分析，但严格保护隐私
-3. **运维友好**：清晰的配置展示和性能指标，便于故障排查
-4. **团队协作**：配置修改通过代码审查，确保变更质量
-
-**最关键的是，我们诚实地承认了Admin后台的风险性。**传统的Admin系统往往成为数据破坏的入口，我们通过"只读 + Git配置"的模式，从架构层面杜绝了这种风险。
-
-这不是最"方便"的Admin系统，但它是最"安全"和最"可审计"的Admin系统。正如Linus所说，"Never break userspace"，我们的Admin设计确保永远不会破坏用户数据。
-
-**至此，完整的PRD体系（PRD-01到PRD-07）已经完成，形成了一个诚实、简单、可靠的技术架构。**
+20. Definition of Done（验收清单）
+	•	反馈事件表与索引上线；
+	•	5 个 Admin API + 1 个聚合接口可用；
+	•	三页前端实现，包含筛选、排序、详情侧栏、操作按钮、Patch 预览下载；
+	•	与任务系统“仅核心重跑”打通；
+	•	前台反馈入库，Admin 汇总可见；
+	•	8 条 E2E 用例通过；
+	•	安全审计：非 Admin 拒绝；样例仅链接不含 PII；
+	•	文档更新：阈值配置与分位数策略写入配置仓库。

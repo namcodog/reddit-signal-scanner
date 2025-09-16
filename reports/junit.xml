@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="13" failures="0" skipped="0" tests="13" time="4.555" timestamp="2025-09-14T12:57:00.966833+08:00" hostname="hujiadeMacBook-Pro.local"><testcase classname="" name="backend.tests.algorithms.test_community_discovery_v3" time="0.000"><error message="collection failure">ImportError while importing test module '/Users/hujia/Desktop/最小化Navigator/backend/tests/algorithms/test_community_discovery_v3.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/opt/homebrew/Cellar/python@3.11/3.11.13/Frameworks/Python.framework/Versions/3.11/lib/python3.11/importlib/__init__.py:126: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backend/tests/algorithms/test_community_discovery_v3.py:13: in &lt;module&gt;
+    from tests.algorithms.test_base_v3 import (
+E   ModuleNotFoundError: No module named 'tests.algorithms'</error></testcase><testcase classname="" name="backend.tests.algorithms.test_signal_extraction_v3" time="0.000"><error message="collection failure">ImportError while importing test module '/Users/hujia/Desktop/最小化Navigator/backend/tests/algorithms/test_signal_extraction_v3.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/opt/homebrew/Cellar/python@3.11/3.11.13/Frameworks/Python.framework/Versions/3.11/lib/python3.11/importlib/__init__.py:126: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backend/tests/algorithms/test_signal_extraction_v3.py:24: in &lt;module&gt;
+    from tests.algorithms.test_base_v3 import (
+E   ModuleNotFoundError: No module named 'tests.algorithms'</error></testcase><testcase classname="" name="backend.tests.api.test_auth" time="0.000"><error message="collection failure">ImportError while importing test module '/Users/hujia/Desktop/最小化Navigator/backend/tests/api/test_auth.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/opt/homebrew/Cellar/python@3.11/3.11.13/Frameworks/Python.framework/Versions/3.11/lib/python3.11/importlib/__init__.py:126: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backend/tests/api/test_auth.py:25: in &lt;module&gt;
+    from tests.conftest import DatabaseTestFactory  # noqa: F401
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   ImportError: cannot import name 'DatabaseTestFactory' from 'tests.conftest' (/Users/hujia/Desktop/最小化Navigator/tests/conftest.py)</error></testcase><testcase classname="" name="backend.tests.api.test_report" time="0.000"><error message="collection failure">ImportError while importing test module '/Users/hujia/Desktop/最小化Navigator/backend/tests/api/test_report.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/opt/homebrew/Cellar/python@3.11/3.11.13/Frameworks/Python.framework/Versions/3.11/lib/python3.11/importlib/__init__.py:126: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backend/tests/api/test_report.py:26: in &lt;module&gt;
+    from tests.conftest import DatabaseTestFactory
+E   ImportError: cannot import name 'DatabaseTestFactory' from 'tests.conftest' (/Users/hujia/Desktop/最小化Navigator/tests/conftest.py)</error></testcase><testcase classname="" name="backend.tests.api.test_status" time="0.000"><error message="collection failure">ImportError while importing test module '/Users/hujia/Desktop/最小化Navigator/backend/tests/api/test_status.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/opt/homebrew/Cellar/python@3.11/3.11.13/Frameworks/Python.framework/Versions/3.11/lib/python3.11/importlib/__init__.py:126: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backend/tests/api/test_status.py:26: in &lt;module&gt;
+    from tests.conftest import DatabaseTestFactory
+E   ImportError: cannot import name 'DatabaseTestFactory' from 'tests.conftest' (/Users/hujia/Desktop/最小化Navigator/tests/conftest.py)</error></testcase><testcase classname="" name="tests.acceptance.user_journeys.test_first_time_user_e2e" time="0.000"><error message="collection failure">ImportError while importing test module '/Users/hujia/Desktop/最小化Navigator/tests/acceptance/user_journeys/test_first_time_user_e2e.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/opt/homebrew/Cellar/python@3.11/3.11.13/Frameworks/Python.framework/Versions/3.11/lib/python3.11/importlib/__init__.py:126: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/acceptance/user_journeys/test_first_time_user_e2e.py:12: in &lt;module&gt;
+    from playwright.async_api import async_playwright, Page, BrowserContext
+E   ModuleNotFoundError: No module named 'playwright'</error></testcase><testcase classname="" name="tests.integration.engine.test_performance_benchmarks" time="0.000"><error message="collection failure">import file mismatch:
+imported module 'test_performance_benchmarks' has this __file__ attribute:
+  /Users/hujia/Desktop/最小化Navigator/backend/tests/test_performance_benchmarks.py
+which is not the same as the test file we want to collect:
+  /Users/hujia/Desktop/最小化Navigator/tests/integration/engine/test_performance_benchmarks.py
+HINT: remove __pycache__ / .pyc files and/or use a unique basename for your test file modules</error></testcase><testcase classname="" name="tests.integration.test_integration" time="0.000"><error message="collection failure">ImportError while importing test module '/Users/hujia/Desktop/最小化Navigator/tests/integration/test_integration.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/opt/homebrew/Cellar/python@3.11/3.11.13/Frameworks/Python.framework/Versions/3.11/lib/python3.11/importlib/__init__.py:126: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/integration/test_integration.py:14: in &lt;module&gt;
+    from app.services.mock.reddit_mock_service import RedditMockService
+E   ModuleNotFoundError: No module named 'app.services.mock'</error></testcase><testcase classname="" name="tests.integration.test_simple_sse" time="0.000"><error message="collection failure">ImportError while importing test module '/Users/hujia/Desktop/最小化Navigator/tests/integration/test_simple_sse.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/opt/homebrew/Cellar/python@3.11/3.11.13/Frameworks/Python.framework/Versions/3.11/lib/python3.11/importlib/__init__.py:126: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/integration/test_simple_sse.py:14: in &lt;module&gt;
+    from app.services.simple_sse_broadcaster import SimpleTaskBroadcaster, SSEConnection
+E   ImportError: cannot import name 'SimpleTaskBroadcaster' from 'app.services.simple_sse_broadcaster' (/Users/hujia/Desktop/最小化Navigator/backend/app/services/simple_sse_broadcaster.py)</error></testcase><testcase classname="" name="tests.integration.test_sse_integration" time="0.000"><error message="collection failure">ImportError while importing test module '/Users/hujia/Desktop/最小化Navigator/tests/integration/test_sse_integration.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/opt/homebrew/Cellar/python@3.11/3.11.13/Frameworks/Python.framework/Versions/3.11/lib/python3.11/importlib/__init__.py:126: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/integration/test_sse_integration.py:15: in &lt;module&gt;
+    from app.services.sse_service import TaskSSEService, get_sse_service
+E   ModuleNotFoundError: No module named 'app.services.sse_service'</error></testcase><testcase classname="" name="tests.system.workflows.test_complete_analysis_workflow" time="0.000"><error message="collection failure">tests/system/workflows/test_complete_analysis_workflow.py:21: in &lt;module&gt;
+    class TestCompleteAnalysisWorkflow:
+tests/system/workflows/test_complete_analysis_workflow.py:264: in TestCompleteAnalysisWorkflow
+    subreddits: Optional[List[str]] = None
+                ^^^^^^^^
+E   NameError: name 'Optional' is not defined</error></testcase><testcase classname="" name="tests.unit.backend.models.test_analysis_model" time="0.000"><error message="collection failure">ImportError while importing test module '/Users/hujia/Desktop/最小化Navigator/tests/unit/backend/models/test_analysis_model.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/opt/homebrew/Cellar/python@3.11/3.11.13/Frameworks/Python.framework/Versions/3.11/lib/python3.11/importlib/__init__.py:126: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/unit/backend/models/test_analysis_model.py:16: in &lt;module&gt;
+    from sqlalchemy.exc import IntegrityError, CheckViolation
+E   ImportError: cannot import name 'CheckViolation' from 'sqlalchemy.exc' (/opt/homebrew/lib/python3.11/site-packages/sqlalchemy/exc.py)</error></testcase><testcase classname="" name="tests.unit.backend.models.test_database_constraints" time="0.000"><error message="collection failure">ImportError while importing test module '/Users/hujia/Desktop/最小化Navigator/tests/unit/backend/models/test_database_constraints.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/opt/homebrew/Cellar/python@3.11/3.11.13/Frameworks/Python.framework/Versions/3.11/lib/python3.11/importlib/__init__.py:126: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/unit/backend/models/test_database_constraints.py:14: in &lt;module&gt;
+    from sqlalchemy.exc import IntegrityError, CheckViolation
+E   ImportError: cannot import name 'CheckViolation' from 'sqlalchemy.exc' (/opt/homebrew/lib/python3.11/site-packages/sqlalchemy/exc.py)</error></testcase></testsuite></testsuites>

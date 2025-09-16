@@ -8,6 +8,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { TaskStatus, realTimeTaskService } from '@/services/sse.service';
+import logger from '@/utils/logger';
 
 export interface TaskProgressState {
   status: TaskStatus | null;
@@ -72,7 +73,7 @@ export function useTaskProgress(
   const startMonitoring = useCallback(() => {
     if (!taskId || isMonitoring.current) return;
 
-    console.log(`开始监听任务: ${taskId}`);
+    logger.info(`开始监听任务: ${taskId}`);
     isMonitoring.current = true;
     retryCount.current++;
 
@@ -169,13 +170,13 @@ export function useTaskProgress(
           state.status &&
           !['completed', 'failed'].includes(state.status.status)
         ) {
-          console.log('页面重新可见，恢复任务监听');
+          logger.info('页面重新可见，恢复任务监听');
           startMonitoring();
         }
       } else if (document.visibilityState === 'hidden') {
         // 页面隐藏时可以选择保持连接或断开
         // 这里选择保持连接，因为用户可能很快回来
-        console.log('页面已隐藏，保持连接');
+        logger.debug('页面已隐藏，保持连接');
       }
     };
 

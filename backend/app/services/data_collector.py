@@ -13,26 +13,31 @@ PRD-03 Step 2: 缓存优先数据采集系统的核心实现
 
 import asyncio
 import json
-import time
-from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Tuple, Union
-from dataclasses import dataclass, asdict
-from decimal import Decimal
 import logging
+import time
+from dataclasses import asdict, dataclass
+from datetime import datetime, timedelta
+from decimal import Decimal
+from typing import Any, Dict, List, Optional, Tuple, Union, cast
 
 import redis.asyncio as redis
-from sqlalchemy.ext.asyncio import AsyncSession
+from redis.exceptions import RedisError
+from sqlalchemy.exc import SQLAlchemyError
+import httpx
+import aiohttp
 from sqlalchemy import select, update
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from ..core.database import get_async_db
-from ..core.redis_client import get_redis_client
 from ..core.config import get_settings
-from ..core.config_manager import get_data_collection_config, get_cache_config
+from ..core.config_manager import get_cache_config, get_data_collection_config
+from ..core.database import get_db
 from ..core.input_validator import validate_community_list
+from ..core.redis_client import get_redis_client
 from ..models.community_cache import CommunityCache
-from ..schemas.reddit_data import RedditPost, DataCollectionResult
-from .reddit_client import RedditAPIClient
+from ..schemas.reddit_data import DataCollectionResult, RedditPost
+from .reddit_client import create_reddit_client
+from ..core.types import TypedRedis
 
 logger = logging.getLogger(__name__)
 
@@ -71,28 +76,35 @@ class DataCollectionService:
     3. 简洁实用：单一职责，只负责数据采集，不处理业务逻辑
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.settings = get_settings()
         self.config = get_data_collection_config()
         self.cache_config = get_cache_config()
-        self.redis_client: Optional[redis.Redis] = None
-        self.reddit_client: Optional[RedditAPIClient] = None
+        self.redis_client: Optional[TypedRedis] = None
+        self.reddit_client: Optional[Any] = None
         self.db_session: Optional[AsyncSession] = None
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> "DataCollectionService":
         """异步上下文管理器 - 初始化连接"""
-        self.redis_client = await get_redis_client()
-        self.reddit_client = RedditAPIClient()
+        # 获取底层原生 Redis 客户端以便直接调用 get/setex 等方法
+        rc = await get_redis_client()
+        self.redis_client = rc.client
+        # 通过工厂获取（根据 USE_MOCKS 返回 Mock 或 Real）
+        self.reddit_client = await create_reddit_client()
         # 注意：在实际使用中，db_session应该通过依赖注入获得
         # 这里用于演示，生产环境应使用 Depends(get_async_db)
-        db_generator = get_async_db()
+        db_generator = get_db()
         self.db_session = await db_generator.__anext__()
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(
+        self,
+        exc_type: Optional[type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[object],
+    ) -> None:
         """异步上下文管理器 - 清理连接"""
-        if self.redis_client:
-            await self.redis_client.close()
+        # 不在此处关闭全局 Redis 连接（共享连接池由应用生命周期管理）
         if self.reddit_client:
             await self.reddit_client.close()
         if self.db_session:
@@ -140,7 +152,9 @@ class DataCollectionService:
             collection_tasks = self._create_collection_tasks(
                 collection_strategy, config
             )
-            results = await asyncio.gather(*collection_tasks, return_exceptions=True)
+            results: List[Union[DataSourceResult, Exception]] = await asyncio.gather(
+                *collection_tasks, return_exceptions=True
+            )
 
             # Step 3: 合并和清洗数据
             merged_data = await self._merge_and_clean_results(
@@ -157,7 +171,18 @@ class DataCollectionService:
 
             return merged_data
 
-        except Exception as e:
+        except asyncio.CancelledError:
+            raise
+        except (
+            RedisError,
+            SQLAlchemyError,
+            httpx.HTTPError,
+            aiohttp.ClientError,
+            json.JSONDecodeError,
+            asyncio.TimeoutError,
+            ValueError,
+            TypeError,
+        ) as e:
             logger.error(f"数据采集失败: {str(e)}", exc_info=True)
             return DataCollectionResult(
                 posts=[],
@@ -169,12 +194,23 @@ class DataCollectionService:
                 error_message=str(e),
             )
 
-    async def _analyze_cache_coverage(self, communities: List[str]) -> Dict:
+    async def _analyze_cache_coverage(self, communities: List[str]) -> dict[str, Any]:
         """分析缓存覆盖率和质量
 
         Returns:
             Dict: 包含缓存命中率、质量分布、过期状态等信息
         """
+        if not self.db_session:
+            return {
+                "hit_rate": 0.0,
+                "fresh_communities": 0,
+                "stale_communities": 0,
+                "missing_communities": len(communities),
+                "total_cached_posts": 0,
+                "average_quality": 0.5,
+                "cached_records": {},
+            }
+
         cache_query = select(CommunityCache).where(
             CommunityCache.community_name.in_(communities)
         )
@@ -216,8 +252,8 @@ class DataCollectionService:
         }
 
     def _determine_collection_strategy(
-        self, cache_analysis: Dict, config: CollectionConfig
-    ) -> Dict:
+        self, cache_analysis: dict[str, Any], config: CollectionConfig
+    ) -> dict[str, Any]:
         """确定数据采集策略
 
         基于PRD-03的缓存优先原则和Linus的简洁设计：
@@ -253,8 +289,8 @@ class DataCollectionService:
         return strategy
 
     def _create_collection_tasks(
-        self, strategy: Dict, config: CollectionConfig
-    ) -> List:
+        self, strategy: dict[str, Any], config: CollectionConfig
+    ) -> list[Any]:
         """创建并发采集任务列表
 
         统一任务类型：每个任务都返回 DataSourceResult
@@ -323,8 +359,27 @@ class DataCollectionService:
 
             return fallback_result
 
-        except Exception as e:
-            logger.error(f"采集社区 {community} 数据失败: {str(e)}")
+        except asyncio.CancelledError:
+            raise
+        except (RedisError, json.JSONDecodeError, TypeError, ValueError) as e:
+            logger.error("采集社区 %s 数据失败（解析/缓存）: %s", community, e)
+            return DataSourceResult(
+                posts=[],
+                source_type="error",
+                communities_covered=[],
+                coverage_rate=0.0,
+                fetch_time_seconds=time.time() - start_time,
+                error_message=str(e),
+            )
+        except (
+            httpx.HTTPError,
+            aiohttp.ClientError,
+            asyncio.TimeoutError,
+            SQLAlchemyError,
+            ValueError,
+            TypeError,
+        ) as e:
+            logger.error("采集社区 %s 数据失败: %s", community, e)
             return DataSourceResult(
                 posts=[],
                 source_type="error",
@@ -341,6 +396,16 @@ class DataCollectionService:
         cache_key = f"community:posts:{community}"
 
         try:
+            if not self.redis_client:
+                return DataSourceResult(
+                    posts=[],
+                    source_type="cache_error",
+                    communities_covered=[],
+                    coverage_rate=0.0,
+                    fetch_time_seconds=0.0,
+                    error_message="Redis未初始化",
+                )
+
             cached_data = await self.redis_client.get(cache_key)
             if not cached_data:
                 return DataSourceResult(
@@ -352,14 +417,21 @@ class DataCollectionService:
                 )
 
             posts_data = json.loads(cached_data)
-            posts = [
-                RedditPost(**post_data) for post_data in posts_data.get("posts", [])
-            ]
+            raw_posts = posts_data.get("posts", [])
+            posts: List[RedditPost] = []
+            if isinstance(raw_posts, list):
+                for post_data in raw_posts:
+                    try:
+                        posts.append(RedditPost(**cast(dict[str, Any], post_data)))
+                    except (TypeError, ValueError) as parse_err:
+                        logger.debug("跳过无效帖子数据: %s", parse_err)
+                        continue
 
             # 检查数据新鲜度
             cache_timestamp = posts_data.get("cached_at", 0)
-            age_hours = (time.time() - cache_timestamp) / 3600
-            freshness = max(0.0, 1.0 - (age_hours / 24))  # 24小时内线性衰减
+            age_hours_raw = (time.time() - cache_timestamp) / 3600
+            age_hours = float(age_hours_raw) if isinstance(age_hours_raw, (int, float)) else 0.0
+            freshness = max(0.0, 1.0 - (age_hours / 24.0))  # 24小时内线性衰减
 
             return DataSourceResult(
                 posts=posts,
@@ -370,8 +442,18 @@ class DataCollectionService:
                 cache_hit_rate=1.0 if posts else 0.0,
             )
 
-        except Exception as e:
-            logger.warning(f"缓存读取失败 {community}: {str(e)}")
+        except (json.JSONDecodeError, TypeError, ValueError) as e:
+            logger.warning("缓存JSON解析失败 %s: %s", community, e)
+            return DataSourceResult(
+                posts=[],
+                source_type="cache_error",
+                communities_covered=[],
+                coverage_rate=0.0,
+                fetch_time_seconds=0.0,
+                error_message=str(e),
+            )
+        except RedisError as e:
+            logger.warning("缓存读取失败 %s: %s", community, e)
             return DataSourceResult(
                 posts=[],
                 source_type="cache_error",
@@ -384,6 +466,7 @@ class DataCollectionService:
     async def _fetch_from_api(self, community: str, max_posts: int) -> DataSourceResult:
         """从Reddit API获取社区数据"""
         try:
+            assert self.reddit_client is not None, "reddit_client not initialized"
             posts = await self.reddit_client.get_community_posts(
                 subreddit=community, limit=max_posts, time_filter="day", sort="hot"
             )
@@ -397,8 +480,18 @@ class DataCollectionService:
                 cache_hit_rate=0.0,
             )
 
-        except Exception as e:
-            logger.error(f"API调用失败 {community}: {str(e)}")
+        except (asyncio.TimeoutError, httpx.HTTPError, aiohttp.ClientError) as e:
+            logger.error("API调用失败 %s: %s", community, e)
+            return DataSourceResult(
+                posts=[],
+                source_type="api_error",
+                communities_covered=[],
+                coverage_rate=0.0,
+                fetch_time_seconds=0.0,
+                error_message=str(e),
+            )
+        except (ValueError, TypeError, KeyError, RuntimeError) as e:
+            logger.error("API调用未知错误 %s: %s", community, e)
             return DataSourceResult(
                 posts=[],
                 source_type="api_error",
@@ -408,38 +501,45 @@ class DataCollectionService:
                 error_message=str(e),
             )
 
-    async def _update_community_cache(self, community: str, posts: List[RedditPost]):
+    async def _update_community_cache(
+        self, community: str, posts: List[RedditPost]
+    ) -> None:
         """更新社区缓存数据"""
         try:
             # 更新Redis缓存
             cache_key = f"community:posts:{community}"
             cache_data = {
-                "posts": [asdict(post) for post in posts],
+                "posts": [post.dict() for post in posts],
                 "cached_at": time.time(),
                 "community": community,
                 "total_posts": len(posts),
             }
 
-            await self.redis_client.setex(
-                cache_key, 3600, json.dumps(cache_data)  # 1小时TTL
-            )
+            if self.redis_client:
+                await self.redis_client.setex(cache_key, 3600, json.dumps(cache_data))
 
             # 更新数据库元数据
-            update_stmt = (
-                update(CommunityCache)
-                .where(CommunityCache.community_name == community)
-                .values(
-                    posts_cached=len(posts),
-                    last_crawled_at=datetime.utcnow(),
-                    quality_score=Decimal("0.8"),  # API数据质量较高
+            if self.db_session:
+                update_stmt = (
+                    update(CommunityCache)
+                    .where(CommunityCache.community_name == community)
+                    .values(
+                        posts_cached=len(posts),
+                        last_crawled_at=datetime.utcnow(),
+                        quality_score=Decimal("0.8"),  # API数据质量较高
+                    )
                 )
-            )
 
-            await self.db_session.execute(update_stmt)
-            await self.db_session.commit()
+                await self.db_session.execute(update_stmt)
+                if self.db_session is not None:
+                    await self.db_session.commit()
 
-        except Exception as e:
-            logger.error(f"更新缓存失败 {community}: {str(e)}")
+        except RedisError as e:
+            logger.error("更新Redis缓存失败 %s: %s", community, e)
+        except SQLAlchemyError as e:
+            logger.error("更新数据库缓存元数据失败 %s: %s", community, e)
+        except (ValueError, TypeError, json.JSONDecodeError) as e:
+            logger.error("更新缓存未知错误 %s: %s", community, e)
 
     async def _merge_and_clean_results(
         self,
@@ -464,7 +564,7 @@ class DataCollectionService:
 
                 if result.source_type == "api":
                     total_api_calls += 1
-                elif result.source_type == "cache" and result.cache_hit_rate > 0:
+                elif result.source_type == "cache" and (result.cache_hit_rate or 0.0) > 0.0:
                     cache_hits += 1
 
                 if result.error_message:
@@ -523,8 +623,8 @@ class DataCollectionService:
         return clean_posts
 
     async def _update_cache_statistics(
-        self, cache_analysis: Dict, result: DataCollectionResult
-    ):
+        self, cache_analysis: dict[str, Any], result: DataCollectionResult
+    ) -> None:
         """更新缓存统计信息"""
         try:
             # 更新缓存命中统计
@@ -533,13 +633,14 @@ class DataCollectionService:
             ].items():
                 cache_record.increment_hit_count()
 
-            await self.db_session.commit()
-            logger.debug(
-                f"已更新 {len(cache_analysis['cached_records'])} 个社区的缓存统计"
-            )
+            if self.db_session is not None:
+                await self.db_session.commit()
+            logger.debug(f"已更新 {len(cache_analysis['cached_records'])} 个社区的缓存统计")
 
-        except Exception as e:
-            logger.error(f"更新缓存统计失败: {str(e)}")
+        except SQLAlchemyError as e:
+            logger.error("更新缓存统计数据库操作失败: %s", e)
+        except (ValueError, RuntimeError) as e:
+            logger.error("更新缓存统计未知异常: %s", e)
 
 
 # 工厂函数：简化服务使用

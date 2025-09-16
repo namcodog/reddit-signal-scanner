@@ -11,23 +11,28 @@ PRD02-02 + PRD04-02集成实现：
 import time
 import uuid
 from datetime import datetime, timezone
-from fastapi import APIRouter, HTTPException, Depends, status
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.exc import SQLAlchemyError
+import logging
 
-from ...api.models import SuccessResponse, ResponseStatus
-from ...schemas.task import AnalyzeRequest, AnalyzeResponse, TaskInfo, TaskStatus
-from ...schemas.task_producer import TaskSubmissionRequest
-from ...core.validation import ContentValidator
-from ...core.database import get_db
-from ...core.task_manager import get_task_manager, TaskManager
-from ...core.user_context import (
-    get_anonymous_user_context,
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.database import get_db
+from app.core.task_manager import TaskManager, get_task_manager
+from app.core.user_context import (  # 新增：用户上下文导入
     UserContext,
-)  # 新增：用户上下文导入
-from ...models.task import Task as TaskModel
+    get_anonymous_user_context,
+)
+from app.core.validation import ContentValidator
+from app.models.task import Task as TaskModel
+from app.schemas.common.responses import ResponseStatus, SuccessResponse
+from app.schemas.task import AnalyzeRequest, AnalyzeResponse, TaskInfo, TaskStatus
+from app.schemas.task_producer import TaskSubmissionRequest
 
 router = APIRouter(prefix="/analyze", tags=["分析任务"])
+
+# module-level logger for type safety and consistency
+logger = logging.getLogger(__name__)
 
 
 @router.post("/", response_model=AnalyzeResponse, summary="创建分析任务")
@@ -35,9 +40,7 @@ async def create_analysis_task(
     request: AnalyzeRequest,
     db: AsyncSession = Depends(get_db),
     task_manager: TaskManager = Depends(get_task_manager),  # 任务管理器依赖
-    user_context: UserContext = Depends(
-        get_anonymous_user_context
-    ),  # 新增：用户上下文依赖
+    user_context: UserContext = Depends(get_anonymous_user_context),  # 新增：用户上下文依赖
 ) -> AnalyzeResponse:
     """
     创建Reddit信号分析任务 - PRD02-02 + PRD04-02集成实现
@@ -68,7 +71,7 @@ async def create_analysis_task(
     """
 
     # Linus修复：从TaskConfig获取配置参数
-    from ...schemas.task_producer import TaskConfig
+    from app.schemas.task_producer import TaskConfig
 
     config = TaskConfig.default_config()
 
@@ -91,7 +94,9 @@ async def create_analysis_task(
                 "user_type": (
                     "system"
                     if user_context.is_system_user
-                    else "anonymous" if user_context.is_anonymous else "authenticated"
+                    else "anonymous"
+                    if user_context.is_anonymous
+                    else "authenticated"
                 ),
             },
         )
@@ -150,9 +155,6 @@ async def create_analysis_task(
         )
     except SQLAlchemyError as e:
         # 数据库操作失败 (PRD02-02)
-        import logging
-
-        logger = logging.getLogger(__name__)
         logger.error(f"数据库操作失败: {e}", exc_info=True)
 
         raise HTTPException(
@@ -162,9 +164,6 @@ async def create_analysis_task(
     except Exception as e:
         # 任务提交失败或其他未预期错误 (PRD04-02新增处理)
         # 记录详细错误信息用于调试
-        import logging
-
-        logger = logging.getLogger(__name__)
         logger.error(f"任务创建失败: {e}", exc_info=True)
 
         raise HTTPException(

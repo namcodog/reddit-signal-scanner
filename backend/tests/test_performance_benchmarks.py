@@ -230,9 +230,7 @@ class TestPerformanceBenchmarks:
 
         # 性能断言
         assert avg_time < 100.0, f"Analysis写入平均耗时{avg_time:.1f}ms，超过100ms目标"
-        assert (
-            max_time < 200.0
-        ), f"Analysis写入最大耗时{max_time:.1f}ms，超过200ms可接受范围"
+        assert max_time < 200.0, f"Analysis写入最大耗时{max_time:.1f}ms，超过200ms可接受范围"
 
         await db_session.rollback()
 

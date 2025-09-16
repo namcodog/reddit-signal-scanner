@@ -1,0 +1,19 @@
+# 精简版爬虫配置 - PRD03-06 平衡实现
+# Linus原则：Convention over Configuration
+
+crawler:
+  # 核心调度参数
+  schedule_interval: 5      # 分钟 - 每5分钟执行一次
+  batch_size: 3            # 每批爬取社区数量
+  
+  # API管理
+  api_rate_limit: 15       # 请求/分钟 (远低于Reddit 60限制)
+  post_limit: 50           # 每个社区获取帖子数
+  
+  # 缓存TTL
+  posts_ttl: 3600          # 帖子缓存1小时
+  meta_ttl: 86400          # 元数据缓存24小时
+  
+  # Celery配置  
+  queue_name: "crawler_queue"
+  task_priority: 6

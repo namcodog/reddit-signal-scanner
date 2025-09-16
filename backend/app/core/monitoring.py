@@ -9,14 +9,14 @@
 - 指标收集和上报
 """
 
-import logging
-import time
-from datetime import datetime, timezone, timedelta
-from typing import Dict, List, Optional, Any, Callable
-from enum import Enum
-from dataclasses import dataclass, field
 import asyncio
 import json
+import logging
+import time
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
+from enum import Enum
+from typing import Any, Callable, Dict, List, Optional, TypedDict
 
 from ..core.config import get_settings
 
@@ -41,6 +41,48 @@ class MetricType(Enum):
     TIMER = "timer"  # 计时器
 
 
+class AlertDetails(TypedDict, total=False):
+    metric: str
+    value: float
+    timeout_count: int
+    rate: float
+    route: str
+    duration_ms: float
+    target_ms: float
+    excess_factor: float
+    table: str
+    duration: float
+    threshold: float
+    category: str
+    error: str
+
+
+class RecentAlerts(TypedDict):
+    critical: int
+    error: int
+    warning: int
+    info: int
+
+
+class HealthStatusSummary(TypedDict):
+    status: str
+    timestamp: str
+    metrics_count: int
+    active_alerts: int
+    recent_alerts: RecentAlerts
+
+
+class MetricSummary(TypedDict):
+    count: int
+    avg: float
+    min: float
+    max: float
+    latest: float
+
+
+MetricsSummary = Dict[str, MetricSummary]
+
+
 @dataclass
 class Alert:
     """告警数据结构"""
@@ -49,7 +91,7 @@ class Alert:
     level: AlertLevel
     service: str
     message: str
-    details: Dict[str, Any]
+    details: AlertDetails
     timestamp: datetime
     resolved: bool = False
     resolved_at: Optional[datetime] = None
@@ -77,14 +119,14 @@ class MonitoringService:
     - 性能监控
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.settings = get_settings()
         self.metrics: Dict[str, List[Metric]] = {}
         self.active_alerts: Dict[str, Alert] = {}
         self.alert_handlers: List[Callable[[Alert], None]] = []
         self._setup_default_handlers()
 
-    def _setup_default_handlers(self):
+    def _setup_default_handlers(self) -> None:
         """设置默认的告警处理器"""
         self.alert_handlers.append(self._log_alert)
 
@@ -125,7 +167,7 @@ class MonitoringService:
         level: AlertLevel,
         service: str,
         message: str,
-        details: Optional[Dict[str, Any]] = None,
+        details: Optional[AlertDetails] = None,
     ) -> str:
         """发送告警"""
         try:
@@ -172,7 +214,7 @@ class MonitoringService:
             logger.error(f"解决告警失败: {e}")
             return False
 
-    def get_health_status(self) -> Dict[str, Any]:
+    def get_health_status(self) -> HealthStatusSummary:
         """获取系统健康状态"""
         try:
             now = datetime.now(timezone.utc)
@@ -222,17 +264,20 @@ class MonitoringService:
 
         except Exception as e:
             logger.error(f"获取健康状态失败: {e}")
+            # 回退到最小可用健康摘要，避免类型不匹配
             return {
                 "status": "unknown",
                 "timestamp": datetime.now(timezone.utc).isoformat(),
-                "error": str(e),
+                "metrics_count": 0,
+                "active_alerts": 0,
+                "recent_alerts": {"critical": 0, "error": 0, "warning": 0, "info": 0},
             }
 
-    def get_metrics_summary(self, hours: int = 1) -> Dict[str, Any]:
+    def get_metrics_summary(self, hours: int = 1) -> MetricsSummary:
         """获取指标摘要"""
         try:
             cutoff_time = datetime.now(timezone.utc) - timedelta(hours=hours)
-            summary = {}
+            summary: MetricsSummary = {}
 
             for name, metrics in self.metrics.items():
                 recent_metrics = [m for m in metrics if m.timestamp >= cutoff_time]
@@ -253,7 +298,7 @@ class MonitoringService:
             logger.error(f"获取指标摘要失败: {e}")
             return {}
 
-    def _check_metric_alerts(self, metric: Metric):
+    def _check_metric_alerts(self, metric: Metric) -> None:
         """检查指标是否触发告警"""
         try:
             # 数据清理相关的告警规则
@@ -284,7 +329,7 @@ class MonitoringService:
                         AlertLevel.ERROR,
                         "cleanup_locks",
                         "清理锁获取超时",
-                        {"metric": metric.name, "timeout_count": metric.value},
+                        {"metric": metric.name, "timeout_count": int(metric.value)},
                     )
 
             elif metric.name == "cleanup_failure_rate":
@@ -348,7 +393,7 @@ class MonitoringService:
         except Exception as e:
             logger.error(f"检查指标告警失败: {e}")
 
-    def _log_alert(self, alert: Alert):
+    def _log_alert(self, alert: Alert) -> None:
         """日志告警处理器"""
         log_message = f"[{alert.level.value.upper()}] {alert.service}: {alert.message}"
 
@@ -361,7 +406,7 @@ class MonitoringService:
         else:
             logger.info(log_message, extra={"alert_details": alert.details})
 
-    def cleanup_old_data(self, days: int = 7):
+    def cleanup_old_data(self, days: int = 7) -> None:
         """清理旧的监控数据"""
         try:
             cutoff_time = datetime.now(timezone.utc) - timedelta(days=days)
@@ -387,9 +432,7 @@ class MonitoringService:
             for alert_id in old_alert_ids:
                 del self.active_alerts[alert_id]
 
-            logger.info(
-                f"清理监控数据完成: {cleaned_metrics} 个指标, {len(old_alert_ids)} 个告警"
-            )
+            logger.info(f"清理监控数据完成: {cleaned_metrics} 个指标, {len(old_alert_ids)} 个告警")
 
         except Exception as e:
             logger.error(f"清理监控数据失败: {e}")
@@ -425,25 +468,25 @@ def send_alert(
     level: AlertLevel,
     service: str,
     message: str,
-    details: Optional[Dict[str, Any]] = None,
+    details: Optional[AlertDetails] = None,
 ) -> str:
     """发送告警的便捷函数"""
     monitoring_service = get_monitoring_service()
     return monitoring_service.send_alert(level, service, message, details)
 
 
-def get_health_status() -> Dict[str, Any]:
+def get_health_status() -> HealthStatusSummary:
     """获取健康状态的便捷函数"""
     service = get_monitoring_service()
     return service.get_health_status()
 
 
 # 监控装饰器
-def monitor_execution_time(metric_name: str):
+def monitor_execution_time(metric_name: str) -> Callable[..., Any]:
     """监控函数执行时间的装饰器"""
 
-    def decorator(func):
-        def wrapper(*args, **kwargs):
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             start_time = time.time()
             try:
                 result = func(*args, **kwargs)
@@ -460,11 +503,11 @@ def monitor_execution_time(metric_name: str):
     return decorator
 
 
-def monitor_cleanup_operation(category: str):
+def monitor_cleanup_operation(category: str) -> Callable[..., Any]:
     """监控清理操作的装饰器"""
 
-    def decorator(func):
-        def wrapper(*args, **kwargs):
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             start_time = time.time()
 
             try:

@@ -12,19 +12,21 @@ from typing import Any, Dict
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from ...database import get_db
-from ...models import ReportResponse, ResponseStatus, SuccessResponse
-from ...services.report_formatter import get_formatted_report
+from ....core.database import get_session_sync
+from ....core.config import get_settings
+from ....schemas.contracts.report_contract import InsightItem
+from ....services.report_formatter import get_formatted_report
+from ....schemas.common.responses import ResponseStatus, SuccessResponse
+from ....schemas.contracts.report_contract import ReportData
 
 router = APIRouter(prefix="/report", tags=["分析报告"])
 
 
-@router.get("/{task_id}", response_model=ReportResponse, summary="获取分析报告")
+@router.get("/{task_id}", response_model=SuccessResponse, summary="获取分析报告")
 async def get_analysis_report(
     task_id: str,
     format: str = Query(default="full", description="报告格式：full/summary/insights"),
-    db: Session = Depends(get_db),
-) -> ReportResponse:
+) -> SuccessResponse:
     """
     获取指定任务的分析报告
 
@@ -50,26 +52,48 @@ async def get_analysis_report(
         )
 
     try:
-        # 使用报告格式化服务获取真实数据
-        report_data = get_formatted_report(db, task_id, format)
+        # 使用同步会话获取类型安全的数据（避免AsyncSession不兼容query接口）
+        db = get_session_sync()
+        try:
+            report = get_formatted_report(db, task_id, format)
+        finally:
+            db.close()
 
-        # 统一响应格式 - 消除特殊情况
-        if report_data.get("success"):
-            return ReportResponse(
-                status=ResponseStatus.SUCCESS,
-                message=f"分析报告获取成功（{format}格式）",
-                timestamp=report_data["timestamp"],
-                data=report_data["data"],
-            )
-        else:
-            # 数据不存在的情况
-            raise HTTPException(
-                status_code=404, detail=report_data.get("message", "未找到分析报告")
-            )
+        signal = ReportData(
+            task_id=report.task_id,
+            query=report.query,
+            total_posts=report.total_posts,
+            total_comments=report.total_comments,
+            analysis_duration=report.analysis_duration,
+            key_insights=[
+                InsightItem(
+                    title=it.title,
+                    content=it.content,
+                    confidence=it.confidence,
+                    source_count=it.source_count,
+                    tags=it.tags,
+                )
+                for it in report.key_insights
+            ],
+            sentiment_summary=report.sentiment_summary,
+            trending_topics=report.trending_topics,
+            user_personas=report.user_personas,
+            generated_at=report.generated_at,
+            data_freshness=report.data_freshness,
+        )
+
+        return SuccessResponse(
+            status=ResponseStatus.SUCCESS,
+            message=f"分析报告获取成功（{format}格式）",
+            timestamp=report.generated_at,
+            data=signal,
+        )
 
     except ValueError as e:
         # 参数格式错误
         raise HTTPException(status_code=400, detail=str(e))
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     except RuntimeError as e:
         # 数据库查询错误
         raise HTTPException(status_code=500, detail=str(e))
@@ -82,7 +106,6 @@ async def get_analysis_report(
 async def export_analysis_report(
     task_id: str,
     format: str = Query(default="json", description="导出格式：json/pdf/csv"),
-    db: Session = Depends(get_db),
 ) -> SuccessResponse:
     """
     导出分析报告到指定格式
@@ -102,21 +125,19 @@ async def export_analysis_report(
 
     # 参数验证
     if format not in ["json", "pdf", "csv"]:
-        raise HTTPException(
-            status_code=400, detail="不支持的导出格式，支持: json/pdf/csv"
-        )
+        raise HTTPException(status_code=400, detail="不支持的导出格式，支持: json/pdf/csv")
 
     try:
         # 验证任务是否存在
-        report_data = get_formatted_report(db, task_id, "full")
-
-        if not report_data.get("success"):
-            raise HTTPException(status_code=404, detail="任务不存在，无法导出报告")
+        db = get_session_sync()
+        try:
+            _ = get_formatted_report(db, task_id, "full")
+        finally:
+            db.close()
 
         # Mock导出链接（TODO: 实现真实导出服务）
-        download_url = (
-            f"/api/v1/report/{task_id}/download?format={format}&token=export_token"
-        )
+        settings = get_settings()
+        download_url = f"{settings.api_prefix}/report/{task_id}/download?format={format}&token=export_token"
 
         from datetime import datetime, timezone
 
@@ -135,6 +156,8 @@ async def export_analysis_report(
             },
         )
 
+    except LookupError:
+        raise HTTPException(status_code=404, detail="任务不存在，无法导出报告")
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except RuntimeError as e:

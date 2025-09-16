@@ -48,9 +48,7 @@ class PRD0110DryRunValidator:
                 missing_files.append(file_path)
 
         if missing_files:
-            return ValidationResult(
-                "文件存在性验证", "FAILED", f"缺少文件: {missing_files}"
-            )
+            return ValidationResult("文件存在性验证", "FAILED", f"缺少文件: {missing_files}")
         else:
             print("   ✅ 所有测试文件存在")
             return ValidationResult("文件存在性验证", "PASSED")
@@ -78,9 +76,7 @@ class PRD0110DryRunValidator:
                     test_methods_found += test_count
                     print(f"   📊 {test_type}: {test_count} 个测试方法")
             except Exception as e:
-                return ValidationResult(
-                    "测试结构验证", "FAILED", f"读取文件失败 {file_path}: {e}"
-                )
+                return ValidationResult("测试结构验证", "FAILED", f"读取文件失败 {file_path}: {e}")
 
         print(f"   📈 总计发现 {test_methods_found} 个测试方法")
 
@@ -250,12 +246,9 @@ class PRD0110DryRunValidator:
 
         compliance_checks = {
             "Schema测试": "test_" in test_content and "schema" in test_content.lower(),
-            "数据完整性测试": "integrity" in test_content.lower()
-            or "完整性" in test_content,
-            "性能基准测试": "performance" in test_content.lower()
-            or "性能" in test_content,
-            "多租户隔离测试": "tenant" in test_content.lower()
-            or "租户" in test_content,
+            "数据完整性测试": "integrity" in test_content.lower() or "完整性" in test_content,
+            "性能基准测试": "performance" in test_content.lower() or "性能" in test_content,
+            "多租户隔离测试": "tenant" in test_content.lower() or "租户" in test_content,
         }
 
         passed_requirements = sum(compliance_checks.values())
@@ -331,9 +324,7 @@ class PRD0110DryRunValidator:
                     else "❌"
                 ),
                 "production_readiness": (
-                    "🔶 需要实际数据库测试"
-                    if overall_success_rate >= 80
-                    else "❌ 需要改进代码质量"
+                    "🔶 需要实际数据库测试" if overall_success_rate >= 80 else "❌ 需要改进代码质量"
                 ),
             },
             "next_steps": self._generate_next_steps(validations, overall_success_rate),

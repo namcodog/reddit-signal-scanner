@@ -3,21 +3,31 @@ TF-IDF关键词提取器 - 智能社区发现核心组件
 基于PRD03-02架构设计，实现高精度关键词提取与产品类型识别
 """
 
-from typing import Dict, List, Set, Optional, Tuple
+import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from types import ModuleType
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
+
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-import numpy as np
-import json
-import os
-import logging
 
+from ..core.types import JsonValue
+
+yaml: Optional[ModuleType]
 try:
-    import yaml
+    import yaml as _yaml
+
+    yaml = _yaml
+    yaml_available: bool = True
 except ImportError:
     yaml = None
+    yaml_available = False
+
+
+# Pydantic响应模型和适配器导入
+from ..schemas.responses.algorithm import AlgorithmMetadataResponse
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +54,7 @@ class KeywordExtractor:
     4. 同义词扩展
     """
 
-    def __init__(self, config_path: Optional[str] = None):
+    def __init__(self, config_path: Optional[str] = None) -> None:
         """
         初始化关键词提取器
 
@@ -186,7 +196,7 @@ class KeywordExtractor:
         if not type_scores or max(type_scores.values()) == 0:
             return "general"
 
-        return max(type_scores, key=type_scores.get)
+        return max(type_scores, key=lambda x: type_scores[x])
 
     def _extract_domain_keywords(
         self, text: str, product_type: str, max_keywords: int
@@ -280,15 +290,14 @@ class KeywordExtractor:
 
         return min(1.0, confidence)
 
-    def _train_tfidf_model(self):
+    def _train_tfidf_model(self) -> None:
         """训练TF-IDF模型"""
         training_corpus = self._load_training_corpus()
 
         try:
             self.tfidf_vectorizer.fit(training_corpus)
             logger.debug(
-                f"TF-IDF模型训练完成，词汇表大小: "
-                f"{len(self.tfidf_vectorizer.vocabulary_)}"
+                f"TF-IDF模型训练完成，词汇表大小: " f"{len(self.tfidf_vectorizer.vocabulary_)}"
             )
         except Exception as e:
             logger.error(f"TF-IDF模型训练失败: {e}")
@@ -298,13 +307,19 @@ class KeywordExtractor:
         training_file = Path("backend/data/training_corpus.yaml")
 
         try:
-            if yaml is None:
+            if not yaml_available:
                 logger.warning("PyYAML未安装，使用默认语料")
                 return self._get_default_corpus()
 
             with open(training_file, "r", encoding="utf-8") as f:
+                assert yaml is not None
                 data = yaml.safe_load(f)
-                return data.get("training_samples", self._get_default_corpus())
+                # 确保返回正确的类型
+                if isinstance(data, dict) and "training_samples" in data:
+                    samples = data["training_samples"]
+                    if isinstance(samples, list):
+                        return samples
+                return self._get_default_corpus()
         except Exception as e:
             logger.warning(f"训练语料文件加载失败: {e}，使用默认语料")
             return self._get_default_corpus()
@@ -518,17 +533,28 @@ class KeywordExtractor:
             confidence=0.0,
         )
 
-    def get_algorithm_metadata(self) -> Dict:
-        """获取算法元数据信息"""
-        return {
-            "algorithm_name": "TF-IDF + Domain Dictionary",
-            "version": "1.0.0",
-            "tfidf_features": (
+    def get_algorithm_metadata(
+        self,
+    ) -> Union[dict[str, "JsonValue"], AlgorithmMetadataResponse]:
+        """获取算法元数据信息 - 支持类型安全响应
+
+        Returns:
+            AlgorithmMetadataResponse: 算法元数据的类型安全响应模型
+
+        Note:
+            为保持向后兼容，返回类型仍支持Dict[str, Any]，
+            但实际返回AlgorithmMetadataResponse实例，可通过适配器转换
+        """
+        # 创建类型安全的响应模型
+        return AlgorithmMetadataResponse(
+            algorithm_name="TF-IDF + Domain Dictionary",
+            version="1.0.0",
+            tfidf_features=(
                 len(self.tfidf_vectorizer.vocabulary_)
                 if hasattr(self.tfidf_vectorizer, "vocabulary_")
                 else 0
             ),
-            "domain_categories": len(self.domain_keywords),
-            "product_types": len(self.product_type_patterns),
-            "synonym_mappings": len(self.synonym_mapping),
-        }
+            domain_categories=len(self.domain_keywords),
+            product_types=len(self.product_type_patterns),
+            synonym_mappings=len(self.synonym_mapping),
+        )

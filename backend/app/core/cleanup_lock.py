@@ -8,11 +8,13 @@
 import logging
 import time
 from contextlib import contextmanager
-from typing import Optional, Any
-import redis
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from typing import Any, Callable, Dict, Optional, cast
 
-from .config import settings
+import redis
+
+from .config import get_settings
+from .types import JsonValue, RedisProtocol
 
 logger = logging.getLogger(__name__)
 
@@ -34,28 +36,30 @@ class CleanupLock:
     - 优雅处理锁竞争情况
     """
 
-    def __init__(self, redis_client: Optional[redis.Redis] = None):
+    def __init__(self, redis_client: Optional[RedisProtocol] = None) -> None:
         self.redis_client = redis_client or self._get_redis_client()
         self.lock_key = "cleanup:execution_lock"
         self.lock_timeout = 3600  # 1小时超时
         self.retry_delay = 1.0  # 重试间隔
         self.max_retries = 3  # 最大重试次数
 
-    def _get_redis_client(self) -> redis.Redis:
+    def _get_redis_client(self) -> RedisProtocol:
         """获取Redis客户端"""
         try:
-            return redis.from_url(
-                settings.REDIS_URL,
-                decode_responses=True,
-                socket_timeout=5.0,
-                socket_connect_timeout=5.0,
-            )
+            settings = get_settings()
+            redis_from_url: Any = redis.from_url
+            client_any = redis_from_url(settings.redis_url, decode_responses=True)
+            return cast(RedisProtocol, client_any)
         except Exception as e:
             logger.error(f"连接Redis失败: {e}")
             raise CleanupLockError(f"无法连接Redis: {e}")
 
     @contextmanager
-    def acquire(self, timeout: Optional[int] = None, task_info: Optional[dict] = None):
+    def acquire(
+        self,
+        timeout: Optional[int] = None,
+        task_info: Optional[dict[str, JsonValue]] = None,
+    ) -> Any:
         """
         获取清理锁 - 上下文管理器
 
@@ -111,7 +115,8 @@ class CleanupLock:
         """尝试获取锁"""
         try:
             # 使用SET NX EX原子操作
-            result = self.redis_client.set(
+            client_any: Any = self.redis_client
+            result = client_any.set(
                 self.lock_key,
                 lock_value,
                 nx=True,  # 仅当key不存在时设置
@@ -134,22 +139,25 @@ class CleanupLock:
         """
 
         try:
-            result = self.redis_client.eval(lua_script, 1, self.lock_key, lock_value)
+            client_any: Any = self.redis_client
+            result = client_any.eval(lua_script, 1, self.lock_key, lock_value)
             return bool(result)
 
         except redis.RedisError as e:
             logger.error(f"Redis释放锁失败: {e}")
             return False
 
-    def _generate_lock_value(self, task_info: Optional[dict] = None) -> str:
+    def _generate_lock_value(
+        self, task_info: Optional[dict[str, JsonValue]] = None
+    ) -> str:
         """生成锁值"""
-        import uuid
         import socket
+        import uuid
 
         lock_value = {
             "lock_id": str(uuid.uuid4())[:8],
             "hostname": socket.gethostname(),
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "task_info": task_info or {},
         }
 
@@ -162,7 +170,7 @@ class CleanupLock:
         except redis.RedisError:
             return False
 
-    def get_lock_info(self) -> Optional[dict]:
+    def get_lock_info(self) -> Optional[dict[str, JsonValue]]:
         """获取当前锁信息"""
         try:
             lock_value = self.redis_client.get(self.lock_key)
@@ -171,12 +179,18 @@ class CleanupLock:
 
             ttl = self.redis_client.ttl(self.lock_key)
 
+            expires_at_val: Optional[str]
+            if ttl > 0:
+                expires_at_val = (
+                    datetime.now(timezone.utc) + timedelta(seconds=ttl)
+                ).isoformat()
+            else:
+                expires_at_val = None
+
             return {
                 "lock_value": lock_value,
                 "ttl_seconds": ttl,
-                "expires_at": (
-                    datetime.utcnow() + timedelta(seconds=ttl) if ttl > 0 else None
-                ),
+                "expires_at": expires_at_val,
             }
 
         except redis.RedisError as e:
@@ -210,9 +224,8 @@ class CleanupLock:
                 return False
 
             new_ttl = current_ttl + additional_time
-            result = self.redis_client.eval(
-                lua_script, 1, self.lock_key, lock_value, new_ttl
-            )
+            client_any: Any = self.redis_client
+            result = client_any.eval(lua_script, 1, self.lock_key, lock_value, new_ttl)
 
             logger.info(f"锁时间已延长: +{additional_time}秒")
             return bool(result)
@@ -234,14 +247,16 @@ def get_cleanup_lock() -> CleanupLock:
     return _cleanup_lock_instance
 
 
-def with_cleanup_lock(timeout: Optional[int] = None):
+def with_cleanup_lock(timeout: Optional[int] = None) -> Callable[..., Any]:
     """清理锁装饰器"""
 
-    def decorator(func):
-        def wrapper(*args, **kwargs):
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             cleanup_lock = get_cleanup_lock()
 
-            task_info = {
+            from typing import Dict as _Dict
+
+            task_info: _Dict[str, JsonValue] = {
                 "function": func.__name__,
                 "module": func.__module__,
                 "args_count": len(args),
@@ -257,7 +272,7 @@ def with_cleanup_lock(timeout: Optional[int] = None):
 
 
 # 便捷函数
-def check_cleanup_lock_status() -> dict:
+def check_cleanup_lock_status() -> dict[str, JsonValue]:
     """检查清理锁状态"""
     cleanup_lock = get_cleanup_lock()
 

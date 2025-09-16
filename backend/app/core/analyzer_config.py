@@ -8,31 +8,46 @@
 - 类型安全的配置获取
 """
 
-from pathlib import Path
-from typing import Optional, Dict, Any, Union
-import yaml
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Union, cast
+
+import yaml
+
+from .types import JsonValue
 
 
 @dataclass
 class StepConfig:
-    """步骤配置类 - 每个分析步骤的专用配置"""
+    """步骤配置类 - 每个分析步骤的专用配置
 
-    step_name: str
+    兼容旧参数：enabled、params
+    """
+
+    step_name: str = "data_collection"
     max_duration: float = 60.0
-    config_data: Dict[str, Any] = None
+    config_data: Optional[dict[str, JsonValue]] = None
+    enabled: bool = True
+    params: Optional[dict[str, JsonValue]] = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.config_data is None:
             self.config_data = {}
+        # 合并旧式 params 并落入统一 config_data
+        if self.params:
+            self.config_data.update(self.params)
+        # 统一保存 enabled 标志
+        self.config_data.setdefault("enabled", self.enabled)
 
     def get(self, key: str, default: Any = None) -> Any:
         """获取步骤配置值"""
+        if self.config_data is None:
+            return default
         return self.config_data.get(key, default)
 
     def __getattr__(self, name: str) -> Any:
         """支持属性访问方式"""
-        if name in self.config_data:
+        if self.config_data is not None and name in self.config_data:
             return self.config_data[name]
         raise AttributeError(f"配置项 '{name}' 不存在")
 
@@ -49,7 +64,7 @@ class ConfigManager:
     """
 
     _instance: Optional["ConfigManager"] = None
-    _config: Dict[str, Any] = {}
+    _config: dict[str, JsonValue] = {}
     _config_path: str = ""
 
     def __new__(cls) -> "ConfigManager":
@@ -107,7 +122,9 @@ class ConfigManager:
             raise RuntimeError("配置尚未加载，请先调用 load_config()")
 
         keys = key_path.split(".")
-        value = self._config
+        from typing import Any as _Any
+
+        value: _Any = self._config
 
         for key in keys:
             if isinstance(value, dict) and key in value:
@@ -126,8 +143,11 @@ class ConfigManager:
         Returns:
             StepConfig对象，包含该步骤的所有配置
         """
-        step_config_data = self.get(f"analysis_engine.{step_name}", {})
-        max_duration = step_config_data.get("max_duration", 60.0)
+        step_config_data = cast(
+            dict[str, JsonValue], self.get(f"analysis_engine.{step_name}", {})
+        )
+        _md = step_config_data.get("max_duration", 60.0)
+        max_duration = float(_md) if isinstance(_md, (int, float, str)) else 60.0
 
         return StepConfig(
             step_name=step_name, max_duration=max_duration, config_data=step_config_data
@@ -138,7 +158,7 @@ class ConfigManager:
         if self._config_path:
             self.load_config(self._config_path)
 
-    def get_all_step_names(self) -> list:
+    def get_all_step_names(self) -> List[str]:
         """获取所有配置的步骤名称"""
         engine_config = self.get("analysis_engine", {})
         return [
@@ -148,7 +168,7 @@ class ConfigManager:
             and "max_duration" in engine_config[key]
         ]
 
-    def validate_config(self) -> Dict[str, Any]:
+    def validate_config(self) -> dict[str, JsonValue]:
         """
         验证配置完整性
 
@@ -191,7 +211,12 @@ class ConfigManager:
         if step_durations > total_max:
             warnings.append(f"步骤总时长 {step_durations}s 超过总时长限制 {total_max}s")
 
-        return {"errors": errors, "warnings": warnings, "is_valid": len(errors) == 0}
+        result: dict[str, JsonValue] = {
+            "errors": cast(List[JsonValue], errors),
+            "warnings": cast(List[JsonValue], warnings),
+            "is_valid": len(errors) == 0,
+        }
+        return result
 
 
 # 全局配置管理器实例
@@ -203,7 +228,7 @@ def get_config() -> ConfigManager:
     return config_manager
 
 
-def load_default_config():
+def load_default_config() -> None:
     """加载默认配置 - 用于应用启动时"""
     try:
         config_manager.load_config()
@@ -212,11 +237,14 @@ def load_default_config():
         if not validation_result["is_valid"]:
             raise ValueError(f"配置验证失败: {validation_result['errors']}")
 
-        if validation_result["warnings"]:
+        if validation_result.get("warnings"):
             import logging
 
             logger = logging.getLogger(__name__)
-            for warning in validation_result["warnings"]:
+            from typing import cast as _cast
+
+            warnings_list = _cast(list[str], validation_result.get("warnings", []))
+            for warning in warnings_list:
                 logger.warning(f"配置警告: {warning}")
 
     except Exception as e:

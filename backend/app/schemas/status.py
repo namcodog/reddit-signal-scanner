@@ -8,10 +8,13 @@ Linus原则："数据结构决定一切"
 - 明确的验证规则和文档
 """
 
+from __future__ import annotations
+
 from typing import Annotated, Any, Dict, List, Optional, Union
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, ValidationInfo, field_validator
 
+from ..core.types import JsonDict, JsonValue
 
 # ===== 状态查询请求模式 =====
 
@@ -19,17 +22,13 @@ from pydantic import BaseModel, Field, validator
 class TaskStatusQueryRequest(BaseModel):
     """任务状态查询请求"""
 
-    task_id: str = Field(
-        ..., description="任务ID，UUID格式", min_length=4, max_length=100
-    )
+    task_id: str = Field(..., description="任务ID，UUID格式", min_length=4, max_length=100)
 
     include_guidance: bool = Field(default=True, description="是否包含轮询指导信息")
 
-    include_runtime_info: bool = Field(
-        default=False, description="是否包含运行时详细信息"
-    )
+    include_runtime_info: bool = Field(default=False, description="是否包含运行时详细信息")
 
-    @validator("task_id")
+    @field_validator("task_id")
     def validate_task_id_format(cls, v: str) -> str:
         """验证任务ID格式"""
         if not v or len(v.strip()) < 4:
@@ -46,11 +45,9 @@ class BatchStatusQueryRequest(BaseModel):
 
     limit: int = Field(default=10, description="查询限制数量", ge=1, le=50)
 
-    include_guidance: bool = Field(
-        default=False, description="批量查询时通常不包含指导信息"
-    )
+    include_guidance: bool = Field(default=False, description="批量查询时通常不包含指导信息")
 
-    @validator("task_ids")
+    @field_validator("task_ids")
     def validate_task_ids(cls, v: List[str]) -> List[str]:
         """验证任务ID列表"""
         if not v:
@@ -126,9 +123,7 @@ class ConnectionGuidance(BaseModel):
 class TaskRuntimeInfo(BaseModel):
     """任务运行时信息"""
 
-    runtime_seconds: Optional[int] = Field(
-        default=None, description="已运行时间（秒）", ge=0
-    )
+    runtime_seconds: Optional[int] = Field(default=None, description="已运行时间（秒）", ge=0)
 
     estimated_remaining_seconds: Optional[int] = Field(
         default=None, description="预估剩余时间（秒）", ge=0
@@ -144,7 +139,7 @@ class TaskRuntimeInfo(BaseModel):
 class TaskStatusExtended(BaseModel):
     """扩展的任务状态信息
 
-    基于api.models.TaskInfo，但添加了更多状态查询专用字段
+    基于通用任务模型，但添加了更多状态查询专用字段
     """
 
     task_id: str = Field(..., description="任务ID")
@@ -152,9 +147,7 @@ class TaskStatusExtended(BaseModel):
     progress: int = Field(default=0, ge=0, le=100, description="任务进度百分比")
     created_at: str = Field(..., description="创建时间")
     updated_at: str = Field(..., description="更新时间")
-    estimated_completion: Optional[str] = Field(
-        default=None, description="预估完成时间"
-    )
+    estimated_completion: Optional[str] = Field(default=None, description="预估完成时间")
     error_message: Optional[str] = Field(default=None, description="错误信息")
 
     # 状态查询专用扩展字段
@@ -162,15 +155,13 @@ class TaskStatusExtended(BaseModel):
         default=None, description="轮询指导信息"
     )
 
-    runtime_info: Optional[TaskRuntimeInfo] = Field(
-        default=None, description="运行时详细信息"
-    )
+    runtime_info: Optional[TaskRuntimeInfo] = Field(default=None, description="运行时详细信息")
 
     fallback_mode: bool = Field(default=False, description="是否为fallback模式")
 
     fallback_reason: Optional[str] = Field(default=None, description="fallback原因")
 
-    cache_info: Optional[Dict[str, Any]] = Field(default=None, description="缓存信息")
+    cache_info: Optional[JsonDict] = Field(default=None, description="缓存信息")
 
 
 # ===== 批量查询结果模式 =====
@@ -222,20 +213,34 @@ class UserTasksStatistics(BaseModel):
 
     total: int = Field(default=0, ge=0, description="总任务数")
 
-    active_tasks: int = Field(
-        default=0, ge=0, description="活跃任务数（pending + running）"
-    )
+    active_tasks: int = Field(default=0, ge=0, description="活跃任务数（pending + running）")
 
     last_activity: Optional[str] = Field(default=None, description="最近活动时间")
 
-    @validator("total")
-    def validate_total(cls, v: int, values: Dict[str, Any]) -> int:
+    @field_validator("total")
+    def validate_total(cls, v: int, info: ValidationInfo) -> int:
         """验证总数一致性"""
+        # Pydantic v2: 使用 ValidationInfo。info 可能未显式标注 data 属性，采用 getattr 安全获取。
+        raw_data = getattr(info, "data", {})
+        data: dict[str, object] = raw_data if isinstance(raw_data, dict) else {}
+
+        def to_int(val: object) -> int:
+            if isinstance(val, int):
+                return val
+            if isinstance(val, float):
+                return int(val)
+            if isinstance(val, str):
+                try:
+                    return int(val)
+                except ValueError:
+                    return 0
+            return 0
+
         expected_total = (
-            values.get("pending", 0)
-            + values.get("running", 0)
-            + values.get("completed", 0)
-            + values.get("failed", 0)
+            to_int(data.get("pending", 0))
+            + to_int(data.get("running", 0))
+            + to_int(data.get("completed", 0))
+            + to_int(data.get("failed", 0))
         )
 
         if v != expected_total:
@@ -279,15 +284,11 @@ class StatusQueryError(BaseModel):
     error_message: str = Field(..., description="错误消息")
     task_id: Optional[str] = Field(default=None, description="相关任务ID")
 
-    retry_guidance: Optional[RetryGuidance] = Field(
-        default=None, description="重试建议"
-    )
+    retry_guidance: Optional[RetryGuidance] = Field(default=None, description="重试建议")
 
     timestamp: str = Field(..., description="错误发生时间")
 
-    context: Optional[Dict[str, Any]] = Field(
-        default=None, description="错误上下文信息"
-    )
+    context: Optional[JsonDict] = Field(default=None, description="错误上下文信息")
 
 
 # ===== 响应包装器 =====
@@ -303,13 +304,9 @@ class StatusQueryResponse(BaseModel):
         Union[TaskStatusExtended, BatchStatusResult, UserTasksStatistics]
     ] = Field(default=None, description="响应数据")
 
-    error: Optional[StatusQueryError] = Field(
-        default=None, description="错误信息（失败时）"
-    )
+    error: Optional[StatusQueryError] = Field(default=None, description="错误信息（失败时）")
 
-    guidance: Optional[Dict[str, Any]] = Field(
-        default=None, description="客户端指导信息"
-    )
+    guidance: Optional[JsonDict] = Field(default=None, description="客户端指导信息")
 
 
 # ===== 验证和转换工具 =====
@@ -361,11 +358,38 @@ def create_polling_guidance(
     guidance = get_client_guidance()
     guidance_dict = guidance.get_polling_guidance(task_status, runtime_seconds)
 
+    # 为静态类型检查做显式转换，防止 JsonValue 导致的类型不匹配
+    should_poll_val = guidance_dict.get("should_poll", False)
+    should_poll = (
+        bool(should_poll_val) if isinstance(should_poll_val, (bool, int)) else False
+    )
+
+    interval_val = guidance_dict.get("interval_ms")
+    interval_ms: Optional[int] = (
+        int(interval_val) if isinstance(interval_val, (int, float)) else None
+    )
+
+    max_dur_val = guidance_dict.get("max_duration_seconds")
+    max_duration_seconds: Optional[int] = (
+        int(max_dur_val) if isinstance(max_dur_val, (int, float)) else None
+    )
+
+    timeout_val = guidance_dict.get("timeout_seconds")
+    timeout_seconds: Optional[int] = (
+        int(timeout_val) if isinstance(timeout_val, (int, float)) else None
+    )
+
+    reason_val = guidance_dict.get("reason", "")
+    reason: str = str(reason_val) if not isinstance(reason_val, str) else reason_val
+
+    strategy_val = guidance_dict.get("strategy")
+    strategy: Optional[str] = strategy_val if isinstance(strategy_val, str) else None
+
     return PollingGuidance(
-        should_poll=guidance_dict.get("should_poll", False),
-        interval_ms=guidance_dict.get("interval_ms"),
-        max_duration_seconds=guidance_dict.get("max_duration_seconds"),
-        timeout_seconds=guidance_dict.get("timeout_seconds"),
-        reason=guidance_dict.get("reason", ""),
-        strategy=guidance_dict.get("strategy"),
+        should_poll=should_poll,
+        interval_ms=interval_ms,
+        max_duration_seconds=max_duration_seconds,
+        timeout_seconds=timeout_seconds,
+        reason=reason,
+        strategy=strategy,
     )

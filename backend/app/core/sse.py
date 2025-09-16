@@ -10,10 +10,12 @@ Reddit Signal Scanner - 极简SSE推送系统 (Linus重构版)
 
 import asyncio
 import json
-import time
 import logging
+import time
 from dataclasses import dataclass
-from typing import Dict, AsyncGenerator, Literal, Any, Optional
+from typing import Any, AsyncGenerator, Dict, Literal, Optional
+
+from .types import JsonValue
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +29,7 @@ class SSEEvent:
 
     type: Literal["connected", "progress", "completed", "error", "close"]
     task_id: str
-    data: Dict[str, Any]
+    data: Dict[str, JsonValue]
     timestamp: Optional[float] = None
 
     def __post_init__(self) -> None:

@@ -6,18 +6,20 @@
 - 简单明了的缓存策略
 """
 
+from datetime import datetime
+from typing import Any, Mapping, Optional, cast, Dict
 from uuid import UUID
-from typing import Optional
+
 from sqlalchemy.orm import Session
 
-from ..models.report import Report, create_report
 from ..models.analysis import Analysis
+from ..models.report import Report, create_report
 
 
 class ReportCacheService:
     """报告缓存服务 - 简单实现"""
 
-    def __init__(self, db: Session):
+    def __init__(self, db: Session) -> None:
         self.db = db
 
     def get_report_html(self, analysis_id: UUID) -> str:
@@ -31,7 +33,7 @@ class ReportCacheService:
         )
 
         if report:
-            return report.html_content
+            return cast(str, report.html_content)
 
         # 没有缓存，生成新报告
         html = self._generate_html(analysis_id)
@@ -70,22 +72,22 @@ class ReportCacheService:
         <body>
             <h1>Reddit Signal Analysis Report</h1>
             <div class="analysis-info">
-                <p><strong>Analysis ID:</strong> {analysis.id}</p>
-                <p><strong>Confidence:</strong> {analysis.confidence_score * 100:.1f}%</p>
-                <p><strong>Generated:</strong> {analysis.created_at}</p>
+                <p><strong>Analysis ID:</strong> {str(analysis.id)}</p>
+                <p><strong>Confidence:</strong> {float(analysis.confidence_score) * 100.0:.1f}%</p>
+                <p><strong>Generated:</strong> {cast(datetime, analysis.created_at)}</p>
             </div>
             
             <div class="insights">
                 <h2>Key Insights</h2>
                 <div class="insights-content">
-                    {self._format_insights(analysis.insights)}
+                    {self._format_insights(cast(Mapping[str, Any], analysis.insights or {}))}
                 </div>
             </div>
             
             <div class="sources">
                 <h2>Data Sources</h2>
                 <div class="sources-content">
-                    {self._format_sources(analysis.sources)}
+                    {self._format_sources(cast(Mapping[str, Any], analysis.sources or {}))}
                 </div>
             </div>
         </body>
@@ -94,7 +96,7 @@ class ReportCacheService:
 
         return html_content.strip()
 
-    def _format_insights(self, insights: dict) -> str:
+    def _format_insights(self, insights: Mapping[str, Any]) -> str:
         """格式化洞察数据"""
         if not insights:
             return "<p>No insights available</p>"
@@ -104,27 +106,33 @@ class ReportCacheService:
         # 痛点
         if "pain_points" in insights and insights["pain_points"]:
             html_parts.append("<h3>Pain Points</h3><ul>")
-            for pain in insights["pain_points"][:5]:  # 最多显示5个
+            for pain in cast(list[dict[str, Any]], insights["pain_points"])[
+                :5
+            ]:  # 最多显示5个
                 html_parts.append(f"<li>{pain.get('description', 'N/A')}</li>")
             html_parts.append("</ul>")
 
         # 竞争对手
         if "competitors" in insights and insights["competitors"]:
             html_parts.append("<h3>Competitors</h3><ul>")
-            for comp in insights["competitors"][:5]:  # 最多显示5个
+            for comp in cast(list[dict[str, Any]], insights["competitors"])[
+                :5
+            ]:  # 最多显示5个
                 html_parts.append(f"<li>{comp.get('name', 'N/A')}</li>")
             html_parts.append("</ul>")
 
         # 机会
         if "opportunities" in insights and insights["opportunities"]:
             html_parts.append("<h3>Opportunities</h3><ul>")
-            for opp in insights["opportunities"][:5]:  # 最多显示5个
+            for opp in cast(list[dict[str, Any]], insights["opportunities"])[
+                :5
+            ]:  # 最多显示5个
                 html_parts.append(f"<li>{opp.get('title', 'N/A')}</li>")
             html_parts.append("</ul>")
 
         return "".join(html_parts) or "<p>No structured insights available</p>"
 
-    def _format_sources(self, sources: dict) -> str:
+    def _format_sources(self, sources: Mapping[str, Any]) -> str:
         """格式化数据源信息"""
         if not sources:
             return "<p>No source information available</p>"
@@ -133,17 +141,17 @@ class ReportCacheService:
 
         # 社区信息
         if "communities" in sources and sources["communities"]:
-            communities = sources["communities"][:10]  # 最多显示10个
+            communities = cast(list[Any], sources["communities"])[:10]  # 最多显示10个
             html_parts.append(
-                f"<p><strong>Communities:</strong> {', '.join(communities)}</p>"
+                f"<p><strong>Communities:</strong> {', '.join(map(str, communities))}</p>"
             )
 
         # 数据量
-        posts_count = sources.get("posts_analyzed", 0)
+        posts_count = int(cast(Any, sources.get("posts_analyzed", 0)) or 0)
         html_parts.append(f"<p><strong>Posts Analyzed:</strong> {posts_count}</p>")
 
         # 缓存命中率
-        cache_rate = sources.get("cache_hit_rate", 0)
+        cache_rate = float(cast(Any, sources.get("cache_hit_rate", 0.0)) or 0.0)
         html_parts.append(
             f"<p><strong>Cache Hit Rate:</strong> {cache_rate * 100:.1f}%</p>"
         )
@@ -165,7 +173,7 @@ class ReportCacheService:
         self.db.commit()
         return result
 
-    def get_cache_stats(self) -> dict:
+    def get_cache_stats(self) -> Dict[str, int]:
         """获取缓存统计"""
         total_reports = self.db.query(Report).count()
         active_reports = self.db.query(Report).filter(Report.status == "active").count()

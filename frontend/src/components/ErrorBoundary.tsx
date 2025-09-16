@@ -7,6 +7,7 @@
 
 import { Component, ErrorInfo, ReactNode } from 'react';
 import { handleError } from '@/utils/errorHandler';
+import logger from '@/utils/logger';
 
 interface ErrorBoundaryState {
   hasError: boolean;
@@ -54,7 +55,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
       recoveryActions: errorReport.recoveryActions,
     });
 
-    console.error('React Error Boundary - Classified error:', errorReport);
+    logger.error('React Error Boundary - Classified error:', error as Error);
   }
 
   private handleReload = (): void => {

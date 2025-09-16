@@ -8,8 +8,11 @@ JWT认证上下文 - Linus式简洁设计
 - 去除所有废话字段
 """
 
-from dataclasses import dataclass
 import time
+from dataclasses import dataclass
+from typing import Any, Mapping
+
+from .types import JsonValue
 
 
 # 权限位掩码常量
@@ -27,7 +30,7 @@ class PermissionMask:
     SUPERUSER = MODERATOR | ADMIN  # 1111
 
 
-@dataclass(frozen=True, slots=True)  # 性能优化：不可变+__slots__
+@dataclass(frozen=True)  # Python 3.9 兼容：不使用 slots 参数
 class AuthContext:
     """
     认证上下文 - Linus式极简设计
@@ -45,13 +48,13 @@ class AuthContext:
     token_exp: int
 
     @classmethod
-    def from_jwt_payload(cls, payload: dict) -> "AuthContext":
+    def from_jwt_payload(cls, payload: Mapping[str, Any]) -> "AuthContext":
         """从JWT载荷创建认证上下文"""
         return cls(
-            user_id=payload["sub"],
-            tenant_id=payload["tenant_id"],
-            permissions_mask=payload.get("perms", 0),
-            token_exp=payload["exp"],
+            user_id=str(payload.get("sub") or payload.get("user_id")),
+            tenant_id=str(payload.get("tenant") or payload.get("tenant_id")),
+            permissions_mask=int(payload.get("perms", 0)),
+            token_exp=int(payload["exp"]),
         )
 
     def has_permission(self, perm_mask: int) -> bool:
@@ -79,7 +82,7 @@ class AuthContext:
 class AuthError(Exception):
     """统一认证异常"""
 
-    def __init__(self, message: str, status_code: int = 401):
+    def __init__(self, message: str, status_code: int = 401) -> None:
         self.message = message
         self.status_code = status_code
         super().__init__(message)
@@ -88,7 +91,7 @@ class AuthError(Exception):
 class TenantError(AuthError):
     """租户访问异常"""
 
-    def __init__(self, message: str):
+    def __init__(self, message: str) -> None:
         super().__init__(message, 403)
 
 

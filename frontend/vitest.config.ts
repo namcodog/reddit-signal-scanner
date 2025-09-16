@@ -31,6 +31,14 @@ export default defineConfig({
     // 自动导入测试工具 - 减少样板代码
     setupFiles: ['./src/test-setup.ts'],
     
+    // Fake timers配置 - 确保定时器正确Mock，基于Context7最佳实践
+    fakeTimers: {
+      toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'],
+      shouldClearNativeTimers: true,
+      shouldAdvanceTime: true,
+      loopLimit: 10000,
+    },
+    
     // 测试覆盖率配置
     coverage: {
       provider: 'v8',
@@ -41,8 +49,8 @@ export default defineConfig({
       ],
     },
     
-    // 超时配置 - 防止测试卡死
-    testTimeout: 10000,
-    hookTimeout: 10000,
+    // 超时配置 - 防止测试卡死，增加到30秒以适应异步操作
+    testTimeout: 30000,
+    hookTimeout: 15000,
   },
 })

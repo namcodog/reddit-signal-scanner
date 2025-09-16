@@ -16,10 +16,10 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
 from ....core.sse import (
-    get_sse_service,
-    create_progress_event,
     create_completed_event,
     create_error_event,
+    create_progress_event,
+    get_sse_service,
 )
 
 logger = logging.getLogger(__name__)
@@ -102,7 +102,7 @@ async def stream_task_status(task_id: str) -> StreamingResponse:
 
     客户端示例：
     ```javascript
-    const eventSource = new EventSource('/api/v1/stream/{task_id}');
+    const eventSource = new EventSource(`${window.location.origin}${settings.api_prefix}/stream/{task_id}`);
     eventSource.onmessage = function(event) {
         const data = JSON.parse(event.data);
         console.log(`${data.type}: ${data.progress}% - ${data.message}`);

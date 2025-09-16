@@ -1,3 +1,5 @@
+import logger from '@/utils/logger';
+
 /**
  * 安全工具类 - 消灭安全技术债务
  * 基于 Linus 安全第一原则：Never trust user input
@@ -308,7 +310,7 @@ export class SecureStorage {
       const encrypted = this.encrypt(value);
       localStorage.setItem(key, encrypted);
     } catch (error) {
-      console.error('Failed to store encrypted data:', error);
+      logger.error('Failed to store encrypted data:', error as Error);
     }
   }
 
@@ -319,7 +321,7 @@ export class SecureStorage {
 
       return this.decrypt(encrypted);
     } catch (error) {
-      console.error('Failed to retrieve encrypted data:', error);
+      logger.error('Failed to retrieve encrypted data:', error as Error);
       return null;
     }
   }

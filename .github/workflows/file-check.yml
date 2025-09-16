@@ -21,7 +21,7 @@ jobs:
     - name: 🐍 设置Python环境
       uses: actions/setup-python@v4
       with:
-        python-version: '3.9'
+        python-version: '3.11'
         
     - name: 📦 安装依赖
       run: |
@@ -31,9 +31,14 @@ jobs:
     - name: 🧹 检查临时文件
       run: |
         echo "🔍 检查临时文件..."
-        if find . -name "*.tmp" -o -name "*.temp" -o -name "*_temp.*" -o -name "*_test.*" | grep -q .; then
+        # 使用 -prune 更稳健地排除目录（包括所有 tests/**）
+        if find . \
+          -type d \( -path "./.git" -o -path "./node_modules" -o -path "*/venv" -o -path "*/.venv" -o -path "*/env" -o -path "*/site-packages" -o -path "*/__pycache__" -o -path "./.mypy_cache" -o -path "./.pytest_cache" -o -path "./tests" \) -prune -o \
+          -type f \( -name "*.tmp" -o -name "*.temp" -o -name "*_temp.*" -o -name "*_test.*" \) -print | grep -q .; then
           echo "❌ 发现临时文件，请清理："
-          find . -name "*.tmp" -o -name "*.temp" -o -name "*_temp.*" -o -name "*_test.*"
+          find . \
+            -type d \( -path "./.git" -o -path "./node_modules" -o -path "*/venv" -o -path "*/.venv" -o -path "*/env" -o -path "*/site-packages" -o -path "*/__pycache__" -o -path "./.mypy_cache" -o -path "./.pytest_cache" -o -path "./tests" \) -prune -o \
+            -type f \( -name "*.tmp" -o -name "*.temp" -o -name "*_temp.*" -o -name "*_test.*" \) -print
           echo ""
           echo "💡 使用以下命令清理："
           echo "make clean-temp"
@@ -45,9 +50,14 @@ jobs:
     - name: 🗃️ 检查备份文件  
       run: |
         echo "🔍 检查备份文件..."
-        if find . -name "*backup*" -o -name "*_backup.*" -o -name "*_old.*" -o -name "Copy of *" | grep -q .; then
+        # 排除允许的工作流状态备份文件
+        if find . \
+          -type d \( -path "./.git" -o -path "./node_modules" -o -path "*/venv" -o -path "*/.venv" -o -path "*/env" -o -path "*/site-packages" -o -path "*/__pycache__" -o -path "./tests" \) -prune -o \
+          -type f \( -name "*backup*" -o -name "*_backup.*" -o -name "*_old.*" -o -name "Copy of *" \) -not -path "./workflow/state.yaml.backup" -print | grep -q .; then
           echo "⚠️  发现备份文件，建议使用Git进行版本管理："
-          find . -name "*backup*" -o -name "*_backup.*" -o -name "*_old.*" -o -name "Copy of *"
+          find . \
+            -type d \( -path "./.git" -o -path "./node_modules" -o -path "*/venv" -o -path "*/.venv" -o -path "*/env" -o -path "*/site-packages" -o -path "*/__pycache__" -o -path "./tests" \) -prune -o \
+            -type f \( -name "*backup*" -o -name "*_backup.*" -o -name "*_old.*" -o -name "Copy of *" \) -not -path "./workflow/state.yaml.backup" -print
           echo ""
           echo "💡 建议删除这些文件，使用Git历史记录代替"
         else
@@ -86,12 +96,36 @@ jobs:
         
         # 检查禁止的通用文件名
         for file in utils.py helpers.py common.py test.py demo.py example.py temp.py; do
-          if find . -name "$file" -not -path "./.git/*" -not -path "./node_modules/*" | grep -q .; then
+          if find . -name "$file" \
+            -not -path "./.git/*" -not -path "./node_modules/*" \
+            -not -path "*/venv/*" -not -path "*/.venv/*" -not -path "*/env/*" -not -path "*/site-packages/*" \
+            | grep -q .; then
             echo "❌ 发现禁止的文件名: $file"
-            find . -name "$file" -not -path "./.git/*" -not -path "./node_modules/*"
+            find . -name "$file" \
+              -not -path "./.git/*" -not -path "./node_modules/*" \
+              -not -path "*/venv/*" -not -path "*/.venv/*" -not -path "*/env/*" -not -path "*/site-packages/*"
             forbidden_found=true
           fi
         done
+
+        # 检查可疑文件名（单独的连字符、以连字符开头的文件）
+        suspicious=$(find . -type f \( -name "-" -o -name "-*" \) \
+          -not -path "./.git/*" -not -path "./node_modules/*" \
+          -not -path "*/venv/*" -not -path "*/.venv/*" -not -path "*/env/*" -not -path "*/site-packages/*")
+        if [ -n "$suspicious" ]; then
+          echo "❌ 发现可疑文件名（可能为误提交或产物）："
+          echo "$suspicious"
+          forbidden_found=true
+        fi
+
+        # 检查不应被跟踪的前端产物（Cypress视频/截图）
+        tracked_cypress=$(git ls-files -- "frontend/cypress/videos" "frontend/cypress/screenshots" 2>/dev/null || true)
+        if [ -n "$tracked_cypress" ]; then
+          echo "❌ 发现被跟踪的E2E产物（应通过.gitignore忽略）："
+          echo "$tracked_cypress"
+          echo "💡 请将 frontend/cypress/{videos,screenshots}/ 加入 .gitignore 并清理已跟踪文件"
+          forbidden_found=true
+        fi
         
         if [ "$forbidden_found" = true ]; then
           echo ""
@@ -111,16 +145,23 @@ jobs:
         echo "| 文件类型 | 数量 |" >> $GITHUB_STEP_SUMMARY
         echo "|---------|------|" >> $GITHUB_STEP_SUMMARY
         
-        py_count=$(find . -name "*.py" -not -path "./.git/*" -not -path "./node_modules/*" | wc -l)
+        py_count=$(find . -name "*.py" \
+          -not -path "./.git/*" -not -path "./node_modules/*" \
+          -not -path "*/venv/*" -not -path "*/.venv/*" -not -path "*/env/*" -not -path "*/site-packages/*" | wc -l)
         echo "| Python文件 | $py_count |" >> $GITHUB_STEP_SUMMARY
         
-        ts_count=$(find . -name "*.ts" -o -name "*.tsx" | wc -l)
+        ts_count=$(find . \( -name "*.ts" -o -name "*.tsx" \) \
+          -not -path "./.git/*" -not -path "./node_modules/*" \
+          -not -path "*/venv/*" -not -path "*/.venv/*" -not -path "*/env/*" -not -path "*/site-packages/*" | wc -l)
         echo "| TypeScript文件 | $ts_count |" >> $GITHUB_STEP_SUMMARY
         
-        md_count=$(find . -name "*.md" -not -path "./.git/*" | wc -l)
+        md_count=$(find . -name "*.md" -not -path "./.git/*" \
+          -not -path "*/venv/*" -not -path "*/.venv/*" -not -path "*/env/*" -not -path "*/site-packages/*" | wc -l)
         echo "| Markdown文件 | $md_count |" >> $GITHUB_STEP_SUMMARY
         
-        temp_count=$(find . -name "*.tmp" -o -name "*.temp" | wc -l)
+        temp_count=$(find . \( -name "*.tmp" -o -name "*.temp" \) \
+          -not -path "./.git/*" -not -path "./node_modules/*" \
+          -not -path "*/venv/*" -not -path "*/.venv/*" -not -path "*/env/*" -not -path "*/site-packages/*" | wc -l)
         echo "| 临时文件 | $temp_count |" >> $GITHUB_STEP_SUMMARY
         
         echo "" >> $GITHUB_STEP_SUMMARY
@@ -187,7 +228,7 @@ jobs:
     - name: 🐍 设置Python环境
       uses: actions/setup-python@v4
       with:
-        python-version: '3.9'
+        python-version: '3.11'
         
     - name: 📦 安装依赖
       run: |
@@ -204,14 +245,19 @@ jobs:
         echo "📊 生成项目健康度周报..."
         
         # 统计各类文件数量
-        py_files=$(find . -name "*.py" -not -path "./.git/*" | wc -l)
-        js_files=$(find . -name "*.js" -o -name "*.ts" -o -name "*.tsx" | wc -l)
-        doc_files=$(find . -name "*.md" -not -path "./.git/*" | wc -l)
+        py_files=$(find . -name "*.py" -not -path "./.git/*" \
+          -not -path "./node_modules/*" -not -path "*/venv/*" -not -path "*/.venv/*" -not -path "*/env/*" -not -path "*/site-packages/*" | wc -l)
+        js_files=$(find . \( -name "*.js" -o -name "*.ts" -o -name "*.tsx" \) \
+          -not -path "./.git/*" -not -path "./node_modules/*" -not -path "*/venv/*" -not -path "*/.venv/*" -not -path "*/env/*" -not -path "*/site-packages/*" | wc -l)
+        doc_files=$(find . -name "*.md" -not -path "./.git/*" \
+          -not -path "*/venv/*" -not -path "*/.venv/*" -not -path "*/env/*" -not -path "*/site-packages/*" | wc -l)
         
         # 计算代码行数
         if command -v wc > /dev/null; then
-          py_lines=$(find . -name "*.py" -not -path "./.git/*" -exec wc -l {} + | tail -1 | awk '{print $1}')
-          js_lines=$(find . -name "*.js" -o -name "*.ts" -o -name "*.tsx" -exec wc -l {} + | tail -1 | awk '{print $1}' || echo 0)
+          py_lines=$(find . -name "*.py" -not -path "./.git/*" -not -path "./node_modules/*" \
+            -not -path "*/venv/*" -not -path "*/.venv/*" -not -path "*/env/*" -not -path "*/site-packages/*" -exec wc -l {} + | tail -1 | awk '{print $1}')
+          js_lines=$(find . \( -name "*.js" -o -name "*.ts" -o -name "*.tsx" \) -not -path "./.git/*" -not -path "./node_modules/*" \
+            -not -path "*/venv/*" -not -path "*/.venv/*" -not -path "*/env/*" -not -path "*/site-packages/*" -exec wc -l {} + | tail -1 | awk '{print $1}' || echo 0)
         fi
         
         echo "## 📊 项目健康度周报" >> weekly_report.md

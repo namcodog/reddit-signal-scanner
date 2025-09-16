@@ -1,0 +1,101 @@
+name: Integration Tests
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  push:
+    branches: [ main ]
+  schedule:
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:14
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('backend/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install system tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Wait for Postgres
+        run: |
+          for i in {1..30}; do
+            if PGPASSWORD=postgres psql -h localhost -U postgres -p 5432 -c "SELECT 1" >/dev/null 2>&1; then
+              echo "Postgres is up"; break
+            fi
+            sleep 2
+          done
+
+      - name: Prepare test database
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -U postgres -p 5432 -c "DO \$\$BEGIN IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'test') THEN CREATE ROLE test LOGIN PASSWORD 'test'; END IF; END\$\$;"
+          psql -h localhost -U postgres -p 5432 -c "ALTER ROLE test WITH LOGIN PASSWORD 'test';"
+          psql -h localhost -U postgres -p 5432 -tc "SELECT 1 FROM pg_database WHERE datname = 'reddit_test'" | grep -q 1 || psql -h localhost -U postgres -p 5432 -c "CREATE DATABASE reddit_test OWNER test;"
+          psql -h localhost -U postgres -p 5432 -d reddit_test -c "GRANT ALL PRIVILEGES ON DATABASE reddit_test TO test;"
+          # Verify auth as test user
+          PGPASSWORD=test psql -h localhost -U test -p 5432 -d reddit_test -c "SELECT 1" || (echo "❌ test user cannot authenticate"; exit 1)
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install --prefer-binary -r backend/requirements.txt
+          pip install pytest-xdist
+
+      - name: Run integration/system tests
+        env:
+          TEST_DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/reddit_test
+          TEST_USE_REAL_DB: 'false'
+          LOG_LEVEL: INFO
+          DEBUG_SQL: 'false'
+          PYTEST_XDIST: '1'
+          PYTEST_XDIST_WORKERS: 'auto'
+        run: |
+          python tests/ci/test_runner.py integration
+
+      - name: Upload junit
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-junit
+          path: reports/junit.xml

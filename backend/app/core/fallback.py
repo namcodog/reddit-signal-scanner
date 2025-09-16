@@ -9,10 +9,24 @@ Linus原则：
 """
 
 import threading
-from typing import Any, Dict, Optional
+from typing import Any, Optional
+
+try:
+    from typing import TypeAlias  # Python 3.10+
+except Exception:  # pragma: no cover
+    from typing_extensions import TypeAlias  # Python 3.9 兼容
 
 from pydantic import Field
 from pydantic_settings import BaseSettings
+
+from .types import JsonValue
+from .config import get_settings
+
+# 类型别名（用于前端指导结构）
+PollingGuidance: TypeAlias = dict[str, JsonValue]
+RetryGuidance: TypeAlias = dict[str, JsonValue]
+ConnectionTestGuidance: TypeAlias = dict[str, JsonValue]
+ClientEnvironmentInfo: TypeAlias = dict[str, JsonValue]
 
 
 class FallbackConfig(BaseSettings):
@@ -49,9 +63,7 @@ class FallbackConfig(BaseSettings):
     )
 
     # 批量查询限制
-    max_batch_size: int = Field(
-        default=10, description="单次批量查询的最大任务数量", ge=1, le=50
-    )
+    max_batch_size: int = Field(default=10, description="单次批量查询的最大任务数量", ge=1, le=50)
 
     # 进度估算参数
     estimated_duration_seconds: int = Field(
@@ -73,12 +85,10 @@ class FallbackConfig(BaseSettings):
     )
 
     # 客户端指导配置
-    connection_test_url: str = Field(
-        default="/api/v1/health", description="客户端测试连接的URL"
-    )
+    connection_test_url: str = Field(default="/api/health", description="客户端测试连接的URL")
 
     sse_test_url: str = Field(
-        default="/api/v1/stream/test-connection/test", description="SSE连接测试URL"
+        default="/api/stream/test-connection/test", description="SSE连接测试URL"
     )
 
     # 错误处理配置
@@ -101,12 +111,12 @@ class ClientGuidance:
     根据任务状态和运行时间，为客户端提供智能的轮询策略建议。
     """
 
-    def __init__(self, config: FallbackConfig):
+    def __init__(self, config: FallbackConfig) -> None:
         self.config = config
 
     def get_polling_guidance(
         self, task_status: str, runtime_seconds: Optional[int] = None
-    ) -> Dict[str, Any]:
+    ) -> "PollingGuidance":
         """获取轮询指导配置
 
         Args:
@@ -161,7 +171,7 @@ class ClientGuidance:
             "reason": "未知状态，使用默认轮询间隔",
         }
 
-    def get_retry_guidance(self, attempt_count: int) -> Dict[str, Any]:
+    def get_retry_guidance(self, attempt_count: int) -> "RetryGuidance":
         """获取重试指导配置
 
         Args:
@@ -182,15 +192,25 @@ class ClientGuidance:
             "reason": f"第{attempt_count + 1}次重试，退避{backoff_seconds:.1f}秒",
         }
 
-    def get_connection_test_guidance(self) -> Dict[str, str]:
+    def get_connection_test_guidance(self) -> "ConnectionTestGuidance":
         """获取连接测试指导
 
         Returns:
             Dict: 连接测试URL和说明
         """
+        settings = get_settings()
+        prefix = settings.api_prefix
         return {
-            "health_check_url": self.config.connection_test_url,
-            "sse_test_url": self.config.sse_test_url,
+            "health_check_url": (
+                self.config.connection_test_url
+                if self.config.connection_test_url.startswith("http")
+                else f"{prefix.rstrip('/')}/{self.config.connection_test_url.lstrip('/')}"
+            ),
+            "sse_test_url": (
+                self.config.sse_test_url
+                if self.config.sse_test_url.startswith("http")
+                else f"{prefix.rstrip('/')}/{self.config.sse_test_url.lstrip('/')}"
+            ),
             "test_sequence": "建议先测试health_check，再测试sse_test",
             "fallback_trigger": "SSE测试失败时自动切换到HTTP轮询",
         }
@@ -248,7 +268,10 @@ def get_polling_interval(
     """
     guidance = get_client_guidance()
     config = guidance.get_polling_guidance(task_status, runtime_seconds)
-    return config.get("interval_ms", 0) if config.get("should_poll", False) else 0
+    should = bool(config.get("should_poll", False))
+    interval_val = config.get("interval_ms", 0)
+    interval = int(interval_val) if isinstance(interval_val, (int, float, str)) else 0
+    return interval if should else 0
 
 
 def should_enable_fallback() -> bool:
@@ -272,7 +295,7 @@ def get_batch_query_limit() -> int:
 
 
 # 环境检测函数
-def detect_client_environment() -> Dict[str, Any]:
+def detect_client_environment() -> "ClientEnvironmentInfo":
     """检测客户端环境特征（用于服务端调试）
 
     Returns:

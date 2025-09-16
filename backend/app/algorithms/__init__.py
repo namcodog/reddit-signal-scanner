@@ -7,15 +7,15 @@
 - CommunityRanking: 多维度社区评分系统
 """
 
-from .keyword_extraction import KeywordExtractor, ExtractedKeywords
-from .semantic_similarity import SemanticSimilarityEngine, SimilarityResult
 from .community_ranking import (
-    CommunityRanking,
+    CategoryCounter,
     CommunityMetadata,
+    CommunityRanking,
     RankingConfig,
     RankingResult,
-    CategoryCounter,
 )
+from .keyword_extraction import ExtractedKeywords, KeywordExtractor
+from .semantic_similarity import SemanticSimilarityEngine, SimilarityResult
 
 __all__ = [
     "KeywordExtractor",

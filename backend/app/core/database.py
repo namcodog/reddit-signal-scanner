@@ -10,25 +10,76 @@ Linus原则: "简单可靠，延迟初始化"
 
 import logging
 from pathlib import Path
-from typing import Any, AsyncGenerator, Dict, List, Optional
+from typing import Any, AsyncGenerator, Dict, List, Optional, TypedDict, Union, cast
 
 import yaml
-from sqlalchemy import event
+from sqlalchemy import Engine, create_engine, event
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
     async_sessionmaker,
     create_async_engine,
 )
-from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+from typing_extensions import NotRequired
 
 from .config import get_settings
+from .types import JsonValue
 
 # 全局变量，延迟初始化
 _engine: Optional[AsyncEngine] = None
-_session_factory: Optional[async_sessionmaker] = None
+_session_factory: Optional[async_sessionmaker[AsyncSession]] = None
 _logger = logging.getLogger(__name__)
-_db_config: Optional[Dict[str, Any]] = None
+_db_config: Optional["DatabaseConfig"] = None
+
+
+# =============================
+# 类型安全的数据结构定义
+# =============================
+
+
+class ConnectionLimits(TypedDict, total=False):
+    max_connections: int
+
+
+class ConnectionsConfig(TypedDict, total=False):
+    statement_timeout: Union[int, str]
+    idle_in_transaction_session_timeout: Union[int, str]
+    lock_timeout: Union[int, str]
+
+
+class MemoryConfig(TypedDict, total=False):
+    shared_buffers: str
+
+
+class JsonbOptimizationConfig(TypedDict, total=False):
+    enabled: NotRequired[bool]
+
+
+class DatabaseConfig(TypedDict, total=False):
+    connection_limits: ConnectionLimits
+    connections: ConnectionsConfig
+    memory: MemoryConfig
+    jsonb_optimization: JsonbOptimizationConfig
+    multi_tenant: bool
+
+
+class ConnectArgs(TypedDict, total=False):
+    options: str
+    server_settings: Dict[str, str]
+
+
+class ConnectionParams(TypedDict):
+    pool_size: int
+    max_overflow: int
+    pool_timeout: int
+    pool_pre_ping: bool
+    pool_recycle: int
+    pool_reset_on_return: str  # Context7优化：连接重置策略
+    connect_args: ConnectArgs
+    echo: bool
+    echo_pool: bool
+    future: bool
 
 
 class Base(DeclarativeBase):
@@ -37,7 +88,7 @@ class Base(DeclarativeBase):
     pass
 
 
-def load_database_config() -> Dict[str, Any]:
+def load_database_config() -> DatabaseConfig:
     """加载环境特定的数据库配置 - Linus原则：消除特殊情况"""
     global _db_config
     if _db_config is None:
@@ -54,72 +105,100 @@ def load_database_config() -> Dict[str, Any]:
                 common_config = config.get("common", {})
 
                 # 合并通用配置和环境特定配置
-                _db_config = {**common_config, **env_config}
-                _logger.info(f"✅ 数据库配置加载成功 - 环境: {settings.environment}")
+                merged = {**common_config, **env_config}
+                _db_config = cast(DatabaseConfig, merged)
+                _logger.info(
+                    "Database config loaded successfully - env: %s",
+                    settings.environment,
+                )
             else:
-                _db_config = {}
+                _db_config = cast(DatabaseConfig, {})
                 _logger.warning(f"⚠️ 数据库配置文件未找到: {config_path}")
 
         except Exception as e:
             _logger.error(f"❌ 数据库配置加载失败: {e}")
-            _db_config = {}
+            _db_config = cast(DatabaseConfig, {})
 
     return _db_config
 
 
-def get_connection_params() -> Dict[str, Any]:
-    """获取数据库连接参数 - 基于配置优化，保持向后兼容"""
+def get_connection_params() -> ConnectionParams:
+    """获取数据库连接参数 - Context7最佳实践优化"""
     settings = get_settings()
     db_config = load_database_config()
 
-    # 从配置文件获取连接限制，回退到settings默认值
-    connection_limits = db_config.get("connection_limits", {})
+    # 从配置文件获取连接限制，回退到默认值
+    connection_limits: ConnectionLimits = db_config.get("connection_limits", {})
+
+    # Context7推荐：优化连接池大小适应高并发
+    base_pool_size = connection_limits.get(
+        "max_connections", settings.database_pool_size
+    )
+    optimized_pool_size = max(10, base_pool_size // 3)  # 最小10，最大1/3
 
     return {
-        # 连接池配置 - 保持现有默认值的向后兼容
-        "pool_size": connection_limits.get(
-            "max_connections", settings.database_pool_size
-        )
-        // 4,  # 连接池大小约为最大连接的1/4
-        "max_overflow": settings.database_max_overflow,
-        "pool_timeout": settings.database_pool_timeout,
-        "pool_pre_ping": True,
-        "pool_recycle": 3600,  # 1小时回收连接
+        # 连接池配置 - Context7性能优化
+        "pool_size": optimized_pool_size,
+        "max_overflow": min(30, settings.database_max_overflow * 2),  # 增加溢出
+        "pool_timeout": 60,  # Context7推荐：增加获取连接超时
+        "pool_pre_ping": True,  # Context7关键优化：连接健康检查
+        "pool_recycle": 7200,  # Context7推荐：2小时回收连接
+        # Context7优化：连接复用和清理
+        "pool_reset_on_return": "commit",  # 返回时重置事务状态
         # 新增：基于配置的优化参数
         "connect_args": _get_connect_args(db_config),
-        # 调试配置
+        # 调试配置 - 生产环境关闭pool日志
         "echo": settings.debug,
-        "echo_pool": settings.debug,
+        "echo_pool": False,  # Context7推荐：减少日志输出
         "future": True,
     }
 
 
-def _get_connect_args(db_config: Dict[str, Any]) -> Dict[str, Any]:
+def _get_connect_args(db_config: DatabaseConfig) -> ConnectArgs:
     """获取数据库连接参数 - 将配置转换为连接参数"""
-    connect_args: Dict[str, Any] = {}
+    connect_args: ConnectArgs = {}
+    settings = get_settings()
+    url = getattr(settings, "database_url", "")
 
     # 从配置文件获取连接相关参数
-    connections_config = db_config.get("connections", {})
+    connections_config: ConnectionsConfig = db_config.get("connections", {})
     if connections_config:
-        # 将YAML配置转换为PostgreSQL连接参数
-        if "statement_timeout" in connections_config:
-            timeout_val = connections_config["statement_timeout"]
-            connect_args["options"] = (
-                connect_args.get("options", "") + f" -c statement_timeout={timeout_val}"
-            )
-
-        if "idle_in_transaction_session_timeout" in connections_config:
-            idle_timeout = connections_config["idle_in_transaction_session_timeout"]
-            connect_args["options"] = (
-                connect_args.get("options", "")
-                + f" -c idle_in_transaction_session_timeout={idle_timeout}"
-            )
-
-        if "lock_timeout" in connections_config:
-            lock_timeout = connections_config["lock_timeout"]
-            connect_args["options"] = (
-                connect_args.get("options", "") + f" -c lock_timeout={lock_timeout}"
-            )
+        # 根据驱动选择参数：asyncpg 使用 server_settings；psycopg2 使用 options
+        use_asyncpg = "+asyncpg" in url
+        if use_asyncpg:
+            server_settings: Dict[str, str] = {}
+            if "statement_timeout" in connections_config:
+                server_settings["statement_timeout"] = str(
+                    connections_config["statement_timeout"]
+                )
+            if "idle_in_transaction_session_timeout" in connections_config:
+                server_settings["idle_in_transaction_session_timeout"] = str(
+                    connections_config["idle_in_transaction_session_timeout"]
+                )
+            if "lock_timeout" in connections_config:
+                server_settings["lock_timeout"] = str(
+                    connections_config["lock_timeout"]
+                )
+            if server_settings:
+                connect_args["server_settings"] = server_settings
+        else:
+            if "statement_timeout" in connections_config:
+                timeout_val = connections_config["statement_timeout"]
+                connect_args["options"] = (
+                    connect_args.get("options", "")
+                    + f" -c statement_timeout={timeout_val}"
+                )
+            if "idle_in_transaction_session_timeout" in connections_config:
+                idle_timeout = connections_config["idle_in_transaction_session_timeout"]
+                connect_args["options"] = (
+                    connect_args.get("options", "")
+                    + f" -c idle_in_transaction_session_timeout={idle_timeout}"
+                )
+            if "lock_timeout" in connections_config:
+                lock_timeout = connections_config["lock_timeout"]
+                connect_args["options"] = (
+                    connect_args.get("options", "") + f" -c lock_timeout={lock_timeout}"
+                )
 
     return connect_args
 
@@ -140,12 +219,12 @@ def get_engine() -> AsyncEngine:
         if settings.debug:
             _register_debug_events(_engine)
 
-        _logger.info("✅ 数据库引擎初始化完成（配置优化版）")
+        _logger.info("Database engine initialized with Context7 optimization")
 
     return _engine
 
 
-def get_session_factory() -> async_sessionmaker:
+def get_session_factory() -> async_sessionmaker[AsyncSession]:
     """获取会话工厂 - 延迟初始化"""
     global _session_factory
     if _session_factory is None:
@@ -157,6 +236,16 @@ def get_session_factory() -> async_sessionmaker:
             autoflush=True,
             autocommit=False,
         )
+
+        # 设置多租户数据隔离 - 基于context7最佳实践
+        try:
+            from .tenant_isolation import setup_tenant_isolation
+
+            setup_tenant_isolation(_session_factory)
+            _logger.info("✅ 多租户数据隔离已启用")
+        except ImportError:
+            _logger.warning("⚠️ 租户隔离模块未找到，跳过多租户设置")
+
         _logger.info("✅ 会话工厂初始化完成")
 
     return _session_factory
@@ -210,13 +299,7 @@ async def init_database() -> None:
         async with engine.begin() as conn:
             # 导入模型（如果存在）
             try:
-                from ..models import (  # noqa: F401
-                    Analysis,
-                    CommunityCache,
-                    Report,
-                    Task,
-                    User,
-                )
+                from ..models import CommunityCache  # noqa: F401
 
                 _logger.info("✅ 数据模型导入成功")
             except ImportError as e:
@@ -239,10 +322,10 @@ async def close_database() -> None:
         await _engine.dispose()
         _engine = None
         _session_factory = None
-        _logger.info("✅ 数据库连接已关闭")
+        _logger.info("Database connections closed and disposed")
 
 
-async def check_database_health() -> Dict[str, Any]:
+async def check_database_health() -> dict[str, JsonValue]:
     """数据库健康检查 - 诊断工具，包含配置状态"""
     try:
         engine = get_engine()
@@ -288,7 +371,21 @@ async def check_database_health() -> Dict[str, Any]:
         }
 
 
-def validate_database_config() -> Dict[str, Any]:
+class ConfigSummary(TypedDict):
+    environment: str
+    memory_optimized: bool
+    jsonb_optimized: bool
+    multi_tenant_ready: bool
+
+
+class ValidationResult(TypedDict):
+    valid: bool
+    issues: List[str]
+    warnings: List[str]
+    config_summary: ConfigSummary
+
+
+def validate_database_config() -> ValidationResult:
     """验证数据库配置 - 独立的配置验证函数"""
     db_config = load_database_config()
     settings = get_settings()
@@ -298,10 +395,20 @@ def validate_database_config() -> Dict[str, Any]:
     # 检查必要的配置节是否存在
     if not db_config:
         issues.append("数据库配置文件缺失或为空")
-        return {"valid": False, "issues": issues, "warnings": warnings}
+        return {
+            "valid": False,
+            "issues": issues,
+            "warnings": warnings,
+            "config_summary": {
+                "environment": settings.environment,
+                "memory_optimized": False,
+                "jsonb_optimized": False,
+                "multi_tenant_ready": False,
+            },
+        }
 
     # 检查内存配置
-    memory_config = db_config.get("memory", {})
+    memory_config: MemoryConfig = db_config.get("memory", {})
     if memory_config:
         shared_buffers = memory_config.get("shared_buffers", "0MB")
         if "512MB" not in shared_buffers and settings.environment == "production":
@@ -319,7 +426,7 @@ def validate_database_config() -> Dict[str, Any]:
         warnings.append("未找到连接限制配置")
 
     # 检查JSONB优化配置
-    jsonb_config = db_config.get("jsonb_optimization", {})
+    jsonb_config: JsonbOptimizationConfig = db_config.get("jsonb_optimization", {})
     if not jsonb_config:
         warnings.append("未找到JSONB优化配置")
 
@@ -342,3 +449,63 @@ async def get_session() -> AsyncSession:
     session_factory = get_session_factory()
     async_session: AsyncSession = session_factory()
     return async_session
+
+
+# ====================================================================
+# 同步数据库访问 - Celery任务专用
+# ====================================================================
+
+
+# 同步引擎和会话工厂（延迟初始化）
+_sync_engine = None
+_sync_session_factory = None
+
+
+def get_sync_engine() -> Engine:
+    """获取同步数据库引擎 - Celery任务专用"""
+    global _sync_engine
+    if _sync_engine is None:
+        settings = get_settings()
+
+        # 将异步URL转换为同步URL
+        sync_url = settings.database_url.replace(
+            "postgresql+asyncpg://", "postgresql+psycopg2://"
+        )
+
+        # 获取连接参数（去掉异步特定的）
+        conn_params = get_connection_params()
+        # 复制为普通dict以便移除异步特定参数
+        conn_params_copy: Dict[str, object] = dict(conn_params)
+        conn_params_copy.pop("future", None)
+        conn_params_copy.pop("echo_pool", None)
+
+        _sync_engine = create_engine(sync_url, **conn_params_copy)
+        _logger.info("✅ 同步数据库引擎初始化完成（Celery专用）")
+
+    return _sync_engine
+
+
+def get_sync_session_factory() -> sessionmaker[Session]:
+    """获取同步会话工厂"""
+    global _sync_session_factory
+    if _sync_session_factory is None:
+        engine = get_sync_engine()
+        _sync_session_factory = sessionmaker(
+            bind=engine,
+            expire_on_commit=False,
+            autoflush=True,
+            autocommit=False,
+        )
+        _logger.info("✅ 同步会话工厂初始化完成")
+
+    return _sync_session_factory
+
+
+def get_session_sync() -> Session:
+    """获取同步数据库会话 - Celery任务专用
+
+    Returns:
+        Session: 同步数据库会话
+    """
+    session_factory = get_sync_session_factory()
+    return session_factory()
