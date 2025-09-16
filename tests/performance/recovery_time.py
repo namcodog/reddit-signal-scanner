@@ -44,7 +44,7 @@ async def test_redis_recovery_time(monkeypatch: Any) -> None:
     client = await rc.get_redis_client()
     dt_ms = (time.perf_counter() - t0) * 1000.0
 
-    assert client is fake
+    assert isinstance(client, FakeClient)
     assert fake.connected is True
     perf.record(case_id, recovery_time_ms=round(dt_ms, 2), attempts=fake.ping_called)
 

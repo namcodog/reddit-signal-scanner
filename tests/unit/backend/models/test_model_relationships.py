@@ -7,7 +7,7 @@
 
 import uuid
 from decimal import Decimal
-from typing import List
+from typing import Any, List, Optional, cast
 import pytest
 import pytest_asyncio
 from sqlalchemy import select, delete
@@ -20,6 +20,27 @@ from backend.app.models.analysis import Analysis
 from tests.fixtures.base_fixtures import TestIsolation
 from tests.unit.backend.models.conftest import ModelTestHelpers, performance_test
 
+TaskTenantIdColumn = cast(Any, getattr(Task, "tenant_id"))
+TaskUserIdColumn = cast(Any, getattr(Task, "user_id"))
+TaskStatusColumn = cast(Any, getattr(Task, "status"))
+AnalysisTaskIdColumn = cast(Any, getattr(Analysis, "task_id"))
+
+def ensure_uuid(value: Any) -> uuid.UUID:
+    assert isinstance(value, uuid.UUID)
+    return value
+
+def ensure_task_status(value: Any) -> TaskStatus:
+    assert isinstance(value, TaskStatus)
+    return value
+
+def ensure_decimal(value: Any) -> Decimal:
+    assert isinstance(value, Decimal)
+    return value
+
+def ensure_optional_analysis(value: Any) -> Optional[Analysis]:
+    assert value is None or isinstance(value, Analysis)
+    return value
+
 
 class TestModelRelationships:
     """模型关系测试类"""
@@ -29,7 +50,7 @@ class TestModelRelationships:
         self, 
         async_session: AsyncSession,
         model_helpers: ModelTestHelpers
-    ):
+    ) -> None:
         """测试用户与任务的一对多关系"""
         # 创建用户
         user = model_helpers.create_test_user(async_session)
@@ -51,18 +72,20 @@ class TestModelRelationships:
         
         # 验证关系：查询用户的所有任务
         result = await async_session.execute(
-            select(Task).where(Task.user_id == user.id).order_by(Task.product_description)
+            select(Task).where(TaskUserIdColumn == user.id).order_by(Task.product_description)
         )
         user_tasks = result.scalars().all()
         
         assert len(user_tasks) == 3
         for i, task in enumerate(user_tasks):
-            assert task.user_id == user.id
-            assert task.tenant_id == user.tenant_id
-            assert f"Task {i}" in task.product_description
+            task_any = cast(Any, task)
+            assert ensure_uuid(task_any.user_id) == user.id
+            assert ensure_uuid(task_any.tenant_id) == user.tenant_id
+            assert isinstance(task_any.product_description, str)
+            assert f"Task {i}" in task_any.product_description
     
     @TestIsolation.unit_test
-    async def test_task_analysis_relationship(self, async_session: AsyncSession):
+    async def test_task_analysis_relationship(self, async_session: AsyncSession) -> None:
         """测试任务与分析的一对一关系"""
         # 创建用户和任务
         user = User(
@@ -93,17 +116,15 @@ class TestModelRelationships:
         await async_session.commit()
         
         # 验证一对一关系
-        result = await async_session.execute(
-            select(Analysis).where(Analysis.task_id == task.id)
-        )
-        task_analysis = result.scalar_one_or_none()
-        
+        result = await async_session.execute(cast(Any, select(Analysis).where(Analysis.task_id == task.id)))
+        task_analysis_optional = result.scalar_one_or_none()
+        task_analysis = ensure_optional_analysis(task_analysis_optional)
         assert task_analysis is not None
-        assert task_analysis.task_id == task.id
-        assert task_analysis.confidence_score == Decimal("0.85")
+        assert ensure_uuid(task_analysis.task_id) == task.id
+        assert ensure_decimal(task_analysis.confidence_score) == Decimal("0.85")
     
     @TestIsolation.unit_test
-    async def test_cascade_delete_user_tasks(self, async_session: AsyncSession):
+    async def test_cascade_delete_user_tasks(self, async_session: AsyncSession) -> None:
         """测试用户删除时的级联操作"""
         # 创建用户和任务
         user = User(
@@ -141,7 +162,7 @@ class TestModelRelationships:
         assert len(remaining_tasks) == 0
     
     @TestIsolation.unit_test
-    async def test_cascade_delete_task_analysis(self, async_session: AsyncSession):
+    async def test_cascade_delete_task_analysis(self, async_session: AsyncSession) -> None:
         """测试任务删除时分析结果的级联删除"""
         # 创建用户、任务和分析
         user = User(
@@ -185,7 +206,7 @@ class TestModelRelationships:
         assert remaining_analysis is None
     
     @TestIsolation.unit_test
-    async def test_multi_tenant_data_isolation(self, async_session: AsyncSession):
+    async def test_multi_tenant_data_isolation(self, async_session: AsyncSession) -> None:
         """测试多租户数据隔离的完整性"""
         # 创建两个租户的用户
         user1 = User(
@@ -237,35 +258,40 @@ class TestModelRelationships:
         
         # 验证租户1只能看到自己的数据
         result = await async_session.execute(
-            select(Task).where(Task.tenant_id == user1.tenant_id)
+            select(Task).where(TaskTenantIdColumn == user1.tenant_id)
         )
         tenant1_tasks = result.scalars().all()
         
         assert len(tenant1_tasks) == 1
-        assert tenant1_tasks[0].product_description == "Tenant 1 task"
+        task_any_t1 = cast(Any, tenant1_tasks[0])
+        assert isinstance(task_any_t1.product_description, str)
+        assert task_any_t1.product_description == "Tenant 1 task"
         
         # 验证租户2只能看到自己的数据
         result = await async_session.execute(
-            select(Task).where(Task.tenant_id == user2.tenant_id)
+            select(Task).where(TaskTenantIdColumn == user2.tenant_id)
         )
         tenant2_tasks = result.scalars().all()
         
         assert len(tenant2_tasks) == 1
-        assert tenant2_tasks[0].product_description == "Tenant 2 task"
+        task_any_t2 = cast(Any, tenant2_tasks[0])
+        assert isinstance(task_any_t2.product_description, str)
+        assert task_any_t2.product_description == "Tenant 2 task"
         
         # 验证分析结果也隔离
         result = await async_session.execute(
             select(Analysis)
             .join(Task)
-            .where(Task.tenant_id == user1.tenant_id)
+            .where(TaskTenantIdColumn == user1.tenant_id)
         )
         tenant1_analyses = result.scalars().all()
         
         assert len(tenant1_analyses) == 1
-        assert tenant1_analyses[0].insights["tenant"] == 1
+        analysis_any = cast(Any, tenant1_analyses[0])
+        assert analysis_any.insights["tenant"] == 1
     
     @TestIsolation.unit_test
-    async def test_eager_loading_relationships(self, async_session: AsyncSession):
+    async def test_eager_loading_relationships(self, async_session: AsyncSession) -> None:
         """测试预加载关系以避免N+1查询问题"""
         # 创建用户和多个任务
         user = User(
@@ -302,7 +328,7 @@ class TestModelRelationships:
         result = await async_session.execute(
             select(Task)
             .options(selectinload(Task.analysis))
-            .where(Task.user_id == user.id)
+            .where(TaskUserIdColumn == user.id)
             .order_by(Task.product_description)
         )
         tasks = result.scalars().all()
@@ -311,16 +337,17 @@ class TestModelRelationships:
         
         # 验证预加载的分析结果
         analysis_count = 0
-        for i, task in enumerate(tasks):
-            if task.id in tasks_with_analysis:
+        for task in tasks:
+            task_any = cast(Any, task)
+            if task_any.id in tasks_with_analysis:
                 # 这些任务应该有分析结果，且已预加载
-                assert hasattr(task, 'analysis')
+                assert hasattr(task_any, "analysis")
                 analysis_count += 1
         
         assert analysis_count == 3  # 偶数任务：0, 2, 4
     
     @TestIsolation.unit_test
-    async def test_referential_integrity_violations(self, async_session: AsyncSession):
+    async def test_referential_integrity_violations(self, async_session: AsyncSession) -> None:
         """测试引用完整性违反的处理"""
         # 创建用户和任务
         user = User(
@@ -343,7 +370,7 @@ class TestModelRelationships:
             await async_session.commit()
     
     @TestIsolation.unit_test
-    async def test_complex_query_across_relationships(self, async_session: AsyncSession):
+    async def test_complex_query_across_relationships(self, async_session: AsyncSession) -> None:
         """测试跨关系的复杂查询"""
         # 创建测试数据
         users = []
@@ -384,16 +411,15 @@ class TestModelRelationships:
         await async_session.commit()
         
         # 复杂查询：查找所有已完成任务的高置信度分析
-        result = await async_session.execute(
-            select(Analysis)
-            .join(Task)
-            .join(User)
-            .where(
-                Task.status == TaskStatus.COMPLETED,
-                Analysis.confidence_score > Decimal("0.80")
-            )
-            .order_by(User.email)
+        query = select(Analysis)
+        query = query.join(Task)
+        query = query.join(User)
+        query = query.where(
+            TaskStatusColumn == TaskStatus.COMPLETED,
+            Analysis.confidence_score > Decimal("0.80")
         )
+        query = query.order_by(User.email)
+        result = await async_session.execute(cast(Any, query))
         high_confidence_analyses = result.scalars().all()
         
         # 验证结果
@@ -402,7 +428,7 @@ class TestModelRelationships:
     
     @TestIsolation.unit_test
     @performance_test(max_duration=0.3)
-    async def test_relationship_query_performance(self, async_session: AsyncSession):
+    async def test_relationship_query_performance(self, async_session: AsyncSession) -> None:
         """测试关系查询性能"""
         # 创建大量数据进行性能测试
         user = User(
@@ -441,7 +467,7 @@ class TestModelRelationships:
             select(Task, Analysis)
             .outerjoin(Analysis)
             .where(
-                Task.user_id == user.id,
+                TaskUserIdColumn == user.id,
                 Task.status == TaskStatus.COMPLETED
             )
             .order_by(Task.created_at.desc())

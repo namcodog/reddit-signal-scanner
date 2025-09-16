@@ -6,10 +6,12 @@
 """
 
 import asyncio
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 import pytest
 from tests.performance import baseline_recorder as perf
+
+from backend.app.core.redis_client import RedisClient
 
 
 class FlakyRedis:
@@ -41,7 +43,7 @@ class FlakyRedis:
         return True
 
     # 兼容少量调用
-    async def get(self, key: str):
+    async def get(self, key: str) -> Optional[str]:
         await self._maybe_delay()
         await self._maybe_fail()
         return self._store.get(key)
@@ -49,19 +51,22 @@ class FlakyRedis:
 
 @pytest.mark.asyncio
 @pytest.mark.chaos
-async def test_token_blacklist_behaves_conservatively_under_partition(monkeypatch):
+async def test_token_blacklist_behaves_conservatively_under_partition(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """
     Redis 连接异常时，黑名单检查应保守返回未撤销（不中断主流程）。
     """
-    from app.services.token_blacklist_service import get_token_blacklist_service
+    from backend.app.services.token_blacklist_service import get_token_blacklist_service
 
     flaky = FlakyRedis(fail_times=2, delay_ms=0)
 
-    async def _fake_get_redis_client():  # type: ignore
-        return flaky
+    async def _fake_get_redis_client() -> RedisClient:
+        return cast(RedisClient, flaky)
 
     monkeypatch.setattr(
-        "app.services.token_blacklist_service.get_redis_client", _fake_get_redis_client
+        "backend.app.services.token_blacklist_service.get_redis_client",
+        _fake_get_redis_client,
     )
 
     svc = get_token_blacklist_service()
@@ -78,16 +83,20 @@ async def test_token_blacklist_behaves_conservatively_under_partition(monkeypatc
 
 @pytest.mark.asyncio
 @pytest.mark.chaos
-async def test_login_rate_limit_allows_when_redis_unavailable(monkeypatch):
+async def test_login_rate_limit_allows_when_redis_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """登录频率限制在 Redis 异常时不阻断登录（日志记录）。"""
-    from app.services.login_security import login_security
+    from backend.app.services.login_security import login_security
 
     flaky = FlakyRedis(fail_times=3, delay_ms=0)
 
-    async def _fake_get_redis_client():  # type: ignore
-        return flaky
+    async def _fake_get_redis_client() -> RedisClient:
+        return cast(RedisClient, flaky)
 
-    monkeypatch.setattr("app.services.login_security.get_redis_client", _fake_get_redis_client)
+    monkeypatch.setattr(
+        "backend.app.services.login_security.get_redis_client", _fake_get_redis_client
+    )
 
     case_id = "chaos:redis_partition:login_rate_limit"
     with perf.time_block(case_id):
@@ -100,18 +109,21 @@ async def test_login_rate_limit_allows_when_redis_unavailable(monkeypatch):
 
 @pytest.mark.asyncio
 @pytest.mark.chaos
-async def test_high_latency_does_not_break_blacklist(monkeypatch):
+async def test_high_latency_does_not_break_blacklist(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """高延迟但最终可达时，黑名单检查仍能返回结果。"""
-    from app.services.token_blacklist_service import get_token_blacklist_service
+    from backend.app.services.token_blacklist_service import get_token_blacklist_service
 
     # 仅增加轻微延迟，避免拖慢测试
     slow = FlakyRedis(fail_times=0, delay_ms=10)
 
-    async def _fake_get_redis_client():  # type: ignore
-        return slow
+    async def _fake_get_redis_client() -> RedisClient:
+        return cast(RedisClient, slow)
 
     monkeypatch.setattr(
-        "app.services.token_blacklist_service.get_redis_client", _fake_get_redis_client
+        "backend.app.services.token_blacklist_service.get_redis_client",
+        _fake_get_redis_client,
     )
 
     svc = get_token_blacklist_service()

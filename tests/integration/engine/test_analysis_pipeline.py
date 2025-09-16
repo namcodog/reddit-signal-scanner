@@ -1,12 +1,12 @@
 import asyncio
 import time
-from typing import Any, Dict, List
+from typing import Any, Dict, List, cast
 
 import pytest
 
-from backend.app.services.analysis_engine import AnalysisEngine
-from backend.app.models.analysis_pipeline import PipelineResult, StepStatus
+from backend.app.models.analysis_pipeline import PipelineData, PipelineResult, StepStatus
 from backend.app.models.signal_pattern import RedditPost as SPRedditPost
+from backend.app.services.analysis_engine import AnalysisEngine
 
 
 pytestmark = pytest.mark.integration
@@ -59,8 +59,7 @@ def _fake_reddit_posts() -> List[SPRedditPost]:
 async def test_analysis_engine_pipeline_runs_end_to_end(monkeypatch: pytest.MonkeyPatch) -> None:
     engine = AnalysisEngine()
 
-    # Monkeypatch Step 1: community_discovery
-    async def _step1(_self, data):  # type: ignore[no-redef]
+    async def _step1(_self: Any, data: PipelineData) -> PipelineResult:
         return PipelineResult(
             step_name="communitydiscovery",
             duration=0.01,
@@ -76,8 +75,7 @@ async def test_analysis_engine_pipeline_runs_end_to_end(monkeypatch: pytest.Monk
             status=StepStatus.COMPLETED,
         )
 
-    # Monkeypatch Step 2: data_collection → provide reddit_posts for signal extraction
-    async def _step2(_self, data):  # type: ignore[no-redef]
+    async def _step2(_self: Any, data: PipelineData) -> PipelineResult:
         posts = _fake_reddit_posts()
         return PipelineResult(
             step_name="datacollection",
@@ -92,8 +90,7 @@ async def test_analysis_engine_pipeline_runs_end_to_end(monkeypatch: pytest.Monk
             status=StepStatus.COMPLETED,
         )
 
-    # Monkeypatch Step 3: signal_extraction → return insights mapping for ranking
-    async def _step3(_self, data):  # type: ignore[no-redef]
+    async def _step3(_self: Any, data: PipelineData) -> PipelineResult:
         now = time.time()
         return PipelineResult(
             step_name="signal_extraction",
@@ -135,15 +132,11 @@ async def test_analysis_engine_pipeline_runs_end_to_end(monkeypatch: pytest.Monk
             status=StepStatus.COMPLETED,
         )
 
-    # Attach monkeypatches to the step instances
-    # Order: [CommunityDiscoveryStep, DataCollectionStep, SignalExtractionStep, ResultRankingStep]
     assert len(engine.steps) == 4
-    # Patch on the classes so methods bind correctly
     monkeypatch.setattr(engine.steps[0].__class__, "_process_step", _step1)
     monkeypatch.setattr(engine.steps[1].__class__, "_process_step", _step2)
     monkeypatch.setattr(engine.steps[2].__class__, "_process_step", _step3)
 
-    # Execute the analysis
     report = await engine.analyze(
         product_description="Awesome mobile app for productivity on Reddit",
         target_keywords=["productivity", "mobile", "reddit"],
@@ -151,19 +144,14 @@ async def test_analysis_engine_pipeline_runs_end_to_end(monkeypatch: pytest.Monk
         include_raw_data=False,
     )
 
-    # Validations
     assert report.total_duration >= 0.0
-    # At least community discovery and data collection executed
     assert len(report.step_durations) >= 2
 
-    # Confidence is computed; ensure it is a valid ratio [0,1]
     assert 0.0 <= report.confidence_score <= 1.0
 
-    # Executive summary exists and contains keys
     summary = report.get_executive_summary()
     assert "总洞察数" in summary
     assert "置信度" in summary
     assert "分析时长" in summary
 
-    # Actionability heuristic (may still be False depending on step durations)
     assert isinstance(report.is_actionable(), bool)

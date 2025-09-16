@@ -9,11 +9,19 @@ import json
 import uuid
 from datetime import datetime
 from decimal import Decimal
-from typing import Dict, Any
+from typing import Any, Dict, cast
 import pytest
 import pytest_asyncio
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError, CheckViolation
+from sqlalchemy.exc import IntegrityError
+
+try:
+    from sqlalchemy.exc import CheckViolation as _CheckViolation  # type: ignore[attr-defined]
+except AttributeError:
+    _CheckViolation = IntegrityError
+
+CheckViolation = _CheckViolation
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.analysis import Analysis
@@ -32,7 +40,7 @@ class TestAnalysisModel:
         async_session: AsyncSession, 
         model_helpers: ModelTestHelpers,
         sample_analysis_data: Dict[str, Any]
-    ):
+    ) -> None:
         """测试分析模型创建 - 验证基本字段和关系"""
         # 创建用户和任务
         user = model_helpers.create_test_user(async_session)
@@ -67,7 +75,7 @@ class TestAnalysisModel:
         assert analysis.sources == sample_analysis_data["sources"]
     
     @TestIsolation.unit_test
-    async def test_analysis_field_types(self, async_session: AsyncSession):
+    async def test_analysis_field_types(self, async_session: AsyncSession) -> None:
         """测试分析模型字段类型"""
         user = User(
             email="analysis_types@example.com",
@@ -97,16 +105,23 @@ class TestAnalysisModel:
         await async_session.refresh(analysis)
         
         # 验证字段类型
-        assert isinstance(analysis.id, uuid.UUID)
-        assert isinstance(analysis.task_id, uuid.UUID)
-        assert isinstance(analysis.insights, dict)
-        assert isinstance(analysis.sources, dict)
-        assert isinstance(analysis.confidence_score, Decimal)
-        assert isinstance(analysis.analysis_version, int)
-        assert isinstance(analysis.created_at, datetime)
+        analysis_id = cast(uuid.UUID, analysis.id)
+        task_id_value = cast(uuid.UUID, analysis.task_id)
+        assert isinstance(analysis_id, uuid.UUID)
+        assert isinstance(task_id_value, uuid.UUID)
+        insights_data = cast(dict[str, Any], analysis.insights)
+        sources_data = cast(dict[str, Any], analysis.sources)
+        assert isinstance(insights_data, dict)
+        assert isinstance(sources_data, dict)
+        confidence = cast(Decimal, analysis.confidence_score)
+        version_value = cast(int, analysis.analysis_version)
+        created_at_value = cast(datetime, analysis.created_at)
+        assert isinstance(confidence, Decimal)
+        assert isinstance(version_value, int)
+        assert isinstance(created_at_value, datetime)
     
     @TestIsolation.unit_test
-    async def test_analysis_defaults(self, async_session: AsyncSession):
+    async def test_analysis_defaults(self, async_session: AsyncSession) -> None:
         """测试分析模型默认值"""
         user = User(
             email="analysis_defaults@example.com",
@@ -141,7 +156,7 @@ class TestAnalysisModel:
         assert analysis.created_at is not None  # 自动设置
     
     @TestIsolation.unit_test
-    async def test_confidence_score_constraint(self, async_session: AsyncSession):
+    async def test_confidence_score_constraint(self, async_session: AsyncSession) -> None:
         """测试置信度约束 - 必须在0.00-1.00之间"""
         user = User(
             email="confidence_test@example.com",
@@ -178,7 +193,7 @@ class TestAnalysisModel:
             await async_session.rollback()
     
     @TestIsolation.unit_test
-    async def test_analysis_version_constraint(self, async_session: AsyncSession):
+    async def test_analysis_version_constraint(self, async_session: AsyncSession) -> None:
         """测试分析版本约束 - 必须为正数"""
         user = User(
             email="version_test@example.com",
@@ -211,7 +226,7 @@ class TestAnalysisModel:
             await async_session.commit()
     
     @TestIsolation.unit_test
-    async def test_task_analysis_relationship(self, async_session: AsyncSession):
+    async def test_task_analysis_relationship(self, async_session: AsyncSession) -> None:
         """测试任务与分析的一对一关系"""
         user = User(
             email="relationship_test@example.com",
@@ -249,7 +264,7 @@ class TestAnalysisModel:
         assert found_analysis.task_id == task.id
     
     @TestIsolation.unit_test
-    async def test_analysis_unique_task_constraint(self, async_session: AsyncSession):
+    async def test_analysis_unique_task_constraint(self, async_session: AsyncSession) -> None:
         """测试分析结果与任务的唯一性约束 - 一个任务只能有一个分析"""
         user = User(
             email="unique_analysis@example.com",
@@ -291,7 +306,7 @@ class TestAnalysisModel:
             await async_session.commit()
     
     @TestIsolation.unit_test
-    async def test_foreign_key_constraint(self, async_session: AsyncSession):
+    async def test_foreign_key_constraint(self, async_session: AsyncSession) -> None:
         """测试外键约束 - 必须引用存在的任务"""
         fake_task_id = uuid.uuid4()
         
@@ -307,7 +322,7 @@ class TestAnalysisModel:
             await async_session.commit()
     
     @TestIsolation.unit_test
-    async def test_not_null_constraints(self, async_session: AsyncSession):
+    async def test_not_null_constraints(self, async_session: AsyncSession) -> None:
         """测试非空约束"""
         user = User(
             email="not_null_test@example.com",
@@ -351,7 +366,7 @@ class TestAnalysisModel:
             await async_session.commit()
     
     @TestIsolation.unit_test
-    async def test_jsonb_insights_structure(self, async_session: AsyncSession):
+    async def test_jsonb_insights_structure(self, async_session: AsyncSession) -> None:
         """测试JSONB insights字段结构"""
         user = User(
             email="jsonb_test@example.com",
@@ -417,7 +432,7 @@ class TestAnalysisModel:
         assert analysis.insights["opportunities"][0]["confidence"] == 0.92
     
     @TestIsolation.unit_test
-    async def test_jsonb_sources_structure(self, async_session: AsyncSession):
+    async def test_jsonb_sources_structure(self, async_session: AsyncSession) -> None:
         """测试JSONB sources字段结构"""
         user = User(
             email="sources_test@example.com",
@@ -472,7 +487,7 @@ class TestAnalysisModel:
         assert analysis.sources["sentiment_analysis"]["positive"] == 0.45
     
     @TestIsolation.unit_test
-    async def test_analysis_string_representation(self, async_session: AsyncSession):
+    async def test_analysis_string_representation(self, async_session: AsyncSession) -> None:
         """测试字符串表示方法"""
         user = User(
             email="repr_test@example.com",
@@ -509,7 +524,7 @@ class TestAnalysisModel:
         assert "0.77" in repr_str
     
     @TestIsolation.unit_test
-    async def test_confidence_percentage_property(self, async_session: AsyncSession):
+    async def test_confidence_percentage_property(self, async_session: AsyncSession) -> None:
         """测试置信度百分比属性"""
         user = User(
             email="percentage_test@example.com",
@@ -543,7 +558,7 @@ class TestAnalysisModel:
     
     @TestIsolation.unit_test
     @performance_test(max_duration=0.2)
-    async def test_analysis_query_performance(self, async_session: AsyncSession):
+    async def test_analysis_query_performance(self, async_session: AsyncSession) -> None:
         """测试分析结果查询性能"""
         user = User(
             email="performance_analysis@example.com",

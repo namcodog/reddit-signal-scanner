@@ -9,9 +9,36 @@ on:
     branches: [ main, develop ]
 
 jobs:
+  detect-changes:
+    name: Detect Path Changes
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          base: ${{ github.base_ref }}
+          filters: |
+            backend:
+              - 'backend/**'
+              - 'tests/**'
+              - 'pytest.ini'
+              - '.github/workflows/test-quick.yml'
+            frontend:
+              - 'frontend/**'
+              - '.github/workflows/test-quick.yml'
+
   backend-quick:
     name: Backend Quick (unit only)
     runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.backend == 'true'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -41,6 +68,8 @@ jobs:
   frontend-quick:
     name: Frontend Quick (unit only)
     runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.frontend == 'true'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -57,3 +86,4 @@ jobs:
         working-directory: frontend
         run: |
           npm test -- --run src/__tests__/components src/__tests__/hooks src/__tests__/utils
+

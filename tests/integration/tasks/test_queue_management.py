@@ -1,5 +1,5 @@
 import time
-from typing import Any, Dict
+from typing import Any, Callable, Dict
 
 import pytest
 
@@ -8,7 +8,7 @@ from backend.app.core.celery_app import get_active_tasks, get_queue_lengths
 pytestmark = pytest.mark.integration
 
 
-def _wait_for(cond, timeout: float = 10.0, interval: float = 0.2) -> bool:
+def _wait_for(cond: Callable[[], bool], timeout: float = 10.0, interval: float = 0.2) -> bool:
     end = time.time() + timeout
     while time.time() < end:
         if cond():
@@ -39,4 +39,3 @@ def test_active_and_queue_lengths_update(celery_setup: Any) -> None:
     for key in ("analysis_queue", "maintenance_queue", "cleanup_queue", "monitoring_queue"):
         assert key in lengths
         assert isinstance(lengths[key], int)
-

@@ -19,7 +19,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
 from threading import Lock
-from typing import Any, Dict, Generator, List, Optional
+from typing import Any, Dict, Generator, List, Optional, cast
 from typing import AsyncGenerator
 
 _LOCK = Lock()
@@ -146,7 +146,7 @@ def flush() -> Optional[Path]:
 def _load_json(path: Path) -> Optional[Dict[str, Any]]:
     try:
         if path.exists():
-            return json.loads(path.read_text())
+            return cast(Dict[str, Any], json.loads(path.read_text()))
     except Exception:
         return None
     return None
@@ -155,7 +155,7 @@ def _load_json(path: Path) -> Optional[Dict[str, Any]]:
 def _compare_with(prev_path: Path) -> Dict[str, Any]:
     """内部：与上一版基线对比（仅比对相同 case_id 的 duration_ms）。"""
     prev_payload = _load_json(prev_path) or {}
-    prev_list: List[Dict[str, Any]] = prev_payload.get("records", [])  # type: ignore[assignment]
+    prev_list = cast(List[Dict[str, Any]], prev_payload.get("records", []))
     prev = {rec.get("case_id"): rec for rec in prev_list}
 
     with _LOCK:

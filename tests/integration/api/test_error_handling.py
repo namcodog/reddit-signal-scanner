@@ -4,11 +4,14 @@ Error handling middleware integration tests (dev mode)
 Verifies /dev/test-error is caught and returns unified error payload.
 """
 
+from typing import Callable
+
+import httpx
 import pytest
 
 
 @pytest.mark.integration
-async def test_dev_test_error_returns_unified_payload(api_client):
+async def test_dev_test_error_returns_unified_payload(api_client: httpx.AsyncClient) -> None:
     resp = await api_client.get("/dev/test-error")
     assert resp.status_code == 500
     data = resp.json()
@@ -20,7 +23,9 @@ async def test_dev_test_error_returns_unified_payload(api_client):
 
 
 @pytest.mark.integration
-async def test_status_fallback_returns_guidance(api_client, build_url):
+async def test_status_fallback_returns_guidance(
+    api_client: httpx.AsyncClient, build_url: Callable[[str], str]
+) -> None:
     # Status endpoint should fallback and include polling guidance key
     task_id = "ffffffff-ffff-ffff-ffff-ffffffffffff"
     url = build_url(f"/status/{task_id}")
@@ -33,6 +38,8 @@ async def test_status_fallback_returns_guidance(api_client, build_url):
 
 
 @pytest.mark.integration
-async def test_stream_invalid_id_returns_400(api_client, build_url):
+async def test_stream_invalid_id_returns_400(
+    api_client: httpx.AsyncClient, build_url: Callable[[str], str]
+) -> None:
     r = await api_client.get(build_url("/stream/x/test"))
     assert r.status_code == 400

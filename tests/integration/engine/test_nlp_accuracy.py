@@ -1,8 +1,8 @@
-from typing import List
+from typing import Any, List, cast
 
 import pytest
 
-from backend.app.models.analysis_pipeline import PipelineData, AnalysisConfig
+from backend.app.models.analysis_pipeline import AnalysisConfig, PipelineData
 from backend.app.services.analysis.signal_extractor import RedditSignalExtractor
 from backend.app.models.signal_pattern import RedditPost as SPRedditPost
 
@@ -54,9 +54,10 @@ async def test_signal_extraction_detects_three_signal_types() -> None:
     )
 
     # Provide reddit_posts as DataCollection output for the extractor
-    data.step_results["data_collection"] = {
-        "reddit_posts": _posts_for_accuracy(),
-    }
+    data.step_results["data_collection"] = cast(
+        dict[str, Any],
+        {"reddit_posts": _posts_for_accuracy()},
+    )
 
     result = await extractor.process(data)
 

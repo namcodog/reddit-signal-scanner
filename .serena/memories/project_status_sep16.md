@@ -1,0 +1,1 @@
+2025-09-16：已在 backend/requirements.txt 加入 aiosqlite，并更新 .github/workflows/test.yml 在安装依赖后显式 pip install aiosqlite；CI 需 push 后重跑 Backend Unit/Smoke job。

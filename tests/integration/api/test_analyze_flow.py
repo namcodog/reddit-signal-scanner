@@ -5,6 +5,10 @@ Covers validation-only scenarios that do not require a real DB,
 so they can run in any environment via ASGI in-process.
 """
 
+from typing import Any, Callable, Sequence
+
+import asyncio
+import httpx
 import pytest
 
 from .base import IntegrationTestBase
@@ -12,13 +16,17 @@ from .base import IntegrationTestBase
 
 @pytest.mark.integration
 class TestAnalyzeValidation(IntegrationTestBase):
-    async def test_create_analysis_task_invalid_length_422(self, api_client, build_url):
+    async def test_create_analysis_task_invalid_length_422(
+        self, api_client: httpx.AsyncClient, build_url: Callable[[str], str]
+    ) -> None:
         url = self.url(build_url, "/analyze/")
         payload = {"product_description": "too short"}  # < 10 chars after strip
         resp = await api_client.post(url, json=payload)
         assert resp.status_code == 422
 
-    async def test_create_analysis_task_blocked_pattern_400(self, api_client, build_url):
+    async def test_create_analysis_task_blocked_pattern_400(
+        self, api_client: httpx.AsyncClient, build_url: Callable[[str], str]
+    ) -> None:
         url = self.url(build_url, "/analyze/")
         # Valid length but contains blocked SQL-injection pattern -> business validator -> 400
         text = "This description is long enough but contains DROP TABLE directive"
@@ -32,7 +40,9 @@ class TestAnalyzeValidation(IntegrationTestBase):
 
 @pytest.mark.integration
 class TestAnalyzeFlowSimulated(IntegrationTestBase):
-    async def test_task_cancellation_endpoint(self, api_client, build_url):
+    async def test_task_cancellation_endpoint(
+        self, api_client: httpx.AsyncClient, build_url: Callable[[str], str]
+    ) -> None:
         # cancel endpoint exists and returns success envelope
         task_id = "00000000-0000-0000-0000-000000000000"
         url = self.url(build_url, f"/analyze/{task_id}/cancel")
@@ -42,7 +52,9 @@ class TestAnalyzeFlowSimulated(IntegrationTestBase):
         assert data.get("status") == "success"
         assert data.get("data", {}).get("action") == "cancel_requested"
 
-    async def test_complete_analysis_workflow_with_fallback(self, api_client, build_url):
+    async def test_complete_analysis_workflow_with_fallback(
+        self, api_client: httpx.AsyncClient, build_url: Callable[[str], str]
+    ) -> None:
         # Simulate: stream test events -> poll status (fallback) -> expect success envelope
         import json as _json
         import uuid as _uuid
@@ -71,7 +83,9 @@ class TestAnalyzeFlowSimulated(IntegrationTestBase):
         assert status_json["data"]["task_id"] == task_id
         assert status_json["data"].get("_fallback_mode", True) is True
 
-    async def test_concurrent_analysis_tasks_simulated(self, api_client, build_url):
+    async def test_concurrent_analysis_tasks_simulated(
+        self, api_client: httpx.AsyncClient, build_url: Callable[[str], str]
+    ) -> None:
         # Open multiple test streams and verify status for each
         import uuid as _uuid
 
@@ -90,11 +104,11 @@ class TestAnalyzeFlowSimulated(IntegrationTestBase):
         await asyncio.gather(*[start_stream(u) for u in stream_urls])
 
         async def check_status(u: str) -> bool:
-            r = await api_client.get(u)
-            if r.status_code != 200:
+            response = await api_client.get(u)
+            if response.status_code != 200:
                 return False
-            j = r.json()
-            return j.get("status") == "success"
+            body: dict[str, Any] = response.json()
+            return body.get("status") == "success"
 
         results = await asyncio.gather(*[check_status(u) for u in status_urls])
         assert all(results)
@@ -103,7 +117,9 @@ class TestAnalyzeFlowSimulated(IntegrationTestBase):
 @pytest.mark.integration
 @pytest.mark.skip(reason="Requires real DB and task queue to reach success path")
 class TestAnalyzeHappyPath(IntegrationTestBase):
-    async def test_create_analysis_task_success(self, api_client, build_url):
+    async def test_create_analysis_task_success(
+        self, api_client: httpx.AsyncClient, build_url: Callable[[str], str]
+    ) -> None:
         url = self.url(build_url, "/analyze/")
         payload = {
             "product_description": (

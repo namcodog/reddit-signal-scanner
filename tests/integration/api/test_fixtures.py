@@ -1,51 +1,31 @@
-"""
-Integration API fixtures
+"""Common fixtures for integration API tests."""
 
-- In-process ASGI client for FastAPI app
-- Helper to build API paths with configured prefix
-"""
+from collections.abc import AsyncIterator
+from typing import Any, Callable, cast
 
-import asyncio
-from typing import AsyncIterator, Callable
-
+import httpx
 import pytest
-from httpx import ASGITransport, AsyncClient
+from fastapi import FastAPI
+from starlette.types import ASGIApp
 
-# Import FastAPI app and settings
-from backend.app.main import app
-from backend.app.core.config import get_settings
-
-
-@pytest.fixture(scope="session")
-def api_prefix() -> str:
-    settings = get_settings()
-    return settings.api_prefix
+from backend.app.main import app as fastapi_app
 
 
 @pytest.fixture(scope="session")
-def build_url(api_prefix: str) -> Callable[[str], str]:
-    """Helper to join API prefix with a relative path.
+def app() -> FastAPI:
+    return fastapi_app
 
-    Accepts absolute paths as pass-through.
-    """
 
-    def _join(path: str) -> str:
-        if path.startswith("/api/"):
-            return path
-        if not path.startswith("/"):
-            path = "/" + path
-        return f"{api_prefix}{path}"
-
-    return _join
+@pytest.fixture(scope="session")
+async def api_client(app: FastAPI) -> AsyncIterator[httpx.AsyncClient]:
+    transport = httpx.ASGITransport(app=cast(Any, app))
+    client = httpx.AsyncClient(transport=transport, base_url="http://testserver")
+    try:
+        yield client
+    finally:
+        await client.aclose()
 
 
 @pytest.fixture
-async def api_client() -> AsyncIterator[AsyncClient]:
-    """ASGI in-process HTTP client with lifespan enabled.
-
-    Does not require running uvicorn or external network.
-    """
-    transport = ASGITransport(app=app, lifespan="on")
-    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
-        yield client
-
+def build_url() -> Callable[[str], str]:
+    return lambda path: path

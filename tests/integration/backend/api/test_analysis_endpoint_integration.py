@@ -7,15 +7,20 @@
 4. 测试错误处理链
 """
 
-import pytest
 import asyncio
-from datetime import datetime
-from typing import Dict, Any
-from httpx import AsyncClient
+from typing import Any, AsyncIterator, Awaitable, Dict, List
+
+import pytest
+from httpx import AsyncClient, Response
 
 from tests.fixtures.base_fixtures import TestIsolation, AssertHelpers
 from tests.fixtures.mock_services import MockServiceFactory
-from tests.utils.api_switcher import api_switcher, contract_validator, with_api_mode
+from tests.utils.api_switcher import (
+    ApiSwitcher,
+    ContractValidator,
+    api_switcher,
+    contract_validator,
+)
 
 
 @TestIsolation.integration_test
@@ -23,11 +28,17 @@ class TestAnalysisEndpointIntegration:
     """分析端点集成测试"""
     
     @pytest.fixture
-    async def authenticated_client(self, api_switcher) -> AsyncClient:
+    async def authenticated_client(
+        self, api_switcher: ApiSwitcher
+    ) -> AsyncIterator[AsyncClient]:
         """获取认证的客户端"""
         # 根据当前模式创建客户端
-        base_url = "http://localhost:8000" if not api_switcher.is_mock_mode else "http://mock-api"
-        
+        base_url = (
+            "http://localhost:8000"
+            if not api_switcher.is_mock_mode
+            else "http://mock-api"
+        )
+
         async with AsyncClient(base_url=base_url) as client:
             # 登录获取token
             if api_switcher.is_mock_mode:
@@ -45,7 +56,12 @@ class TestAnalysisEndpointIntegration:
             client.headers["Authorization"] = f"Bearer {token}"
             yield client
             
-    async def test_create_analysis_task_success(self, authenticated_client, contract_validator):
+    async def test_create_analysis_task_success(
+        self,
+        authenticated_client: AsyncClient,
+        contract_validator: ContractValidator,
+        api_switcher: ApiSwitcher,
+    ) -> None:
         """测试创建分析任务 - 成功场景"""
         # 准备请求数据
         request_data = {
@@ -76,19 +92,21 @@ class TestAnalysisEndpointIntegration:
             "estimated_completion": str
         })
         contract_validator.validate_response(
-            "/api/v1/discovery/analyze", 
+            "/api/v1/discovery/analyze",
             data,
-            is_mock=api_switcher.is_mock_mode
+            is_mock=api_switcher.is_mock_mode,
         )
         
         # 验证具体值
         assert data["status"] in ["pending", "running"]
         assert len(data["task_id"]) == 36  # UUID格式
         
-    async def test_create_analysis_task_validation_errors(self, authenticated_client):
+    async def test_create_analysis_task_validation_errors(
+        self, authenticated_client: AsyncClient
+    ) -> None:
         """测试创建分析任务 - 输入验证错误"""
         # 测试各种无效输入
-        invalid_inputs = [
+        invalid_inputs: List[Dict[str, Any]] = [
             # 空关键词
             {"keywords": [], "limit": 50},
             # 缺少必需字段
@@ -114,7 +132,7 @@ class TestAnalysisEndpointIntegration:
             assert "error" in error_data
             assert "message" in error_data["error"]
             
-    async def test_unauthorized_access(self):
+    async def test_unauthorized_access(self) -> None:
         """测试未授权访问"""
         async with AsyncClient(base_url="http://localhost:8000") as client:
             # 不带token的请求
@@ -126,10 +144,10 @@ class TestAnalysisEndpointIntegration:
             assert response.status_code == 401
             AssertHelpers.assert_error_response(response, "UNAUTHORIZED")
             
-    async def test_rate_limiting(self, authenticated_client):
+    async def test_rate_limiting(self, authenticated_client: AsyncClient) -> None:
         """测试速率限制"""
         # 快速发送多个请求
-        tasks = []
+        tasks: List[Awaitable[Response]] = []
         for i in range(15):  # 假设限制是10请求/分钟
             task = authenticated_client.post(
                 "/api/v1/discovery/analyze",
@@ -138,19 +156,29 @@ class TestAnalysisEndpointIntegration:
             tasks.append(task)
             
         responses = await asyncio.gather(*tasks, return_exceptions=True)
-        
+
         # 统计成功和失败的请求
-        success_count = sum(1 for r in responses if not isinstance(r, Exception) and r.status_code < 400)
-        rate_limited_count = sum(1 for r in responses if not isinstance(r, Exception) and r.status_code == 429)
+        success_count = sum(
+            1
+            for response in responses
+            if isinstance(response, Response) and response.status_code < 400
+        )
+        rate_limited_count = sum(
+            1
+            for response in responses
+            if isinstance(response, Response) and response.status_code == 429
+        )
         
         # 应该有一些请求被限流
         assert rate_limited_count > 0
         assert success_count < len(tasks)
         
-    async def test_concurrent_task_creation(self, authenticated_client):
+    async def test_concurrent_task_creation(
+        self, authenticated_client: AsyncClient
+    ) -> None:
         """测试并发任务创建 - 多租户隔离"""
         # 创建多个并发任务
-        tasks = []
+        tasks: List[Awaitable[Response]] = []
         for i in range(5):
             task = authenticated_client.post(
                 "/api/v1/discovery/analyze",
@@ -163,9 +191,9 @@ class TestAnalysisEndpointIntegration:
             
         # 并发执行
         responses = await asyncio.gather(*tasks)
-        
+
         # 验证所有请求都成功
-        task_ids = []
+        task_ids: List[str] = []
         for response in responses:
             AssertHelpers.assert_api_response_ok(response, 201)
             data = response.json()
@@ -174,9 +202,14 @@ class TestAnalysisEndpointIntegration:
         # 验证任务ID都是唯一的
         assert len(set(task_ids)) == len(task_ids)
         
-    @with_api_mode("mock")
-    async def test_mock_specific_behavior(self, authenticated_client):
+    async def test_mock_specific_behavior(
+        self,
+        authenticated_client: AsyncClient,
+        api_switcher: ApiSwitcher,
+    ) -> None:
         """测试Mock特定行为 - 错误注入"""
+        if not api_switcher.is_mock_mode:
+            api_switcher.switch_to_mock()
         # 配置Mock服务的错误率
         if hasattr(authenticated_client, "_base_url") and "mock" in str(authenticated_client._base_url):
             MockServiceFactory.configure_error_rates(0.5)  # 50%错误率
@@ -198,7 +231,9 @@ class TestAnalysisEndpointIntegration:
         # 重置错误率
         MockServiceFactory.configure_error_rates(0.0)
         
-    async def test_task_status_check_flow(self, authenticated_client):
+    async def test_task_status_check_flow(
+        self, authenticated_client: AsyncClient
+    ) -> None:
         """测试任务状态检查流程 - 完整工作流"""
         # 1. 创建任务
         create_response = await authenticated_client.post(
@@ -237,7 +272,11 @@ class TestAnalysisEndpointIntegration:
         else:
             pytest.fail(f"任务在{max_attempts}次尝试后未完成")
             
-    async def test_database_transaction_rollback(self, authenticated_client, api_switcher):
+    async def test_database_transaction_rollback(
+        self,
+        authenticated_client: AsyncClient,
+        api_switcher: ApiSwitcher,
+    ) -> None:
         """测试数据库事务回滚 - 错误情况下的数据完整性"""
         if api_switcher.is_mock_mode:
             pytest.skip("Mock模式不测试数据库事务")
@@ -263,23 +302,27 @@ class TestAnalysisEndpointIntegration:
 
 
 @pytest.mark.parametrize("api_mode", ["mock", "real"])
-async def test_contract_consistency(api_mode, contract_validator):
+async def test_contract_consistency(
+    api_mode: str,
+    contract_validator: ContractValidator,
+    api_switcher: ApiSwitcher,
+) -> None:
     """测试Mock和Real API的契约一致性"""
     # 这个测试会在两种模式下运行，确保返回的数据结构一致
     
-    with api_switcher as switcher:
-        if api_mode == "mock":
-            switcher.switch_to_mock()
-        else:
-            try:
-                switcher.switch_to_real()
-            except pytest.skip.Exception:
-                return  # Real API不可用，跳过
-                
-        # 执行相同的请求
-        async with AsyncClient() as client:
-            # ... 执行测试并记录响应 ...
-            pass
-            
+    switcher = api_switcher
+    if api_mode == "mock":
+        switcher.switch_to_mock()
+    else:
+        try:
+            switcher.switch_to_real()
+        except pytest.skip.Exception:
+            return  # Real API不可用，跳过
+
+    # 执行相同的请求
+    async with AsyncClient() as client:
+        # ... 执行测试并记录响应 ...
+        _ = client
+
     # 测试结束后比较两种模式的响应
     contract_validator.compare_responses("/api/v1/discovery/analyze")

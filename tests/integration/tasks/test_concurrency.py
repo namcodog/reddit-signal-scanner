@@ -1,11 +1,12 @@
 import time
+from typing import Any
 
 import pytest
 
 pytestmark = pytest.mark.integration
 
 
-def test_concurrent_short_tasks_finish_within_budget(celery_setup):
+def test_concurrent_short_tasks_finish_within_budget(celery_setup: Any) -> None:
     """Submit multiple short tasks; expect completion within a lenient budget.
 
     This is a minimal concurrency sanity check, not a benchmark.
@@ -22,4 +23,3 @@ def test_concurrent_short_tasks_finish_within_budget(celery_setup):
 
     # Lenient upper bound to avoid flakiness across environments
     assert duration < 20.0
-

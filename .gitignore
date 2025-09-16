@@ -176,6 +176,10 @@ admin/.next/
 admin/.nuxt/
 admin/.vite/
 
+# 额外忽略：避免将测试/构建产物入库
+reports/junit.xml
+tests/reports/
+
 # 构建目录
 build/
 dist/

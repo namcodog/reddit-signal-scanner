@@ -11,16 +11,16 @@ from __future__ import annotations
 import asyncio
 import time
 from datetime import datetime, timezone
-from typing import Any, AsyncIterator, Dict, List
+from typing import Any, AsyncIterator, Dict, List, Optional, cast
 
+import httpx
 import pytest
-from httpx import ASGITransport, AsyncClient
 
 from tests.performance import baseline_recorder as perf
 
 
 @pytest.fixture
-async def api_client() -> AsyncIterator[AsyncClient]:
+async def api_client() -> AsyncIterator[httpx.AsyncClient]:
     from backend.app.main import app
     from backend.app.middleware.jwt_middleware import JWTMiddleware
 
@@ -28,8 +28,8 @@ async def api_client() -> AsyncIterator[AsyncClient]:
         "/api/v1/analyze/",
     })
 
-    transport = ASGITransport(app=app)
-    async with AsyncClient(
+    transport = httpx.ASGITransport(app=cast(Any, app))
+    async with httpx.AsyncClient(
         transport=transport, base_url="http://testserver"
     ) as client:
         yield client
@@ -54,7 +54,7 @@ def _patch_with_delay(monkeypatch: Any, sleep_ms: float) -> None:
             await asyncio.sleep(sleep_ms / 1000.0)
             return FakeResp(kwargs.get("i", 0))
 
-    async def fake_get_db():  # type: ignore[no-untyped-def]
+    async def fake_get_db() -> AsyncIterator[object]:
         yield object()
 
     monkeypatch.setattr(mod, "get_task_manager", lambda: FakeManager())
@@ -63,7 +63,7 @@ def _patch_with_delay(monkeypatch: Any, sleep_ms: float) -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.performance
-async def test_analyze_stress_crash_point(api_client: AsyncClient, monkeypatch: Any) -> None:
+async def test_analyze_stress_crash_point(api_client: httpx.AsyncClient, monkeypatch: Any) -> None:
     # 注入 5ms 微延迟
     _patch_with_delay(monkeypatch, sleep_ms=5.0)
 
@@ -75,7 +75,7 @@ async def test_analyze_stress_crash_point(api_client: AsyncClient, monkeypatch: 
         assert r.status_code == 200
         return dt
 
-    crash_point = None
+    crash_point: Optional[int] = None
     per_level_avg: Dict[int, float] = {}
     levels = [10, 50, 100, 200, 400]
 

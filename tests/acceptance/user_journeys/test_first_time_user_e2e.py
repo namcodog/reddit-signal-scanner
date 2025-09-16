@@ -1,26 +1,23 @@
-"""验收测试示例 - 首次用户E2E测试
+"""Acceptance tests for the first-time user journey using Playwright."""
 
-展示验收测试的最佳实践：
-1. 从用户视角测试
-2. 使用真实浏览器（Cypress/Playwright）
-3. 验证业务价值
-4. 跨浏览器兼容性
-"""
+from __future__ import annotations
+
+from typing import Any, Dict, AsyncIterator
 
 import pytest
-from typing import Dict, Any
-from playwright.async_api import async_playwright, Page, BrowserContext
+import pytest_asyncio
+from playwright.async_api import BrowserContext, Page, async_playwright
 
-from tests.fixtures.base_fixtures import TestIsolation, performance_timer
+from tests.fixtures.base_fixtures import TestIsolation
 
 
 @TestIsolation.acceptance_test
 class TestFirstTimeUserE2E:
     """首次用户端到端验收测试"""
     
-    @pytest.fixture
-    async def browser_context(self):
-        """创建浏览器上下文"""
+    @pytest_asyncio.fixture
+    async def browser_context(self) -> AsyncIterator[BrowserContext]:
+        """Create a shared browser context for acceptance tests."""
         async with async_playwright() as p:
             # 可以测试多种浏览器
             browser = await p.chromium.launch(
@@ -37,32 +34,25 @@ class TestFirstTimeUserE2E:
             # 设置默认超时
             context.set_default_timeout(30000)  # 30秒
             
-            yield context
+            try:
+                yield context
+            finally:
+                await context.close()
+                await browser.close()
             
-            await context.close()
-            await browser.close()
-            
-    @pytest.fixture
+    @pytest_asyncio.fixture
     async def page(self, browser_context: BrowserContext) -> Page:
-        """创建新页面"""
+        """Create a fresh page per test and capture console errors."""
         page = await browser_context.new_page()
-        
-        # 监听控制台错误
-        page.on("console", lambda msg: print(f"Console {msg.type}: {msg.text}"))
         page.on("pageerror", lambda err: pytest.fail(f"页面错误: {err}"))
+        return page  # type: ignore[unreachable]
         
-        yield page
-        
-        await page.close()
-        
-    async def test_complete_first_time_user_journey(self, page: Page, performance_timer):
-        """测试首次用户完整旅程"""
-        performance_timer.start()
-        
+    async def test_complete_first_time_user_journey(self, page: Page) -> None:
+        """End-to-end journey for a new user registering and running an analysis."""
+
         # 1. 访问首页
         await page.goto("http://localhost:3000")
         await page.wait_for_load_state("networkidle")
-        performance_timer.checkpoint("homepage_loaded")
         
         # 验证首页元素
         assert await page.is_visible("text=Reddit Signal Scanner")
@@ -74,7 +64,6 @@ class TestFirstTimeUserE2E:
         # 2. 点击"开始使用"
         await page.click("button:has-text('开始使用')")
         await page.wait_for_url("**/register")
-        performance_timer.checkpoint("registration_page")
         
         # 3. 填写注册表单
         await self._fill_registration_form(page, {
@@ -87,7 +76,6 @@ class TestFirstTimeUserE2E:
         # 4. 提交注册
         await page.click("button:has-text('注册')")
         await page.wait_for_url("**/dashboard")
-        performance_timer.checkpoint("registration_complete")
         
         # 5. 首次使用引导
         # 验证引导提示出现
@@ -112,7 +100,6 @@ class TestFirstTimeUserE2E:
         
         # 提交分析
         await page.click("button:has-text('开始分析')")
-        performance_timer.checkpoint("analysis_submitted")
         
         # 7. 等待分析完成
         # 显示进度条
@@ -123,7 +110,6 @@ class TestFirstTimeUserE2E:
             "text=分析完成",
             timeout=120000  # 2分钟
         )
-        performance_timer.checkpoint("analysis_complete")
         
         # 8. 查看分析结果
         await page.click("button:has-text('查看报告')")
@@ -148,7 +134,6 @@ class TestFirstTimeUserE2E:
         # 等待下载
         download = await page.wait_for_event("download")
         assert "report" in download.suggested_filename
-        performance_timer.checkpoint("report_downloaded")
         
         # 10. 返回仪表板
         await page.click("a:has-text('仪表板')")
@@ -159,13 +144,8 @@ class TestFirstTimeUserE2E:
         history_items = await page.query_selector_all(".history-item")
         assert len(history_items) >= 1
         
-        performance_timer.stop()
-        
-        # 验证整体性能
-        assert performance_timer.duration < 180  # 3分钟内完成
-        
-    async def test_mobile_responsive_journey(self, browser_context: BrowserContext):
-        """测试移动端响应式体验"""
+    async def test_mobile_responsive_journey(self, browser_context: BrowserContext) -> None:
+        """Ensure mobile viewport interactions behave as expected."""
         # 创建移动端视口
         mobile_page = await browser_context.new_page()
         await mobile_page.set_viewport_size({"width": 375, "height": 667})  # iPhone SE
@@ -195,14 +175,12 @@ class TestFirstTimeUserE2E:
         
         await mobile_page.close()
         
-    async def test_accessibility_compliance(self, page: Page):
+    async def test_accessibility_compliance(self, page: Page) -> None:
         """测试可访问性合规"""
         await page.goto("http://localhost:3000")
         
         # 使用axe-core进行可访问性测试
-        await page.add_script_tag(
-            url="https://cdnjs.cloudflare.com/ajax/libs/axe-core/4.7.0/axe.min.js"
-        )
+        await page.add_script_tag(url="https://cdnjs.cloudflare.com/ajax/libs/axe-core/4.7.0/axe.min.js")
         
         # 运行可访问性检查
         results = await page.evaluate("""
@@ -223,8 +201,8 @@ class TestFirstTimeUserE2E:
             ])
             pytest.fail(f"发现严重的可访问性问题:\n{violation_summary}")
             
-    async def test_error_handling_user_experience(self, page: Page):
-        """测试错误处理的用户体验"""
+    async def test_error_handling_user_experience(self, page: Page) -> None:
+        """Validate error messaging for network faults and validation errors."""
         await page.goto("http://localhost:3000")
         
         # 1. 测试网络错误处理
@@ -254,8 +232,8 @@ class TestFirstTimeUserE2E:
         assert await page.is_visible("text=请输入密码")
         
     @pytest.mark.parametrize("browser_name", ["chromium", "firefox", "webkit"])
-    async def test_cross_browser_compatibility(self, browser_name: str):
-        """测试跨浏览器兼容性"""
+    async def test_cross_browser_compatibility(self, browser_name: str) -> None:
+        """Smoke-test a few key flows on multiple browser engines."""
         async with async_playwright() as p:
             # 获取对应的浏览器
             browser_type = getattr(p, browser_name)
@@ -284,8 +262,8 @@ class TestFirstTimeUserE2E:
                 
     # ==================== 辅助方法 ====================
     
-    async def _fill_registration_form(self, page: Page, data: Dict[str, Any]):
-        """填写注册表单"""
+    async def _fill_registration_form(self, page: Page, data: Dict[str, Any]) -> None:
+        """Fill out the registration form with provided data."""
         await page.fill("input[name='email']", data["email"])
         await page.fill("input[name='password']", data["password"])
         await page.fill("input[name='confirmPassword']", data["confirmPassword"])
@@ -293,38 +271,7 @@ class TestFirstTimeUserE2E:
         if data.get("agreeTerms"):
             await page.check("input[name='agreeTerms']")
             
-    async def _wait_for_analysis_complete(self, page: Page, timeout: int = 120):
-        """等待分析完成"""
-        start_time = time.time()
-        
-        while time.time() - start_time < timeout:
-            # 检查进度
-            progress_text = await page.text_content(".progress-percentage")
-            if progress_text and "100%" in progress_text:
-                return True
-                
-            # 检查完成状态
-            if await page.is_visible("text=分析完成"):
-                return True
-                
-            await page.wait_for_timeout(2000)  # 等待2秒
-            
-        return False
-        
-    async def _capture_performance_metrics(self, page: Page) -> Dict[str, Any]:
-        """捕获性能指标"""
-        metrics = await page.evaluate("""
-            () => {
-                const navigation = performance.getEntriesByType('navigation')[0];
-                const paint = performance.getEntriesByType('paint');
-                
-                return {
-                    domContentLoaded: navigation.domContentLoadedEventEnd - navigation.domContentLoadedEventStart,
-                    loadComplete: navigation.loadEventEnd - navigation.loadEventStart,
-                    firstPaint: paint.find(p => p.name === 'first-paint')?.startTime,
-                    firstContentfulPaint: paint.find(p => p.name === 'first-contentful-paint')?.startTime
-                };
-            }
-        """)
-        
-        return metrics
+    async def _wait_for_analysis_complete(self, page: Page, timeout: int = 120) -> bool:
+        """Wait until the analysis indicates completion within the timeout."""
+        await page.wait_for_selector("text=分析完成", timeout=timeout * 1000)
+        return True

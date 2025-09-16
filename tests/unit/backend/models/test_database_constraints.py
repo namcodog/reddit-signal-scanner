@@ -7,11 +7,20 @@
 
 import uuid
 from decimal import Decimal
+from typing import Any, cast
 from datetime import datetime, timedelta
 import pytest
 import pytest_asyncio
 from sqlalchemy import select, text, Index
-from sqlalchemy.exc import IntegrityError, CheckViolation
+from sqlalchemy.exc import IntegrityError
+
+try:
+    from sqlalchemy.exc import CheckViolation as _CheckViolation  # type: ignore[attr-defined]
+except AttributeError:
+    _CheckViolation = IntegrityError
+
+CheckViolation = _CheckViolation
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.user import User
@@ -21,11 +30,16 @@ from tests.fixtures.base_fixtures import TestIsolation
 from tests.unit.backend.models.conftest import ModelTestHelpers, performance_test
 
 
+
+def ensure_uuid(value: Any) -> uuid.UUID:
+    assert isinstance(value, uuid.UUID)
+    return value
+
 class TestDatabaseConstraints:
     """数据库约束测试类"""
     
     @TestIsolation.unit_test
-    async def test_user_email_format_constraint(self, async_session: AsyncSession):
+    async def test_user_email_format_constraint(self, async_session: AsyncSession) -> None:
         """测试用户邮箱格式约束 - 详细的格式验证"""
         invalid_emails = [
             # 缺少@符号
@@ -71,7 +85,7 @@ class TestDatabaseConstraints:
             await async_session.rollback()
     
     @TestIsolation.unit_test
-    async def test_user_email_valid_formats(self, async_session: AsyncSession):
+    async def test_user_email_valid_formats(self, async_session: AsyncSession) -> None:
         """测试有效的邮箱格式"""
         valid_emails = [
             "user@example.com",
@@ -102,7 +116,7 @@ class TestDatabaseConstraints:
             assert user.id is not None
     
     @TestIsolation.unit_test
-    async def test_user_password_hash_constraint(self, async_session: AsyncSession):
+    async def test_user_password_hash_constraint(self, async_session: AsyncSession) -> None:
         """测试用户密码哈希约束 - BCrypt格式验证"""
         invalid_hashes = [
             # 不是BCrypt格式
@@ -132,7 +146,7 @@ class TestDatabaseConstraints:
             await async_session.rollback()
     
     @TestIsolation.unit_test
-    async def test_user_password_hash_valid_formats(self, async_session: AsyncSession):
+    async def test_user_password_hash_valid_formats(self, async_session: AsyncSession) -> None:
         """测试有效的BCrypt哈希格式"""
         valid_hashes = [
             "$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewRuuA/lTGsT.3dm",  # 2a
@@ -160,7 +174,7 @@ class TestDatabaseConstraints:
             assert user.id is not None
     
     @TestIsolation.unit_test
-    async def test_analysis_confidence_score_constraint(self, async_session: AsyncSession):
+    async def test_analysis_confidence_score_constraint(self, async_session: AsyncSession) -> None:
         """测试分析置信度约束 - 范围验证"""
         # 创建测试用户和任务
         user = User(
@@ -207,7 +221,7 @@ class TestDatabaseConstraints:
             await async_session.rollback()
     
     @TestIsolation.unit_test
-    async def test_analysis_confidence_score_valid_range(self, async_session: AsyncSession):
+    async def test_analysis_confidence_score_valid_range(self, async_session: AsyncSession) -> None:
         """测试置信度的有效范围值"""
         user = User(
             email="valid_confidence@example.com",
@@ -255,7 +269,7 @@ class TestDatabaseConstraints:
             assert 0.00 <= analysis.confidence_score <= 1.00
     
     @TestIsolation.unit_test
-    async def test_analysis_version_constraint(self, async_session: AsyncSession):
+    async def test_analysis_version_constraint(self, async_session: AsyncSession) -> None:
         """测试分析版本约束 - 必须为正数"""
         user = User(
             email="version_constraint@example.com",
@@ -295,7 +309,7 @@ class TestDatabaseConstraints:
             await async_session.rollback()
     
     @TestIsolation.unit_test
-    async def test_unique_constraints(self, async_session: AsyncSession):
+    async def test_unique_constraints(self, async_session: AsyncSession) -> None:
         """测试唯一性约束"""
         # 测试用户邮箱在同一租户内的唯一性
         tenant_id = uuid.uuid4()
@@ -338,7 +352,7 @@ class TestDatabaseConstraints:
         assert user3.id is not None
     
     @TestIsolation.unit_test
-    async def test_foreign_key_constraints(self, async_session: AsyncSession):
+    async def test_foreign_key_constraints(self, async_session: AsyncSession) -> None:
         """测试外键约束的完整性"""
         # 测试Task引用不存在的User
         fake_user_id = uuid.uuid4()
@@ -371,7 +385,7 @@ class TestDatabaseConstraints:
             await async_session.commit()
     
     @TestIsolation.unit_test
-    async def test_not_null_constraints(self, async_session: AsyncSession):
+    async def test_not_null_constraints(self, async_session: AsyncSession) -> None:
         """测试非空约束的完整覆盖"""
         # 用户模型非空字段测试
         user_null_tests = [
@@ -428,7 +442,7 @@ class TestDatabaseConstraints:
             await async_session.commit()
     
     @TestIsolation.unit_test
-    async def test_index_functionality(self, async_session: AsyncSession):
+    async def test_index_functionality(self, async_session: AsyncSession) -> None:
         """测试索引功能和性能"""
         # 创建大量用户数据
         users = []
@@ -468,12 +482,13 @@ class TestDatabaseConstraints:
         
         # 验证索引查询结果
         assert len(active_users) > 0
-        for user in active_users:
-            assert user.is_active is True
-            assert user.tenant_id == tenant_ids[0]
+        for user_obj in active_users:
+            user_any = cast(Any, user_obj)
+            assert bool(user_any.is_active) is True
+            assert ensure_uuid(user_any.tenant_id) == tenant_ids[0]
     
     @TestIsolation.unit_test
-    async def test_check_constraints_edge_cases(self, async_session: AsyncSession):
+    async def test_check_constraints_edge_cases(self, async_session: AsyncSession) -> None:
         """测试检查约束的边界情况"""
         user = User(
             email="edge_cases@example.com",
@@ -524,7 +539,7 @@ class TestDatabaseConstraints:
     
     @TestIsolation.unit_test
     @performance_test(max_duration=0.2)
-    async def test_constraint_performance(self, async_session: AsyncSession):
+    async def test_constraint_performance(self, async_session: AsyncSession) -> None:
         """测试约束检查的性能影响"""
         # 批量插入数据测试约束检查性能
         users = []

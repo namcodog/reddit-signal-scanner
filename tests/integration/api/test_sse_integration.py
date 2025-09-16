@@ -8,7 +8,9 @@ does not depend on external DB/Redis.
 import asyncio
 import json
 import uuid
+from typing import Callable
 
+import httpx
 import pytest
 
 from .base import IntegrationTestBase
@@ -16,11 +18,13 @@ from .base import IntegrationTestBase
 
 @pytest.mark.integration
 class TestSSEIntegration(IntegrationTestBase):
-    async def test_sse_connection_lifecycle(self, api_client, build_url):
+    async def test_sse_connection_lifecycle(
+        self, api_client: httpx.AsyncClient, build_url: Callable[[str], str]
+    ) -> None:
         task_id = str(uuid.uuid4())
         url = self.url(build_url, f"/stream/{task_id}/test")
 
-        received = []
+        received: list[dict[str, object]] = []
         async with api_client.stream("GET", url) as resp:
             assert resp.status_code == 200
             # consume a few SSE lines
@@ -37,7 +41,9 @@ class TestSSEIntegration(IntegrationTestBase):
         assert any(e.get("type") == "connected" for e in received)
         assert received[-1]["type"] in ("completed", "error")
 
-    async def test_sse_event_sequence_has_progress(self, api_client, build_url):
+    async def test_sse_event_sequence_has_progress(
+        self, api_client: httpx.AsyncClient, build_url: Callable[[str], str]
+    ) -> None:
         task_id = str(uuid.uuid4())
         url = self.url(build_url, f"/stream/{task_id}/test")
 
@@ -53,7 +59,9 @@ class TestSSEIntegration(IntegrationTestBase):
 
         assert saw_progress
 
-    async def test_sse_concurrent_clients(self, api_client, build_url):
+    async def test_sse_concurrent_clients(
+        self, api_client: httpx.AsyncClient, build_url: Callable[[str], str]
+    ) -> None:
         # Open 3 concurrent SSE test streams and ensure each sees at least one event
         task_id = str(uuid.uuid4())
         url = self.url(build_url, f"/stream/{task_id}/test")
@@ -72,7 +80,9 @@ class TestSSEIntegration(IntegrationTestBase):
         results = await asyncio.gather(consume_one(), consume_one(), consume_one())
         assert all(c >= 2 for c in results)
 
-    async def test_sse_error_recovery_on_invalid_id(self, api_client, build_url):
+    async def test_sse_error_recovery_on_invalid_id(
+        self, api_client: httpx.AsyncClient, build_url: Callable[[str], str]
+    ) -> None:
         # invalid task_id (too short) should return 400
         url = self.url(build_url, "/stream/x/test")
         resp = await api_client.get(url)

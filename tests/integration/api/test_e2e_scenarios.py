@@ -7,7 +7,9 @@ SSE test endpoint and status fallback.
 
 import json
 import uuid
+from typing import Any, Callable
 
+import httpx
 import pytest
 
 from .base import IntegrationTestBase
@@ -15,11 +17,13 @@ from .base import IntegrationTestBase
 
 @pytest.mark.integration
 class TestE2EScenarios(IntegrationTestBase):
-    async def test_minimal_e2e_with_fallback(self, api_client, build_url):
+    async def test_minimal_e2e_with_fallback(
+        self, api_client: httpx.AsyncClient, build_url: Callable[[str], str]
+    ) -> None:
         # 1) API info
-        info = await api_client.get("/api")
+        info = await api_client.get(build_url('/api'))
         assert info.status_code == 200
-        data = info.json()
+        data: dict[str, Any] = info.json()
         assert "api_version" in data
 
         # 2) SSE test stream
@@ -41,7 +45,7 @@ class TestE2EScenarios(IntegrationTestBase):
         status_url = self.url(build_url, f"/status/{task_id}")
         status_resp = await api_client.get(status_url)
         assert status_resp.status_code == 200
-        status_json = status_resp.json()
+        status_json: dict[str, Any] = status_resp.json()
         assert status_json["status"] == "success"
         assert status_json["data"]["task_id"] == task_id
         # Fallback mode is expected in environments without DB
@@ -51,7 +55,8 @@ class TestE2EScenarios(IntegrationTestBase):
 @pytest.mark.integration
 @pytest.mark.skip(reason="Full E2E requires real DB, Redis and Celery queue")
 class TestFullUserJourney(IntegrationTestBase):
-    async def test_new_user_first_analysis(self, api_client, build_url):
+    async def test_new_user_first_analysis(
+        self, api_client: httpx.AsyncClient, build_url: Callable[[str], str]
+    ) -> None:
         # Placeholder for full journey: register -> login -> analyze -> status -> report
         assert True
-

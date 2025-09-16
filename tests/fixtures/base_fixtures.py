@@ -4,10 +4,11 @@
 """
 
 import asyncio
+import functools
 import os
 import uuid
 from datetime import datetime
-from typing import Any, AsyncGenerator, Dict, Generator, Optional
+from typing import Any, AsyncGenerator, Awaitable, Callable, Dict, Generator, Optional, ParamSpec, Sequence, TypeVar, cast, overload
 
 import pytest
 import pytest_asyncio
@@ -22,6 +23,10 @@ TEST_DATABASE_URL = os.getenv(
 )
 TEST_USE_MOCK_API = os.getenv("TEST_USE_MOCK_API", "true").lower() == "true"
 TEST_API_TIMEOUT = int(os.getenv("TEST_API_TIMEOUT", "30"))
+
+
+P = ParamSpec("P")
+R = TypeVar("R")
 
 
 class TestLayerMarker:
@@ -54,42 +59,82 @@ def event_loop():
 # ==================== 测试隔离装饰器 ====================
 class TestIsolation:
     """测试隔离工具类"""
-    
+
     @staticmethod
-    def unit_test(func):
+    def _wrap_with_markers(
+        func: Callable[P, Any],
+        markers: Sequence[pytest.MarkDecorator],
+    ) -> Callable[P, Any]:
+        """为测试函数套上常用标记，保持签名不变。"""
+        if asyncio.iscoroutinefunction(func):
+            @functools.wraps(func)
+            async def wrapper(*args: P.args, **kwargs: P.kwargs) -> Any:
+                return await func(*args, **kwargs)
+        else:
+            @functools.wraps(func)
+            def wrapper(*args: P.args, **kwargs: P.kwargs) -> Any:
+                return func(*args, **kwargs)
+
+        wrapped: Callable[P, Any] = cast(Callable[P, Any], wrapper)
+        for marker in markers:
+            wrapped = cast(Callable[P, Any], marker(wrapped))
+        return wrapped
+
+    @staticmethod
+    @overload
+    def unit_test(func: Callable[P, Awaitable[R]]) -> Callable[P, Awaitable[R]]: ...
+
+    @staticmethod
+    @overload
+    def unit_test(func: Callable[P, R]) -> Callable[P, R]: ...
+
+    @staticmethod
+    def unit_test(func: Callable[P, Any]) -> Callable[P, Any]:
         """单元测试装饰器 - 完全隔离"""
-        @pytest.mark.unit
-        @pytest.mark.mock_api
-        def wrapper(*args, **kwargs):
-            return func(*args, **kwargs)
-        return wrapper
-    
+        markers = (pytest.mark.unit, pytest.mark.mock_api)
+        return TestIsolation._wrap_with_markers(func, markers)
+
     @staticmethod
-    def integration_test(func):
+    @overload
+    def integration_test(func: Callable[P, Awaitable[R]]) -> Callable[P, Awaitable[R]]: ...
+
+    @staticmethod
+    @overload
+    def integration_test(func: Callable[P, R]) -> Callable[P, R]: ...
+
+    @staticmethod
+    def integration_test(func: Callable[P, Any]) -> Callable[P, Any]:
         """集成测试装饰器 - 部分隔离"""
-        @pytest.mark.integration
-        def wrapper(*args, **kwargs):
-            return func(*args, **kwargs)
-        return wrapper
-    
+        markers = (pytest.mark.integration,)
+        return TestIsolation._wrap_with_markers(func, markers)
+
     @staticmethod
-    def system_test(func):
+    @overload
+    def system_test(func: Callable[P, Awaitable[R]]) -> Callable[P, Awaitable[R]]: ...
+
+    @staticmethod
+    @overload
+    def system_test(func: Callable[P, R]) -> Callable[P, R]: ...
+
+    @staticmethod
+    def system_test(func: Callable[P, Any]) -> Callable[P, Any]:
         """系统测试装饰器 - 真实环境"""
-        @pytest.mark.system
-        @pytest.mark.real_api
-        def wrapper(*args, **kwargs):
-            return func(*args, **kwargs)
-        return wrapper
-    
+        markers = (pytest.mark.system, pytest.mark.real_api)
+        return TestIsolation._wrap_with_markers(func, markers)
+
     @staticmethod
-    def acceptance_test(func):
+    @overload
+    def acceptance_test(func: Callable[P, Awaitable[R]]) -> Callable[P, Awaitable[R]]: ...
+
+    @staticmethod
+    @overload
+    def acceptance_test(func: Callable[P, R]) -> Callable[P, R]: ...
+
+    @staticmethod
+    def acceptance_test(func: Callable[P, Any]) -> Callable[P, Any]:
         """验收测试装饰器 - 完全真实"""
-        @pytest.mark.acceptance
-        @pytest.mark.real_api
-        @pytest.mark.slow
-        def wrapper(*args, **kwargs):
-            return func(*args, **kwargs)
-        return wrapper
+        markers = (pytest.mark.acceptance, pytest.mark.real_api, pytest.mark.slow)
+        return TestIsolation._wrap_with_markers(func, markers)
 
 
 # ==================== 性能计时器 ====================

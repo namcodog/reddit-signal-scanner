@@ -1,5 +1,6 @@
 import os
 import time
+from typing import Any, Optional
 
 import pytest
 
@@ -10,7 +11,7 @@ RUN = os.getenv("RUN_WORKER_CRASH_TESTS") == "1"
 
 
 @pytest.mark.skipif(not RUN, reason="Set RUN_WORKER_CRASH_TESTS=1 to enable crash recovery test")
-def test_worker_crash_and_recover(celery_setup):
+def test_worker_crash_and_recover(celery_setup: Any) -> None:
     """Experimental: simulate worker stop and restart during a running task.
 
     This test relies on pytest-celery's worker control APIs and may be flaky
@@ -22,7 +23,7 @@ def test_worker_crash_and_recover(celery_setup):
     res = test_tasks.sleep_task.delay(5.0)
 
     # Attempt to stop the worker shortly after the task starts
-    worker = getattr(celery_setup, "worker", None)
+    worker: Optional[Any] = getattr(celery_setup, "worker", None)
     if worker is None or not hasattr(worker, "teardown"):
         pytest.skip("celery_setup.worker control not available; skip")
 
@@ -44,4 +45,3 @@ def test_worker_crash_and_recover(celery_setup):
         assert res.get(timeout=60) == "slept"
     finally:
         new_worker.teardown()
-

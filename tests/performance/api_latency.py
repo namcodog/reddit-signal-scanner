@@ -10,16 +10,16 @@ from __future__ import annotations
 import time
 import types
 from datetime import datetime, timezone
-from typing import Any, AsyncIterator
+from typing import Any, AsyncIterator, cast
 
+import httpx
 import pytest
-from httpx import ASGITransport, AsyncClient
 
 from tests.performance import baseline_recorder as perf
 
 
 @pytest.fixture
-async def api_client() -> AsyncIterator[AsyncClient]:
+async def api_client() -> AsyncIterator[httpx.AsyncClient]:
     # 与集成测试保持一致的ASGI传输
     from backend.app.main import app
     from backend.app.middleware.jwt_middleware import JWTMiddleware
@@ -31,8 +31,8 @@ async def api_client() -> AsyncIterator[AsyncClient]:
         "/health",
     })
 
-    transport = ASGITransport(app=app)
-    async with AsyncClient(
+    transport = httpx.ASGITransport(app=cast(Any, app))
+    async with httpx.AsyncClient(
         transport=transport, base_url="http://testserver"
     ) as client:
         yield client
@@ -40,7 +40,7 @@ async def api_client() -> AsyncIterator[AsyncClient]:
 
 @pytest.mark.asyncio
 @pytest.mark.performance
-async def test_analyze_endpoint_latency(api_client: AsyncClient, monkeypatch: Any) -> None:
+async def test_analyze_endpoint_latency(api_client: httpx.AsyncClient, monkeypatch: Any) -> None:
     # 依赖替换：TaskManager 和 get_db
     mod = __import__(
         "backend.app.api.v1.endpoints.analyze",
@@ -55,7 +55,7 @@ async def test_analyze_endpoint_latency(api_client: AsyncClient, monkeypatch: An
             self.queue_name = "default"
 
     class FakeManager:
-        async def create_task(self, *_args: Any, **_kwargs: Any) -> FakeResp:
+        async def create_task(self, *_args: Any, **kwargs: Any) -> FakeResp:
             return FakeResp()
 
     async def fake_get_db() -> AsyncIterator[object]:
@@ -80,7 +80,7 @@ async def test_analyze_endpoint_latency(api_client: AsyncClient, monkeypatch: An
 
 @pytest.mark.asyncio
 @pytest.mark.performance
-async def test_health_latency(api_client: AsyncClient) -> None:
+async def test_health_latency(api_client: httpx.AsyncClient) -> None:
     case_id = "api:latency:health"
     start = time.perf_counter()
     resp = await api_client.get("/health")

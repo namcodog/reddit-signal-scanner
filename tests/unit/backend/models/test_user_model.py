@@ -7,7 +7,7 @@
 
 import uuid
 from datetime import datetime
-from typing import Optional
+from typing import Optional, cast
 import pytest
 import pytest_asyncio
 from sqlalchemy import select, text
@@ -24,7 +24,7 @@ class TestUserModel:
     
     @pytest.mark.unit
     @pytest.mark.asyncio
-    async def test_user_model_creation(self, async_session: AsyncSession, model_helpers: ModelTestHelpers):
+    async def test_user_model_creation(self, async_session: AsyncSession, model_helpers: ModelTestHelpers) -> None:
         """测试用户模型创建"""
         # 创建用户实例
         user = model_helpers.create_test_user(async_session)
@@ -36,12 +36,15 @@ class TestUserModel:
         
         # 验证基本字段
         model_helpers.assert_user_valid(user)
-        assert user.email == user.email  # 保持原样
-        assert user.is_active is True
-        assert user.email_verified is False
+        email_value = cast(str, user.email)
+        is_active_flag = cast(bool, user.is_active)
+        email_verified_flag = cast(bool, user.email_verified)
+        assert email_value == email_value  # 保持原样
+        assert is_active_flag is True
+        assert email_verified_flag is False
     
     @TestIsolation.unit_test
-    async def test_user_model_fields_types(self, async_session: AsyncSession):
+    async def test_user_model_fields_types(self, async_session: AsyncSession) -> None:
         """测试用户模型字段类型"""
         user = User(
             email="type_test@example.com",
@@ -53,17 +56,25 @@ class TestUserModel:
         await async_session.refresh(user)
         
         # 验证字段类型
-        assert isinstance(user.id, uuid.UUID)
-        assert isinstance(user.tenant_id, uuid.UUID)
-        assert isinstance(user.email, str)
-        assert isinstance(user.password_hash, str)
-        assert isinstance(user.email_verified, bool)
-        assert isinstance(user.is_active, bool)
-        assert isinstance(user.created_at, datetime)
-        assert isinstance(user.updated_at, datetime)
+        user_id = cast(uuid.UUID, user.id)
+        tenant_id_value = cast(uuid.UUID, user.tenant_id)
+        email_value = cast(str, user.email)
+        password_hash_value = cast(str, user.password_hash)
+        email_verified_flag = cast(bool, user.email_verified)
+        is_active_flag = cast(bool, user.is_active)
+        created_at_value = cast(datetime, user.created_at)
+        updated_at_value = cast(datetime, user.updated_at)
+        assert isinstance(user_id, uuid.UUID)
+        assert isinstance(tenant_id_value, uuid.UUID)
+        assert isinstance(email_value, str)
+        assert isinstance(password_hash_value, str)
+        assert isinstance(email_verified_flag, bool)
+        assert isinstance(is_active_flag, bool)
+        assert isinstance(created_at_value, datetime)
+        assert isinstance(updated_at_value, datetime)
     
     @TestIsolation.unit_test
-    async def test_user_model_defaults(self, async_session: AsyncSession):
+    async def test_user_model_defaults(self, async_session: AsyncSession) -> None:
         """测试用户模型默认值"""
         user = User(
             email="defaults_test@example.com",
@@ -75,15 +86,15 @@ class TestUserModel:
         await async_session.refresh(user)
         
         # 验证默认值
-        assert user.id is not None  # UUID自动生成
-        assert user.tenant_id is not None  # 自动生成个人tenant_id
-        assert user.email_verified is False  # 默认未验证
-        assert user.is_active is True  # 默认激活
-        assert user.created_at is not None  # 自动设置创建时间
-        assert user.updated_at is not None  # 自动设置更新时间
+        assert cast(uuid.UUID, user.id) is not None  # UUID自动生成
+        assert cast(uuid.UUID, user.tenant_id) is not None  # 自动生成个人tenant_id
+        assert cast(bool, user.email_verified) is False  # 默认未验证
+        assert cast(bool, user.is_active) is True  # 默认激活
+        assert cast(datetime, user.created_at) is not None  # 自动设置创建时间
+        assert cast(datetime, user.updated_at) is not None  # 自动设置更新时间
     
     @TestIsolation.unit_test
-    async def test_user_email_uniqueness_constraint(self, async_session: AsyncSession):
+    async def test_user_email_uniqueness_constraint(self, async_session: AsyncSession) -> None:
         """测试邮箱唯一性约束"""
         # 创建第一个用户
         user1 = User(
@@ -106,7 +117,7 @@ class TestUserModel:
             await async_session.commit()
     
     @TestIsolation.unit_test
-    async def test_user_email_different_tenant(self, async_session: AsyncSession):
+    async def test_user_email_different_tenant(self, async_session: AsyncSession) -> None:
         """测试不同租户可以使用相同邮箱"""
         # 创建第一个用户
         user1 = User(
@@ -131,7 +142,7 @@ class TestUserModel:
         assert user1.tenant_id != user2.tenant_id
     
     @TestIsolation.unit_test
-    async def test_user_email_format_constraint(self, async_session: AsyncSession):
+    async def test_user_email_format_constraint(self, async_session: AsyncSession) -> None:
         """测试邮箱格式约束"""
         invalid_emails = [
             "invalid",
@@ -154,7 +165,7 @@ class TestUserModel:
             await async_session.rollback()
     
     @TestIsolation.unit_test
-    async def test_user_password_hash_constraint(self, async_session: AsyncSession):
+    async def test_user_password_hash_constraint(self, async_session: AsyncSession) -> None:
         """测试密码哈希格式约束"""
         invalid_hashes = [
             "plaintext",
@@ -176,7 +187,7 @@ class TestUserModel:
             await async_session.rollback()
     
     @TestIsolation.unit_test
-    async def test_user_not_null_constraints(self, async_session: AsyncSession):
+    async def test_user_not_null_constraints(self, async_session: AsyncSession) -> None:
         """测试非空约束"""
         # 测试邮箱非空
         with pytest.raises(IntegrityError):
@@ -193,7 +204,7 @@ class TestUserModel:
             await async_session.commit()
     
     @TestIsolation.unit_test
-    async def test_user_audit_timestamps(self, async_session: AsyncSession):
+    async def test_user_audit_timestamps(self, async_session: AsyncSession) -> None:
         """测试审计时间戳"""
         user = User(
             email="timestamp_test@example.com",
@@ -213,7 +224,7 @@ class TestUserModel:
         
         # 测试更新时间戳
         original_updated = user.updated_at
-        user.email_verified = True
+        setattr(user, "email_verified", True)
         await async_session.commit()
         await async_session.refresh(user)
         
@@ -221,7 +232,7 @@ class TestUserModel:
         assert user.updated_at > original_updated
     
     @TestIsolation.unit_test
-    async def test_user_string_representations(self, async_session: AsyncSession):
+    async def test_user_string_representations(self, async_session: AsyncSession) -> None:
         """测试字符串表示方法"""
         user = User(
             email="string_test@example.com",
@@ -234,23 +245,25 @@ class TestUserModel:
         
         # 测试 __repr__
         repr_str = repr(user)
+        email_value = cast(str, user.email)
+        tenant_id_value = cast(uuid.UUID, user.tenant_id)
         assert "User(" in repr_str
         assert str(user.id) in repr_str
-        assert user.email[:20] in repr_str
-        assert str(user.tenant_id) in repr_str
+        assert email_value[:20] in repr_str
+        assert str(tenant_id_value) in repr_str
         
         # 测试 __str__
         str_repr = str(user)
-        assert user.email in str_repr
+        assert email_value in str_repr
         assert "已激活" in str_repr
         
         # 测试非激活用户
-        user.is_active = False
+        setattr(user, "is_active", False)
         str_repr_inactive = str(user)
         assert "已停用" in str_repr_inactive
     
     @TestIsolation.unit_test 
-    async def test_user_active_user_index(self, async_session: AsyncSession):
+    async def test_user_active_user_index(self, async_session: AsyncSession) -> None:
         """测试活跃用户索引功能"""
         # 创建活跃用户
         active_user = User(
@@ -280,7 +293,7 @@ class TestUserModel:
     
     @TestIsolation.unit_test
     @performance_test(max_duration=0.1)
-    async def test_user_query_performance(self, async_session: AsyncSession):
+    async def test_user_query_performance(self, async_session: AsyncSession) -> None:
         """测试用户查询性能"""
         # 批量创建用户
         users = []
@@ -304,7 +317,7 @@ class TestUserModel:
         assert found_user.email == "performance_25@example.com"
     
     @TestIsolation.unit_test
-    async def test_user_multi_tenant_isolation(self, async_session: AsyncSession):
+    async def test_user_multi_tenant_isolation(self, async_session: AsyncSession) -> None:
         """测试多租户数据隔离"""
         tenant1_id = uuid.uuid4()
         tenant2_id = uuid.uuid4()

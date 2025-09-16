@@ -120,16 +120,26 @@ class ProjectStructureValidator:
         import fnmatch
 
         for root, dirs, files in os.walk(self.root_path):
-            # 跳过特定目录
+            # 跳过特定目录（增强虚拟环境忽略）
             dirs[:] = [
                 d
                 for d in dirs
-                if d not in [".git", "node_modules", "__pycache__", ".venv", "venv"]
+                if d not in [".git", "node_modules", "__pycache__", ".venv", "venv", "env", ".mypy_cache", ".pytest_cache"]
+                and not str(Path(root) / d).endswith(("site-packages", "/site-packages"))
+                and "site-packages" not in str(Path(root) / d)
             ]
 
             for file in files:
                 file_path = Path(root) / file
                 relative_path = file_path.relative_to(self.root_path)
+
+                # 跳过虚拟环境和第三方包目录
+                if any(skip in str(relative_path) for skip in [
+                    "site-packages", "/site-packages",
+                    "backend/venv", "backend/.venv", "backend/env",
+                    ".venv/", "venv/", "env/"
+                ]):
+                    continue
 
                 for pattern in self.forbidden_patterns:
                     if fnmatch.fnmatch(file, pattern):

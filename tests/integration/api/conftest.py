@@ -1,6 +1,7 @@
 import pytest
-from typing import AsyncIterator, Callable
-from httpx import ASGITransport, AsyncClient
+from typing import Any, AsyncIterator, Callable, cast
+
+import httpx
 
 from backend.app.main import app
 from backend.app.core.config import get_settings
@@ -25,8 +26,7 @@ def build_url(api_prefix: str) -> Callable[[str], str]:
 
 
 @pytest.fixture
-async def api_client() -> AsyncIterator[AsyncClient]:
-    # Use ASGITransport without lifespan to be compatible with current httpx version
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+async def api_client() -> AsyncIterator[httpx.AsyncClient]:
+    transport = httpx.ASGITransport(app=cast(Any, app))
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
         yield client

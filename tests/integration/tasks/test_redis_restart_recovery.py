@@ -1,6 +1,7 @@
 import os
 import subprocess
 import time
+from typing import Any
 
 import pytest
 
@@ -11,7 +12,7 @@ RUN = os.getenv("RUN_REDIS_RESTART_TESTS") == "1"
 
 
 @pytest.mark.skipif(not RUN, reason="Set RUN_REDIS_RESTART_TESTS=1 to enable Redis restart test")
-def test_redis_restart_recovery(celery_setup):
+def test_redis_restart_recovery(celery_setup: Any) -> None:
     """Experimental: restart Redis and ensure a new task can still run.
 
     Disabled by default; requires Docker and a container named 'redis'.
@@ -33,4 +34,3 @@ def test_redis_restart_recovery(celery_setup):
     # Run another task; worker/broker should reconnect and succeed
     out = test_tasks.quick_echo.delay({"post": True}).get(timeout=60)
     assert out["ok"] is True
-

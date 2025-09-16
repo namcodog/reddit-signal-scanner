@@ -30,8 +30,12 @@ help:
 	@echo "  test-framework-verify  验证测试框架"
 	@echo "  test-framework-check   测试框架自检"
 	@echo "  status          查看项目状态"
-	@echo "  type-check      严格类型检查 (backend/app)"
+	@echo "  type-check      严格类型检查 (backend/app + tests)"
 	@echo "  tech-debt-metrics  输出技术债指标 (mypy/Dict[Any]/无类型函数)"
+	@echo "  backend-smoke   后端冒烟小集 (tests/smoke)"
+	@echo "  frontend-quick  前端单测小集 (vitest 组件/Hook/工具)"
+	@echo "  file-check      文件结构/脏文件检查"
+	@echo "  quick-gate-local 一次跑完四个快速闸门"
 	@echo ""
 	@echo "🧪 本地CI："
 	@echo "  ci-lint        运行 flake8/black-check/isort-check"
@@ -200,8 +204,28 @@ fix-types:
 
 # 严格类型检查 - 后端专用
 type-check:
-	@echo "🔍 MyPy 严格类型检查 (backend/app) ..."
-	@mypy --config-file backend/mypy.ini --strict backend/app || true
+	@echo "🔍 MyPy 严格类型检查 (backend/app + tests) ..."
+	@cd backend && python -m mypy --config-file mypy.ini --strict app tests
+
+# 四项快速闸门（本地）
+backend-smoke:
+	@echo "🔥 后端冒烟测试 (tests/smoke) ..."
+	@PYTHONPATH=backend:. pytest -p pytest_asyncio -q -m smoke tests/smoke
+
+frontend-quick:
+	@echo "⚛️  前端单测小集 (components/hooks/utils) ..."
+	@cd frontend && npm ci && npm test -- --run src/__tests__/components src/__tests__/hooks src/__tests__/utils
+
+file-check:
+	@echo "📁 文件结构与脏文件检查 ..."
+	@python infrastructure/scripts/verify_structure.py || true
+
+quick-gate-local:
+	@echo "🚦 运行本地四项快速闸门 (类型/后端/前端/文件检查) ..."
+	@cd backend && python -m mypy --config-file mypy.ini --strict app tests
+	@PYTHONPATH=backend:. pytest -p pytest_asyncio -q -m smoke tests/smoke
+	@cd frontend && npm ci && npm test -- --run src/__tests__/components src/__tests__/hooks src/__tests__/utils
+	@python infrastructure/scripts/verify_structure.py || true
 
 # ================================
 # 本地CI命令

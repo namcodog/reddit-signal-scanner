@@ -5,6 +5,9 @@ These require a real database and configured auth services to pass.
 We provide structure and skip by default, ready to enable later.
 """
 
+from typing import Callable
+
+import httpx
 import pytest
 
 from .base import IntegrationTestBase
@@ -13,7 +16,11 @@ from .base import IntegrationTestBase
 @pytest.mark.integration
 @pytest.mark.skip(reason="Requires real DB and email/password users")
 class TestAuthFlow(IntegrationTestBase):
-    async def test_user_registration_login_flow(self, api_client, build_url):
+    async def test_user_registration_login_flow(
+        self,
+        api_client: httpx.AsyncClient,
+        build_url: Callable[[str], str],
+    ) -> None:
         # register
         register_url = self.url(build_url, "/auth/register")
         payload = {
@@ -33,11 +40,19 @@ class TestAuthFlow(IntegrationTestBase):
         tokens = login.json()
         assert "access_token" in tokens
 
-    async def test_jwt_token_refresh(self, api_client, build_url):
+    async def test_jwt_token_refresh(
+        self,
+        api_client: httpx.AsyncClient,
+        build_url: Callable[[str], str],
+    ) -> None:
         refresh_url = self.url(build_url, "/auth/refresh")
         # Requires a valid refresh token in Authorization header
         pytest.skip("Not enabled without token bootstrap")
 
-    async def test_multi_tenant_isolation(self, api_client, build_url):
+    async def test_multi_tenant_isolation(
+        self,
+        api_client: httpx.AsyncClient,
+        build_url: Callable[[str], str],
+    ) -> None:
         pytest.skip("Will be enabled once multi-tenant data is seeded")
 

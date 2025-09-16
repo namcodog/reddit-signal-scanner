@@ -8,7 +8,7 @@
 import json
 import uuid
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Any, Dict, cast
 import pytest
 import pytest_asyncio
 from sqlalchemy import select
@@ -20,12 +20,40 @@ from backend.app.models.user import User
 from tests.fixtures.base_fixtures import TestIsolation
 from tests.unit.backend.models.conftest import ModelTestHelpers, performance_test
 
+# SQLAlchemy 列在类型系统中被视为 InstrumentedAttribute，需要 getattr 排除 mypy 噪音
+TaskTenantIdColumn = cast(Any, getattr(Task, "tenant_id"))
+TaskStatusColumn = cast(Any, getattr(Task, "status"))
+TaskErrorCodeColumn = cast(Any, getattr(Task, "error_code"))
+TaskFailureCategoryColumn = cast(Any, getattr(Task, "failure_category"))
+TaskUserIdColumn = cast(Any, getattr(Task, "user_id"))
+
+
+def ensure_uuid(value: Any) -> uuid.UUID:
+    assert isinstance(value, uuid.UUID)
+    return value
+
+def ensure_task_status(value: Any) -> TaskStatus:
+    assert isinstance(value, TaskStatus)
+    return value
+
+def ensure_datetime(value: Any) -> datetime:
+    assert isinstance(value, datetime)
+    return value
+
+def ensure_optional_datetime(value: Any) -> Optional[datetime]:
+    assert value is None or isinstance(value, datetime)
+    return value
+
+def ensure_optional_failure_category(value: Any) -> Optional[FailureCategory]:
+    assert value is None or isinstance(value, FailureCategory)
+    return value
+
 
 class TestTaskStatus:
     """任务状态枚举测试"""
     
     @TestIsolation.unit_test
-    def test_task_status_values(self):
+    def test_task_status_values(self) -> None:
         """测试任务状态枚举值"""
         assert TaskStatus.PENDING.value == "pending"
         assert TaskStatus.PROCESSING.value == "processing"
@@ -34,7 +62,7 @@ class TestTaskStatus:
         assert TaskStatus.DEAD_LETTER.value == "dead_letter"
     
     @TestIsolation.unit_test
-    def test_task_status_members(self):
+    def test_task_status_members(self) -> None:
         """测试任务状态枚举成员"""
         expected_statuses = {
             TaskStatus.PENDING,
@@ -46,7 +74,7 @@ class TestTaskStatus:
         assert set(TaskStatus) == expected_statuses
     
     @TestIsolation.unit_test
-    def test_task_status_string_conversion(self):
+    def test_task_status_string_conversion(self) -> None:
         """测试任务状态字符串转换"""
         assert str(TaskStatus.PENDING) == "TaskStatus.PENDING"
         assert TaskStatus.PENDING.value == "pending"
@@ -56,7 +84,7 @@ class TestFailureCategory:
     """失败类型枚举测试"""
     
     @TestIsolation.unit_test
-    def test_failure_category_values(self):
+    def test_failure_category_values(self) -> None:
         """测试失败类型枚举值"""
         assert FailureCategory.NETWORK_ERROR.value == "network_error"
         assert FailureCategory.PROCESSING_ERROR.value == "processing_error"
@@ -64,7 +92,7 @@ class TestFailureCategory:
         assert FailureCategory.SYSTEM_ERROR.value == "system_error"
     
     @TestIsolation.unit_test
-    def test_failure_category_members(self):
+    def test_failure_category_members(self) -> None:
         """测试失败类型枚举成员"""
         expected_categories = {
             FailureCategory.NETWORK_ERROR,
@@ -79,7 +107,7 @@ class TestTaskUpdate:
     """任务更新数据类测试"""
     
     @TestIsolation.unit_test
-    def test_task_update_creation(self):
+    def test_task_update_creation(self) -> None:
         """测试任务更新数据类创建"""
         timestamp = datetime.now()
         update = TaskUpdate(
@@ -97,7 +125,7 @@ class TestTaskUpdate:
         assert update.timestamp == timestamp
     
     @TestIsolation.unit_test
-    def test_task_update_to_json(self):
+    def test_task_update_to_json(self) -> None:
         """测试任务更新转JSON"""
         timestamp = datetime.now()
         update = TaskUpdate(
@@ -118,7 +146,7 @@ class TestTaskUpdate:
         assert data["timestamp"] == timestamp.isoformat()
     
     @TestIsolation.unit_test
-    def test_task_update_to_sse_format(self):
+    def test_task_update_to_sse_format(self) -> None:
         """测试任务更新转SSE格式"""
         update = TaskUpdate(
             task_id="test-task-id",
@@ -144,7 +172,7 @@ class TestTaskModel:
         self, 
         async_session: AsyncSession, 
         model_helpers: ModelTestHelpers
-    ):
+    ) -> None:
         """测试任务模型创建"""
         # 先创建用户
         user = model_helpers.create_test_user(async_session)
@@ -160,11 +188,12 @@ class TestTaskModel:
         
         # 验证任务
         model_helpers.assert_task_valid(task)
-        assert task.user_id == user.id
-        assert task.tenant_id == user.tenant_id
+        task_any = cast(Any, task)
+        assert ensure_uuid(task_any.user_id) == user.id
+        assert ensure_uuid(task_any.tenant_id) == user.tenant_id
     
     @TestIsolation.unit_test
-    async def test_task_model_field_types(self, async_session: AsyncSession):
+    async def test_task_model_field_types(self, async_session: AsyncSession) -> None:
         """测试任务模型字段类型"""
         # 创建用户
         user = User(
@@ -187,17 +216,18 @@ class TestTaskModel:
         await async_session.refresh(task)
         
         # 验证字段类型
-        assert isinstance(task.id, uuid.UUID)
-        assert isinstance(task.user_id, uuid.UUID)
-        assert isinstance(task.tenant_id, uuid.UUID)
-        assert isinstance(task.product_description, str)
-        assert isinstance(task.status, TaskStatus)
-        assert isinstance(task.created_at, datetime)
-        assert task.updated_at is None or isinstance(task.updated_at, datetime)
-        assert task.completed_at is None or isinstance(task.completed_at, datetime)
+        task_any = cast(Any, task)
+        ensure_uuid(task_any.id)
+        ensure_uuid(task_any.user_id)
+        ensure_uuid(task_any.tenant_id)
+        assert isinstance(task_any.product_description, str)
+        ensure_task_status(task_any.status)
+        ensure_datetime(task_any.created_at)
+        ensure_optional_datetime(task_any.updated_at)
+        ensure_optional_datetime(task_any.completed_at)
     
     @TestIsolation.unit_test
-    async def test_task_model_defaults(self, async_session: AsyncSession):
+    async def test_task_model_defaults(self, async_session: AsyncSession) -> None:
         """测试任务模型默认值"""
         user = User(
             email="task_defaults@example.com",
@@ -218,17 +248,18 @@ class TestTaskModel:
         await async_session.refresh(task)
         
         # 验证默认值
-        assert task.id is not None  # UUID自动生成
-        assert task.status == TaskStatus.PENDING  # 默认状态
-        assert task.created_at is not None  # 自动设置
-        assert task.updated_at is None  # 初始为空
-        assert task.completed_at is None  # 初始为空
-        assert task.error_message is None  # 初始为空
-        assert task.error_code is None  # 初始为空
-        assert task.retry_count == 0  # 默认重试次数
+        task_any = cast(Any, task)
+        ensure_uuid(task_any.id)
+        assert ensure_task_status(task_any.status) == TaskStatus.PENDING
+        ensure_datetime(task_any.created_at)
+        assert task_any.updated_at is None
+        assert task_any.completed_at is None
+        assert task_any.error_message is None
+        assert task_any.error_code is None
+        assert task_any.retry_count == 0
     
     @TestIsolation.unit_test
-    async def test_task_status_transitions(self, async_session: AsyncSession):
+    async def test_task_status_transitions(self, async_session: AsyncSession) -> None:
         """测试任务状态转换"""
         user = User(
             email="status_transitions@example.com",
@@ -247,19 +278,19 @@ class TestTaskModel:
         await async_session.commit()
         
         # PENDING -> PROCESSING
-        task.status = TaskStatus.PROCESSING
+        setattr(task, "status", TaskStatus.PROCESSING)
         await async_session.commit()
-        assert task.status == TaskStatus.PROCESSING
+        assert cast(TaskStatus, task.status) == TaskStatus.PROCESSING
         
         # PROCESSING -> COMPLETED
-        task.status = TaskStatus.COMPLETED
-        task.completed_at = datetime.now()
+        setattr(task, "status", TaskStatus.COMPLETED)
+        setattr(task, "completed_at", datetime.now())
         await async_session.commit()
-        assert task.status == TaskStatus.COMPLETED
+        assert cast(TaskStatus, task.status) == TaskStatus.COMPLETED
         assert task.completed_at is not None
     
     @TestIsolation.unit_test
-    async def test_task_failure_handling(self, async_session: AsyncSession):
+    async def test_task_failure_handling(self, async_session: AsyncSession) -> None:
         """测试任务失败处理"""
         user = User(
             email="failure_handling@example.com",
@@ -279,21 +310,22 @@ class TestTaskModel:
         await async_session.commit()
         
         # 设置失败状态
-        task.status = TaskStatus.FAILED
-        task.error_message = "Test error message"
-        task.error_code = "TEST_ERROR"
-        task.failure_category = FailureCategory.PROCESSING_ERROR
-        task.retry_count = 1
+        setattr(task, "status", TaskStatus.FAILED)
+        setattr(task, "error_message", "Test error message")
+        setattr(task, "error_code", "TEST_ERROR")
+        setattr(task, "failure_category", FailureCategory.PROCESSING_ERROR)
+        setattr(task, "retry_count", 1)
         await async_session.commit()
         
-        assert task.status == TaskStatus.FAILED
-        assert task.error_message == "Test error message"
-        assert task.error_code == "TEST_ERROR"
-        assert task.failure_category == FailureCategory.PROCESSING_ERROR
-        assert task.retry_count == 1
+        assert cast(TaskStatus, task.status) == TaskStatus.FAILED
+        task_any = cast(Any, task)
+        assert task_any.error_message == "Test error message"
+        assert task_any.error_code == "TEST_ERROR"
+        assert ensure_optional_failure_category(task_any.failure_category) == FailureCategory.PROCESSING_ERROR
+        assert task_any.retry_count == 1
     
     @TestIsolation.unit_test
-    async def test_task_user_relationship(self, async_session: AsyncSession):
+    async def test_task_user_relationship(self, async_session: AsyncSession) -> None:
         """测试任务与用户的关系"""
         user = User(
             email="relationship_test@example.com",
@@ -318,17 +350,18 @@ class TestTaskModel:
         
         # 查询用户的任务
         result = await async_session.execute(
-            select(Task).where(Task.user_id == user.id)
+            select(Task).where(TaskUserIdColumn == user.id)
         )
         user_tasks = result.scalars().all()
         
         assert len(user_tasks) == 3
         for task in user_tasks:
-            assert task.user_id == user.id
-            assert task.tenant_id == user.tenant_id
+            task_any = cast(Any, task)
+            assert ensure_uuid(task_any.user_id) == user.id
+            assert ensure_uuid(task_any.tenant_id) == user.tenant_id
     
     @TestIsolation.unit_test
-    async def test_task_not_null_constraints(self, async_session: AsyncSession):
+    async def test_task_not_null_constraints(self, async_session: AsyncSession) -> None:
         """测试非空约束"""
         user = User(
             email="not_null_test@example.com",
@@ -360,7 +393,7 @@ class TestTaskModel:
             await async_session.commit()
     
     @TestIsolation.unit_test
-    async def test_task_foreign_key_constraint(self, async_session: AsyncSession):
+    async def test_task_foreign_key_constraint(self, async_session: AsyncSession) -> None:
         """测试外键约束"""
         # 尝试创建引用不存在用户的任务
         fake_user_id = uuid.uuid4()
@@ -377,7 +410,7 @@ class TestTaskModel:
             await async_session.commit()
     
     @TestIsolation.unit_test
-    async def test_task_multi_tenant_isolation(self, async_session: AsyncSession):
+    async def test_task_multi_tenant_isolation(self, async_session: AsyncSession) -> None:
         """测试多租户数据隔离"""
         # 创建两个租户的用户
         user1 = User(
@@ -411,7 +444,7 @@ class TestTaskModel:
         
         # 查询租户1的任务
         result = await async_session.execute(
-            select(Task).where(Task.tenant_id == user1.tenant_id)
+            select(Task).where(TaskTenantIdColumn == user1.tenant_id)
         )
         tenant1_tasks = result.scalars().all()
         
@@ -420,7 +453,7 @@ class TestTaskModel:
         
         # 查询租户2的任务
         result = await async_session.execute(
-            select(Task).where(Task.tenant_id == user2.tenant_id)
+            select(Task).where(TaskTenantIdColumn == user2.tenant_id)
         )
         tenant2_tasks = result.scalars().all()
         
@@ -429,7 +462,7 @@ class TestTaskModel:
     
     @TestIsolation.unit_test
     @performance_test(max_duration=0.1)
-    async def test_task_query_performance(self, async_session: AsyncSession):
+    async def test_task_query_performance(self, async_session: AsyncSession) -> None:
         """测试任务查询性能"""
         # 创建用户
         user = User(
@@ -457,8 +490,8 @@ class TestTaskModel:
         # 性能测试：查询已完成任务
         result = await async_session.execute(
             select(Task).where(
-                Task.tenant_id == user.tenant_id,
-                Task.status == TaskStatus.COMPLETED
+                TaskTenantIdColumn == user.tenant_id,
+                TaskStatusColumn == TaskStatus.COMPLETED
             )
         )
         completed_tasks = result.scalars().all()

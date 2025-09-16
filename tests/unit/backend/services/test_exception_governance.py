@@ -1,6 +1,6 @@
 import asyncio
 import json
-from typing import Any, Mapping, Optional
+from typing import Any, Mapping, Optional, cast
 
 import pytest
 from sqlalchemy.exc import SQLAlchemyError
@@ -42,7 +42,7 @@ class _DummyAsyncSession:
 def test_cache_updater_handles_invalid_json_on_merge(monkeypatch: pytest.MonkeyPatch) -> None:
     updater = SimpleCacheUpdater()
     # 现有缓存为无效 JSON，触发 JSONDecodeError
-    updater.redis_client = _FakeRedisSync(get_value="{invalid-json}")  # type: ignore[assignment]
+    updater.redis_client = cast(Any, _FakeRedisSync(get_value="{invalid-json}"))
     ok = updater.update_community_posts("r/test", {"posts": []})
     assert ok is False
 
@@ -51,17 +51,17 @@ def test_cache_updater_handles_invalid_json_on_merge(monkeypatch: pytest.MonkeyP
 async def test_discovery_get_cached_result_invalid_json() -> None:
     svc = CommunityDiscoveryService()
     # 注入异步Redis，返回坏JSON
-    svc.redis_client = _FakeRedisAsync(get_value="not a json")  # type: ignore[assignment]
+    svc.redis_client = cast(Any, _FakeRedisAsync(get_value="not a json"))
     res = await svc._get_cached_result("req-1")
     assert res is None
 
 
 def test_data_cleanup_dry_run_unsupported_category_returns_failure() -> None:
     # 提供一个哑会话（不会被用到）
-    dummy_db = object()  # type: ignore[assignment]
-    service = DataCleanupService(dummy_db)  # type: ignore[arg-type]
+    dummy_db = cast(Any, object())
+    service = DataCleanupService(dummy_db)
     # 清空策略映射，制造不支持的类别
-    service._strategies = {}  # type: ignore[attr-defined]
+    service._strategies = {}
     result = service._execute_dry_run_cleanup(CleanupCategory.COMPLETED_TASKS, {})
     assert result["success"] is False
     assert "不支持" in (result["error_message"] or "")
@@ -70,7 +70,7 @@ def test_data_cleanup_dry_run_unsupported_category_returns_failure() -> None:
 def test_task_status_format_timestamp_handles_invalid_input() -> None:
     # 使用同步的内部方法进行健壮性测试
     # 构造一个无效的 timestamp（非 datetime 对象），应当返回当前时间字符串
-    svc = TaskStatusService.__new__(TaskStatusService)  # type: ignore[call-arg]
-    ts = svc._format_timestamp(12345)  # type: ignore[arg-type]
+    svc: TaskStatusService = TaskStatusService.__new__(TaskStatusService)
+    ts = svc._format_timestamp(cast(Any, 12345))
     assert isinstance(ts, str) and len(ts) >= 10
 

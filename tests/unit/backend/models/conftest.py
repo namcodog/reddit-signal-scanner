@@ -7,7 +7,8 @@
 
 import os
 import asyncio
-from typing import AsyncGenerator, Generator
+import functools
+from typing import AsyncGenerator, Awaitable, Callable, Generator, ParamSpec, TypeVar
 import uuid
 from datetime import datetime
 
@@ -19,14 +20,18 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, AsyncEngin
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from backend.app.core.database import Base
-from backend.app.models.user import User
-from backend.app.models.task import Task, TaskStatus
-from backend.app.models.analysis import Analysis
+from app.core.database import Base
+from app.models.user import User
+from app.models.task import Task, TaskStatus
+from app.models.analysis import Analysis
 
 # 测试数据库配置
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 TEST_SYNC_DATABASE_URL = "sqlite:///test.db"
+
+
+P = ParamSpec("P")
+R = TypeVar("R")
 
 
 @pytest_asyncio.fixture(scope="function")
@@ -40,17 +45,17 @@ async def async_engine() -> AsyncGenerator[AsyncEngine, None]:
             "check_same_thread": False,
         },
     )
-    
+
     # 创建所有表
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    
+
     yield engine
-    
+
     # 清理
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
-    
+
     await engine.dispose()
 
 
@@ -62,7 +67,7 @@ async def async_session(async_engine: AsyncEngine) -> AsyncGenerator[AsyncSessio
         class_=AsyncSession,
         expire_on_commit=False
     )
-    
+
     async with async_session_factory() as session:
         yield session
 
@@ -76,12 +81,12 @@ def sync_engine() -> Generator[Engine, None, None]:
         poolclass=StaticPool,
         connect_args={"check_same_thread": False}
     )
-    
+
     # 创建所有表
     Base.metadata.create_all(bind=engine)
-    
+
     yield engine
-    
+
     # 清理
     Base.metadata.drop_all(bind=engine)
     if os.path.exists("test.db"):
@@ -99,7 +104,7 @@ def sample_user_data() -> dict:
     }
 
 
-@pytest.fixture  
+@pytest.fixture
 def sample_task_data() -> dict:
     """生成示例任务数据"""
     return {
@@ -152,7 +157,7 @@ def sample_analysis_data() -> dict:
 
 class ModelTestHelpers:
     """模型测试辅助工具类"""
-    
+
     @staticmethod
     def create_test_user(session: AsyncSession, **kwargs) -> User:
         """创建测试用户实例（不保存到数据库）"""
@@ -164,7 +169,7 @@ class ModelTestHelpers:
         }
         default_data.update(kwargs)
         return User(**default_data)
-    
+
     @staticmethod
     def create_test_task(user: User, **kwargs) -> Task:
         """创建测试任务实例（不保存到数据库）"""
@@ -176,7 +181,7 @@ class ModelTestHelpers:
         }
         default_data.update(kwargs)
         return Task(**default_data)
-    
+
     @staticmethod
     def assert_user_valid(user: User) -> None:
         """断言用户对象有效"""
@@ -188,7 +193,7 @@ class ModelTestHelpers:
         assert len(user.password_hash) > 50  # BCrypt哈希长度检查
         assert user.created_at is not None
         assert user.updated_at is not None
-    
+
     @staticmethod
     def assert_task_valid(task: Task) -> None:
         """断言任务对象有效"""
@@ -208,19 +213,22 @@ def model_helpers() -> ModelTestHelpers:
 
 
 # 性能测试装饰器
-def performance_test(max_duration: float):
+def performance_test(max_duration: float) -> Callable[[Callable[P, Awaitable[R]]], Callable[P, Awaitable[R]]]:
     """性能测试装饰器"""
-    def decorator(test_func):
-        async def wrapper(*args, **kwargs):
+    def decorator(test_func: Callable[P, Awaitable[R]]) -> Callable[P, Awaitable[R]]:
+        @functools.wraps(test_func)
+        async def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
             import time
+
             start_time = time.time()
             try:
-                result = await test_func(*args, **kwargs)
-                return result
+                return await test_func(*args, **kwargs)
             finally:
                 duration = time.time() - start_time
                 assert duration <= max_duration, (
                     f"测试性能不达标: {duration:.3f}s > {max_duration}s"
                 )
+
         return wrapper
+
     return decorator
