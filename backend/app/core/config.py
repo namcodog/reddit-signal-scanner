@@ -13,11 +13,19 @@ from functools import lru_cache
 from typing import Annotated, Any, Optional
 
 from pydantic import Field
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     """应用配置 - 纯数据存储，无验证逻辑"""
+
+    model_config = SettingsConfigDict(
+        extra="ignore",
+        env_ignore_empty=True,
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+    )
 
     # 应用基础配置
     app_name: str = "Reddit Signal Scanner"
@@ -157,11 +165,6 @@ class Settings(BaseSettings):
     def is_development(self) -> bool:
         """开发环境判断"""
         return self.environment.lower() == "development"
-
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        case_sensitive = False
 
 
 # ===== 验证逻辑分离 =====

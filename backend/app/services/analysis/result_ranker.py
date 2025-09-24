@@ -16,6 +16,7 @@ from typing import Any, Dict, List, Literal, Mapping, Optional, Tuple, TypedDict
 from dataclasses import dataclass
 
 from app.core.step_base import AnalysisStep
+from app.core.types import JsonValue
 from app.models.analysis_pipeline import PipelineData, PipelineResult, StepStatus
 
 
@@ -289,8 +290,16 @@ def extract_signals_from_pipeline(data: PipelineData) -> List[BaseSignal]:
 
     for insight_type, signal_type in signal_types:
         insight_list: Any = insights_data.get(insight_type, [])
+
+        # 兜底机制：确保即使字段不存在或类型错误，也能继续处理
         if not isinstance(insight_list, list):
-            continue
+            # 如果不是列表，尝试转换为列表或使用空列表
+            if insight_list is None:
+                insight_list = []
+            elif isinstance(insight_list, dict):
+                insight_list = [insight_list]
+            else:
+                insight_list = []
 
         for insight in insight_list:
             if not isinstance(insight, dict):
@@ -304,6 +313,10 @@ def extract_signals_from_pipeline(data: PipelineData) -> List[BaseSignal]:
                     "title": insight.get("title")
                     or insight.get("description", "")[:100],
                     "content": insight.get("content") or insight.get("details", ""),
+                    # 确保relevance_score字段存在
+                    "relevance_score": float(insight.get("relevance_score", 0.5)),
+                    # 确保timestamp字段存在
+                    "timestamp": float(insight.get("timestamp", time.time())),
                 }
             )
             signals.append(cast(BaseSignal, signal))
@@ -324,7 +337,9 @@ def process_ranking_step(
         ranked = ranking_result.get("ranked_signals", [])
         top_titles = [s.get("title", "") for s in ranked[:3]]
 
-        data_out: Dict[str, Any] = dict(ranking_result)  # avoid typing.cast at runtime
+        data_out: Dict[str, JsonValue] = {
+            key: cast(JsonValue, value) for key, value in ranking_result.items()
+        }
         data_out["top_signals"] = top_titles
 
         return PipelineResult(

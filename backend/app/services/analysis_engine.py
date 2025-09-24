@@ -12,14 +12,19 @@ import asyncio
 import logging
 import time
 import uuid
-from typing import Dict, List, Mapping, Optional, Union, cast
+from typing import Dict, List, Mapping, Optional, TypedDict, Union, cast
 from dataclasses import dataclass
 from enum import Enum
 from datetime import datetime
 
-from ..core.analyzer_config import ConfigManager, get_config, load_default_config
+from ..core.analyzer_config import (
+    ConfigManager,
+    ConfigValidationResult,
+    get_config,
+    load_default_config,
+)
 from ..core.step_base import AnalysisStep
-from ..core.types import JsonValue
+from ..core.types import JsonValue, StepInfo
 from ..models.analysis_pipeline import (
     AnalysisConfig,
     AnalysisReport,
@@ -116,6 +121,31 @@ class AnalysisResponse:
     timestamp: datetime
 
 
+class QualityMetricsPayload(TypedDict):
+    community_relevance: float
+    cache_hit_rate: float
+    data_freshness: float
+    signal_confidence: float
+
+
+class EngineStatusPayload(TypedDict):
+    version: str
+    steps_count: int
+    steps_info: List[StepInfo]
+    max_total_duration: float
+    config_loaded: bool
+
+
+class EngineHealthPayload(TypedDict, total=False):
+    status: str
+    config_valid: bool
+    config_errors: List[str]
+    config_warnings: List[str]
+    steps_healthy: bool
+    steps_count: int
+    error: str
+
+
 class AnalysisEngine:
     """
     分析引擎主控制器 - 编排四步流水线
@@ -162,21 +192,27 @@ class AnalysisEngine:
         # DataCollectionStep / SignalExtractionStep 构造器期望 dict 配置
         # 这些步骤构造函数接受 Mapping[str, JsonValue]，这里做宽松到窄化转换
         # 下游 DataCollectionStep/SignalExtractionStep 构造器要求 dict[str, str] | None
-        def to_str_dict(m: Mapping[str, JsonValue] | None) -> Dict[str, str]:
+        def to_str_dict(m: Mapping[str, JsonValue] | None) -> dict[str, str]:
             if not m:
                 return {}
-            out: Dict[str, str] = {}
+            out: dict[str, str] = {}
             for k, v in m.items():
                 out[str(k)] = str(v) if v is not None else ""
             return out
 
-        data_cfg_dict = to_str_dict(cast(Mapping[str, JsonValue] | None, data_cfg.config_data))
+        data_cfg_dict = to_str_dict(
+            cast(Mapping[str, JsonValue] | None, data_cfg.config_data)
+        )
         # SignalExtractionStep 期望 dict[str, JsonValue] | None
-        from app.core.types import JsonValue
-        def to_json_mapping(m: Mapping[str, JsonValue] | None) -> Dict[str, JsonValue]:
+
+        def to_json_mapping(
+            m: Mapping[str, JsonValue] | None,
+        ) -> dict[str, JsonValue]:
             return dict(m) if m else {}
 
-        signal_cfg_dict_json = to_json_mapping(cast(Mapping[str, JsonValue] | None, signal_cfg.config_data))
+        signal_cfg_dict_json = to_json_mapping(
+            cast(Mapping[str, JsonValue] | None, signal_cfg.config_data)
+        )
 
         self.steps = [
             CommunityDiscoveryStep(comm_cfg),
@@ -258,7 +294,13 @@ class AnalysisEngine:
 
             return report
 
-        except (asyncio.TimeoutError, ValueError, RuntimeError, TypeError, KeyError) as e:
+        except (
+            asyncio.TimeoutError,
+            ValueError,
+            RuntimeError,
+            TypeError,
+            KeyError,
+        ) as e:
             self.logger.error(f"分析失败 [{pipeline_id}]: {str(e)}", exc_info=True)
             raise RuntimeError(f"分析执行失败: {str(e)}")
 
@@ -355,7 +397,13 @@ class AnalysisEngine:
                     data.add_error(f"分析总时间超限 (>{max_total_time}s)")
                     break
 
-            except (asyncio.TimeoutError, RuntimeError, ValueError, TypeError, KeyError) as e:
+            except (
+                asyncio.TimeoutError,
+                RuntimeError,
+                ValueError,
+                TypeError,
+                KeyError,
+            ) as e:
                 error_msg = f"步骤 {step.name} 执行异常: {str(e)}"
                 data.add_error(error_msg)
                 self.logger.error(error_msg, exc_info=True)
@@ -371,10 +419,29 @@ class AnalysisEngine:
         # 提取洞察数据
         insights_result = data.get_step_result("signal_extraction") or {}
         insights_data_map = as_mapping(insights_result.get("insights", {}))
+
+        # 兜底机制：确保5个关键字段始终存在且类型正确
+        pain_points_raw = insights_data_map.get("pain_points", [])
+        competitors_raw = insights_data_map.get("competitors", [])
+        opportunities_raw = insights_data_map.get("opportunities", [])
+
+        # 类型安全的字段提取，确保即使为空也返回正确的数组类型
+        pain_points = as_list_of_dicts(pain_points_raw) if pain_points_raw else []
+        competitors = as_list_of_dicts(competitors_raw) if competitors_raw else []
+        opportunities = as_list_of_dicts(opportunities_raw) if opportunities_raw else []
+
+        # 确保每个字段都有最小的结构，防止下游处理失败
+        if not pain_points:
+            pain_points = []
+        if not competitors:
+            competitors = []
+        if not opportunities:
+            opportunities = []
+
         insights = InsightsData(
-            pain_points=as_list_of_dicts(insights_data_map.get("pain_points", [])),
-            competitors=as_list_of_dicts(insights_data_map.get("competitors", [])),
-            opportunities=as_list_of_dicts(insights_data_map.get("opportunities", [])),
+            pain_points=pain_points,
+            competitors=competitors,
+            opportunities=opportunities,
             analysis_summary=as_str(insights_data_map.get("analysis_summary", "")),
             key_insights=[
                 as_str(x)
@@ -411,6 +478,14 @@ class AnalysisEngine:
             if i < len(self.steps):
                 step_durations[self.steps[i].name] = duration
 
+        quality_metrics = await self._calculate_quality_metrics(data)
+        data_quality_metrics = {
+            "community_relevance": quality_metrics["community_relevance"],
+            "cache_hit_rate": quality_metrics["cache_hit_rate"],
+            "data_freshness": quality_metrics["data_freshness"],
+            "signal_confidence": quality_metrics["signal_confidence"],
+        }
+
         return AnalysisReport(
             report_id=data.pipeline_id,
             product_description=data.product_description,
@@ -421,7 +496,7 @@ class AnalysisEngine:
             data_sources=data_sources,
             total_duration=sum(data.step_durations),
             step_durations=step_durations,
-            data_quality_metrics=await self._calculate_quality_metrics(data),
+            data_quality_metrics=data_quality_metrics,
         )
 
     async def _calculate_overall_confidence(self, data: PipelineData) -> float:
@@ -470,72 +545,95 @@ class AnalysisEngine:
 
         return sum(confidence_factors)
 
-    async def _calculate_quality_metrics(self, data: PipelineData) -> Dict[str, float]:
+    async def _calculate_quality_metrics(
+        self, data: PipelineData
+    ) -> QualityMetricsPayload:
         """计算数据质量指标"""
-        metrics: Dict[str, float] = {}
 
-        # 社区发现质量
         communities_result = data.get_step_result("community_discovery") or {}
         communities_list = as_list(communities_result.get("communities", []))
         scores = [
-            as_float(as_mapping(c).get("relevance_score", 0)) for c in communities_list
+            as_float(as_mapping(community).get("relevance_score", 0))
+            for community in communities_list
         ]
-        metrics["community_relevance"] = sum(scores) / max(len(scores), 1)
+        community_relevance = (
+            sum(scores) / max(len(scores), 1) if scores else 0.0
+        )
 
-        # 数据收集质量
         collection_result = data.get_step_result("data_collection") or {}
-        metrics["cache_hit_rate"] = as_float(
-            collection_result.get("cache_hit_rate", 0.0)
-        )
-        metrics["data_freshness"] = as_float(
-            collection_result.get("freshness_score", 0.5)
-        )
+        cache_hit_rate = as_float(collection_result.get("cache_hit_rate", 0.0))
+        data_freshness = as_float(collection_result.get("freshness_score", 0.5))
 
-        # 信号提取质量
         signal_result = data.get_step_result("signal_extraction") or {}
         insights = as_mapping(signal_result.get("insights", {}))
-        metrics["signal_confidence"] = as_float(insights.get("confidence_score", 0.0))
+        signal_confidence = as_float(insights.get("confidence_score", 0.0))
 
-        return metrics
+        quality_metrics: QualityMetricsPayload = {
+            "community_relevance": float(community_relevance),
+            "cache_hit_rate": float(cache_hit_rate),
+            "data_freshness": float(data_freshness),
+            "signal_confidence": float(signal_confidence),
+        }
 
-    def get_engine_status(self) -> Dict[str, JsonValue]:
+        return quality_metrics
+
+    def get_engine_status(self) -> EngineStatusPayload:
         """获取引擎状态信息"""
-        steps_info_json = [
-            cast(dict[str, JsonValue], step.get_step_info()) for step in self.steps
-        ]
-        return {
-            "version": self.config_manager.get("analysis_engine.version", "unknown"),
+        steps_info: List[StepInfo] = [step.get_step_info() for step in self.steps]
+        max_total_duration = as_float(
+            self.config_manager.get("analysis_engine.max_total_duration", 270)
+        )
+        version_value = as_str(
+            self.config_manager.get("analysis_engine.version", "unknown")
+        )
+
+        status_payload: EngineStatusPayload = {
+            "version": version_value,
             "steps_count": len(self.steps),
-            "steps_info": cast(List[JsonValue], steps_info_json),
-            "max_total_duration": as_float(
-                self.config_manager.get("analysis_engine.max_total_duration", 270)
-            ),
+            "steps_info": steps_info,
+            "max_total_duration": float(max_total_duration),
             "config_loaded": bool(self.config_manager._config),
         }
 
-    async def health_check(self) -> Dict[str, JsonValue]:
+        return status_payload
+
+    async def health_check(self) -> EngineHealthPayload:
         """健康检查"""
         try:
             # 检查配置
-            config_valid = self.config_manager.validate_config()
+            config_valid: ConfigValidationResult = (
+                self.config_manager.validate_config()
+            )
 
             # 检查步骤初始化
             steps_healthy = all(step is not None for step in self.steps)
+            status = (
+                "healthy"
+                if config_valid["is_valid"] and steps_healthy
+                else "unhealthy"
+            )
 
-            return {
-                "status": (
-                    "healthy"
-                    if config_valid["is_valid"] and steps_healthy
-                    else "unhealthy"
-                ),
+            health_payload: EngineHealthPayload = {
+                "status": status,
                 "config_valid": config_valid["is_valid"],
-                "config_errors": cast(List[JsonValue], config_valid.get("errors", [])),
+                "config_errors": list(config_valid["errors"]),
+                "config_warnings": list(config_valid["warnings"]),
                 "steps_healthy": steps_healthy,
                 "steps_count": len(self.steps),
             }
 
+            return health_payload
+
         except (RuntimeError, ValueError) as e:
-            return {"status": "unhealthy", "error": str(e)}
+            return {
+                "status": "unhealthy",
+                "config_valid": False,
+                "config_errors": [str(e)],
+                "config_warnings": [],
+                "steps_healthy": False,
+                "steps_count": len(self.steps),
+                "error": str(e),
+            }
 
 
 # 全局引擎实例

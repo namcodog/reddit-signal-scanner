@@ -10,11 +10,19 @@
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union, cast
+from typing import Any, Dict, List, Optional, Union, cast, TypedDict
 
 import yaml
 
 from .types import JsonValue
+
+
+class ConfigValidationResult(TypedDict):
+    """配置校验结果结构."""
+
+    is_valid: bool
+    errors: List[str]
+    warnings: List[str]
 
 
 @dataclass

@@ -1,0 +1,56 @@
+[
+  {
+    "id": "rss-mock-001",
+    "subreddit": "r/FintechSignals",
+    "author_alias": "user_a9c1",
+    "score": 421,
+    "created_utc": "2025-09-18T02:14:51Z",
+    "content": "讨论AI驱动的理财助手如何帮助中小企业自动化现金流预测，附带开源仓库链接。",
+    "labels": ["fintech", "automation", "smb"],
+    "metadata": {
+      "language": "zh",
+      "source": "reddit",
+      "permalink": "https://reddit.com/r/FintechSignals/comments/mock001",
+      "safety": {
+        "pii_scrubbed": true,
+        "nsfw": false
+      }
+    }
+  },
+  {
+    "id": "rss-mock-002",
+    "subreddit": "r/MarketPulse",
+    "author_alias": "user_b7d4",
+    "score": 256,
+    "created_utc": "2025-09-18T06:03:10Z",
+    "content": "有投资者在分享将LLM嵌入小众原材料市场分析的经验，提到了供应链延时指标。",
+    "labels": ["commodities", "llm", "supply-chain"],
+    "metadata": {
+      "language": "en",
+      "source": "reddit",
+      "permalink": "https://reddit.com/r/MarketPulse/comments/mock002",
+      "safety": {
+        "pii_scrubbed": true,
+        "nsfw": false
+      }
+    }
+  },
+  {
+    "id": "rss-mock-003",
+    "subreddit": "r/CryptoInsight",
+    "author_alias": "user_c1f8",
+    "score": 678,
+    "created_utc": "2025-09-19T00:48:05Z",
+    "content": "社区对比Solana与Layer2在高频交易场景的实时性能，并附带压测数据截图描述。",
+    "labels": ["crypto", "performance", "benchmark"],
+    "metadata": {
+      "language": "en",
+      "source": "reddit",
+      "permalink": "https://reddit.com/r/CryptoInsight/comments/mock003",
+      "safety": {
+        "pii_scrubbed": true,
+        "nsfw": false
+      }
+    }
+  }
+]

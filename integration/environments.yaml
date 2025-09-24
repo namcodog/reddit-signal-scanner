@@ -1,0 +1,66 @@
+# Reddit Signal Scanner - 联调环境矩阵
+# 单一真源：被健康检查脚本与文档引用
+
+version: '0.1'
+updated_at: "2025-09-20"
+maintainer: "Codex Integration Squad"
+
+defaults:
+  health_endpoints:
+    - path: "/api/health"
+      expected_status: 200
+    - path: "/api/v1/auth/health"
+      expected_status: 200
+  timeout_seconds: 5
+  headers:
+    Accept: "application/json"
+
+environments:
+  local:
+    api_base: "http://localhost:8008"
+    database_url: "postgresql://postgres:postgres@localhost:5432/reddit_signal_scanner"
+    redis_url: "redis://localhost:6379/0"
+    celery:
+      broker_url: "redis://localhost:6379/0"
+      result_backend: "redis://localhost:6379/1"
+    docs:
+      env_file: [".env", "backend/.env"]
+      notes:
+        - "docker-compose 提供 Postgres + Redis"
+        - "使用 make install 生成 backend/venv"
+    tls_required: false
+
+  staging:
+    api_base: "https://staging.api.reddit-signal.internal"
+    database_url: "postgresql://reddit_stage:{{ secret }}@staging-db:5432/rss"
+    redis_url: "redis://staging-redis:6379/0"
+    celery:
+      broker_url: "redis://staging-redis:6379/0"
+      result_backend: "redis://staging-redis:6379/1"
+    docs:
+      env_file: [".env.staging", "backend/.env.staging"]
+      notes:
+        - "需从运维密钥库同步 credentials"
+        - "证书部署：Let's Encrypt / ACM"
+        - "CI/CD：main 合并后自动部署"
+    tls_required: true
+    custom_health_endpoints:
+      - path: "/api/v1/tasks/health"
+        expected_status: 200
+
+  production:
+    api_base: "https://api.reddit-signal.com"
+    database_url: "postgresql://reddit_prod:{{ secret }}@prod-db.cluster:5432/rss"
+    redis_url: "rediss://prod-redis-cluster:6380/0"
+    celery:
+      broker_url: "rediss://prod-redis-cluster:6380/0"
+      result_backend: "rediss://prod-redis-cluster:6380/1"
+    docs:
+      env_file: [".env.production", "backend/.env.production"]
+      notes:
+        - "启用 TLS + WAF + IP 白名单"
+        - "灰度发布：50% -> 100%"
+        - "APM & 日志：DataDog / Grafana Loki"
+    tls_required: true
+    custom_headers:
+      X-Env: "production"

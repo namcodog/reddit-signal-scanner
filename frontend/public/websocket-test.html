@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Phase3 测试</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .status { padding: 10px; margin: 10px 0; border-radius: 4px; }
+        .connected { background-color: #d4edda; color: #155724; }
+        .disconnected { background-color: #f8d7da; color: #721c24; }
+        .message { background-color: #f0f0f0; padding: 8px; margin: 4px 0; border-radius: 3px; }
+        button { margin: 5px; padding: 8px 16px; }
+        input { margin: 5px; padding: 8px; width: 200px; }
+        .log { height: 300px; overflow-y: auto; border: 1px solid #ccc; padding: 10px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Phase3 WebSocket测试页面</h1>
+
+        <div id="status" class="status disconnected">未连接</div>
+
+        <div>
+            <input type="text" id="taskId" placeholder="输入任务ID" value="test-task-123">
+            <button onclick="connectWebSocket()">连接WebSocket</button>
+            <button onclick="connectSSE()">连接SSE</button>
+            <button onclick="disconnect()">断开连接</button>
+        </div>
+
+        <div>
+            <button onclick="simulateProgress()">模拟进度更新</button>
+            <button onclick="simulateComplete()">模拟任务完成</button>
+            <button onclick="clearLog()">清空日志</button>
+        </div>
+
+        <h3>消息日志</h3>
+        <div id="messageLog" class="log"></div>
+    </div>
+
+    <script>
+        let ws = null;
+        let eventSource = null;
+        let currentTaskId = null;
+
+        function log(message) {
+            const messageLog = document.getElementById('messageLog');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message';
+            messageDiv.innerHTML = `[${new Date().toLocaleTimeString()}] ${message}`;
+            messageLog.appendChild(messageDiv);
+            messageLog.scrollTop = messageLog.scrollHeight;
+        }
+
+        function updateStatus(text, isConnected) {
+            const status = document.getElementById('status');
+            status.textContent = text;
+            status.className = `status ${isConnected ? 'connected' : 'disconnected'}`;
+        }
+
+        function connectWebSocket() {
+            const taskId = document.getElementById('taskId').value;
+            if (!taskId) {
+                alert('请输入任务ID');
+                return;
+            }
+
+            currentTaskId = taskId;
+            disconnect(); // 先断开现有连接
+
+            const wsUrl = `ws://localhost:8008/ws/tasks/${taskId}`;
+            log(`正在连接WebSocket: ${wsUrl}`);
+
+            ws = new WebSocket(wsUrl);
+
+            ws.onopen = function() {
+                log('✅ WebSocket连接已建立');
+                updateStatus('WebSocket已连接', true);
+            };
+
+            ws.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    log(`📨 收到消息: ${JSON.stringify(data, null, 2)}`);
+
+                    if (data.type === 'heartbeat') {
+                        log('💓 收到心跳');
+                    }
+                } catch (e) {
+                    log(`❌ 消息解析失败: ${event.data}`);
+                }
+            };
+
+            ws.onerror = function(error) {
+                log(`❌ WebSocket错误: ${error}`);
+                updateStatus('WebSocket错误', false);
+            };
+
+            ws.onclose = function(event) {
+                log(`🔌 WebSocket连接关闭: ${event.code} ${event.reason}`);
+                updateStatus('WebSocket已断开', false);
+            };
+        }
+
+        function connectSSE() {
+            const taskId = document.getElementById('taskId').value;
+            if (!taskId) {
+                alert('请输入任务ID');
+                return;
+            }
+
+            currentTaskId = taskId;
+            disconnect(); // 先断开现有连接
+
+            const sseUrl = `http://localhost:8008/api/v1/events/${taskId}`;
+            log(`正在连接SSE: ${sseUrl}`);
+
+            eventSource = new EventSource(sseUrl);
+
+            eventSource.onopen = function() {
+                log('✅ SSE连接已建立');
+                updateStatus('SSE已连接', true);
+            };
+
+            eventSource.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    log(`📨 收到SSE消息: ${JSON.stringify(data, null, 2)}`);
+                } catch (e) {
+                    log(`❌ SSE消息解析失败: ${event.data}`);
+                }
+            };
+
+            eventSource.addEventListener('heartbeat', function(event) {
+                log('💓 收到SSE心跳');
+            });
+
+            eventSource.onerror = function(error) {
+                log(`❌ SSE错误: ${error}`);
+                updateStatus('SSE错误', false);
+            };
+        }
+
+        function disconnect() {
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+            if (eventSource) {
+                eventSource.close();
+                eventSource = null;
+            }
+            updateStatus('未连接', false);
+            log('🔌 连接已断开');
+        }
+
+        function simulateProgress() {
+            if (!currentTaskId) {
+                alert('请先连接');
+                return;
+            }
+
+            log('📤 模拟发送进度事件 (需要后端支持)');
+            // 这里需要调用后端API来发送事件
+            // emit_task_event("progress", currentTaskId, {"status": "processing", "progress": 60, "message": "manual test"})
+        }
+
+        function simulateComplete() {
+            if (!currentTaskId) {
+                alert('请先连接');
+                return;
+            }
+
+            log('📤 模拟发送完成事件 (需要后端支持)');
+            // 这里需要调用后端API来发送事件
+            // emit_task_event("completed", currentTaskId, {"status": "completed", "progress": 100, "message": "task completed"})
+        }
+
+        function clearLog() {
+            document.getElementById('messageLog').innerHTML = '';
+        }
+
+        // 页面加载时的初始化
+        window.onbeforeunload = function() {
+            disconnect();
+        };
+    </script>
+</body>
+</html>

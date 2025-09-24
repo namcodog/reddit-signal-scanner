@@ -1,0 +1,1 @@
+Redis limits and 429 backoff fully validated on dev: ~45 rpm global limit, burst 6/10s, adaptive sleep from headers, monitoring keys (`rate_limit:reddit_api:*`) populated, and all blocking startup issues resolved (TypedDict, Celery app export, DB hosts, IMMUTABLE index, task_status enum).
