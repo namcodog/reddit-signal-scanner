@@ -19,6 +19,7 @@ from app.tasks.analysis_tasks import (
     _build_insights_payload,
     _build_sources_payload,
     _render_report_html,
+    _sanitize_communities,
 )
 from app.services.report_formatter import ReportFormatterService, get_formatted_report
 from sqlalchemy import text as sa_text
@@ -151,8 +152,11 @@ def test_report_endpoint_returns_structured_data(
     insights_payload, market_metrics, metadata = _build_insights_payload(
         sample_analysis_report, task.product_description
     )
+    sanitized_communities = _sanitize_communities(
+        sample_analysis_report.communities_scanned
+    )
     sources_payload = _build_sources_payload(
-        sample_analysis_report, metadata.get("communities", [])
+        sample_analysis_report, sanitized_communities
     )
     html_content = _render_report_html(
         str(task.id), task.product_description, insights_payload, market_metrics
@@ -192,6 +196,7 @@ def test_report_endpoint_returns_structured_data(
         {"task_id": str(task.id)},
     ).scalar_one()
     assert stored_insights.get("pain_points"), "落库后应包含 pain_points"
+    assert stored_sources.get("communities"), stored_sources
     assert (
         stored_insights.get("executive_summary", {}).get("confidence_score")
         is not None

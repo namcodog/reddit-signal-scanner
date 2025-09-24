@@ -73,21 +73,18 @@ const statCards: Array<{
   },
 ];
 
-const statusCopy: Record<StepStatus, { label: string; container: string; badge: string; badgeText: string }> = {
+const statusCopy: Record<StepStatus, { container: string; badge: string; badgeText: string }> = {
   pending: {
-    label: '待开始',
     container: 'border-border bg-card',
     badge: 'bg-muted text-muted-foreground',
     badgeText: '待处理',
   },
   'in-progress': {
-    label: '进行中',
     container: 'border-secondary/50 bg-secondary/10',
     badge: 'bg-secondary text-white',
     badgeText: '处理中',
   },
   completed: {
-    label: '已完成',
     container: 'border-emerald-200 bg-emerald-50',
     badge: 'bg-emerald-500/90 text-white',
     badgeText: '已完成',
@@ -236,7 +233,6 @@ const AnalysisProgress: React.FC<AnalysisProgressProps> = ({
                   <div className="space-y-1">
                     <p className="text-sm font-medium text-foreground">{step.title}</p>
                     <p className="text-xs text-muted-foreground sm:text-sm">{step.description}</p>
-                    <p className="text-xs text-muted-foreground/80">{meta.label}</p>
                   </div>
                 </div>
                 <Badge className={`rounded-full px-3 py-1 text-xs font-medium ${meta.badge}`}>

@@ -815,6 +815,7 @@ def get_formatted_report(
         generated_at=str(data.get("generated_at", raw.get("timestamp", ""))),
         data_freshness=str(data.get("data_freshness", "unknown")),
         html_content=data.get("html_content"),
+        executive_summary=executive_summary,
         market_metrics=market_metrics,
         pain_points=pain_points,
         competitors=competitors,
