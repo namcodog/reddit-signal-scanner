@@ -20,6 +20,7 @@ from app.tasks.analysis_tasks import (
     _build_sources_payload,
     _render_report_html,
 )
+from app.services.report_formatter import ReportFormatterService, get_formatted_report
 from sqlalchemy import text as sa_text
 from sqlalchemy.orm import Session, sessionmaker
 from app.core.jwt_handler import get_jwt_handler
@@ -186,7 +187,25 @@ def test_report_endpoint_returns_structured_data(
         sa_text("SELECT insights FROM analyses WHERE task_id = :task_id"),
         {"task_id": str(task.id)},
     ).scalar_one()
+    stored_sources = session.execute(
+        sa_text("SELECT sources FROM analyses WHERE task_id = :task_id"),
+        {"task_id": str(task.id)},
+    ).scalar_one()
     assert stored_insights.get("pain_points"), "落库后应包含 pain_points"
+    assert (
+        stored_insights.get("executive_summary", {}).get("confidence_score")
+        is not None
+    ), stored_insights.get("executive_summary")
+
+    formatter = ReportFormatterService(session)
+    raw_payload = formatter.get_complete_report(str(task.id))
+    raw_exec_summary = raw_payload["data"]["executive_summary"]
+    assert raw_exec_summary["confidence_score"] is not None, raw_exec_summary
+
+    formatted_report = get_formatted_report(session, str(task.id), "full")
+    assert (
+        formatted_report.executive_summary.confidence_score is not None
+    ), formatted_report.executive_summary
 
     engine = session.get_bind()
     SessionFactory = sessionmaker(bind=engine)
@@ -207,16 +226,43 @@ def test_report_endpoint_returns_structured_data(
     assert payload["status"] == "success"
     data = payload.get("data")
     assert data, "响应中缺少 data 字段"
-    print("API data:", data)
     assert data["task_id"] == str(task.id)
     assert data["market_metrics"]["total_mentions"] > 0
     if not data.get("pain_points"):
         pytest.fail(f"pain_points empty, payload keys: {list(data.keys())}")
-    assert data["executive_summary"]["confidence_score"] is not None
+    assert (
+        data["executive_summary"]["confidence_score"] is not None
+    ), data["executive_summary"]
     assert data["html_content"], "报告应包含 html_content"
     assert data["confidence_score"] >= 0
     assert data["data_coverage"]["communities"] >= 1
 
+    assert isinstance(data["executive_summary"], dict)
+    assert isinstance(data["executive_summary"].get("summary_points"), list)
+    assert isinstance(data["market_metrics"], dict)
+    assert isinstance(data["market_metrics"]["total_mentions"], int)
+    assert data["market_metrics"]["total_mentions"] >= 0
+    assert isinstance(data["market_metrics"]["sentiment_score"], float)
+    assert isinstance(data["market_metrics"]["trending_keywords"], list)
+    assert all(
+        isinstance(keyword, str) for keyword in data["market_metrics"]["trending_keywords"]
+    )
+    assert isinstance(data["market_metrics"].get("sample_size"), int)
+    sentiment_keys = set(data.get("sentiment_summary", {}).keys())
+    assert {"positive", "neutral", "negative"}.issubset(sentiment_keys)
+
+    assert isinstance(data["pain_points"], list)
     first_pain_point = data["pain_points"][0]
     assert first_pain_point["description"]
     assert first_pain_point["frequency"] >= 1
+    assert isinstance(first_pain_point["sentiment_score"], float)
+
+    assert isinstance(data["competitors"], list)
+    first_competitor = data["competitors"][0]
+    assert first_competitor["name"]
+    assert isinstance(first_competitor["mention_count"], int)
+
+    assert isinstance(data["opportunities"], list)
+    first_opportunity = data["opportunities"][0]
+    assert first_opportunity["title"]
+    assert first_opportunity["description"].strip()

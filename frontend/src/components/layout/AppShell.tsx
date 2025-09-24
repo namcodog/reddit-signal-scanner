@@ -1,33 +1,23 @@
 import React from 'react';
 import { Search } from 'lucide-react';
+
 import { Button } from '@/components/ui/button';
-import { useAppState } from '@/hooks/useAppState';
-import UserDropdown from '@/components/user/UserDropdown';
-import AuthDialog from '@/components/auth/AuthDialog';
 
 interface AppShellProps {
   children: React.ReactNode;
   actions?: React.ReactNode;
+  onLogin?: () => void;
+  onSignup?: () => void;
+  isAuthenticated?: boolean;
 }
 
-const AppShell: React.FC<AppShellProps> = ({ children, actions }) => {
-  const [appState, appActions] = useAppState();
-  const isAuthenticated = appState.auth.isAuthenticated;
-
-  const handleLoginClick = () => {
-    appActions.auth.openDialog('navigation', 'login');
-  };
-
-  const handleSignupClick = () => {
-    appActions.auth.openDialog('navigation', 'signup');
-  };
-
-  const handleAuthDialogChange = (nextOpen: boolean) => {
-    if (!nextOpen) {
-      appActions.auth.closeDialog();
-    }
-  };
-
+const AppShell: React.FC<AppShellProps> = ({
+  children,
+  actions,
+  onLogin,
+  onSignup,
+  isAuthenticated = false,
+}) => {
   return (
     <div className="min-h-screen bg-background text-foreground">
       <header className="border-b border-border bg-card">
@@ -40,14 +30,12 @@ const AppShell: React.FC<AppShellProps> = ({ children, actions }) => {
           </div>
           <div className="flex items-center gap-4 text-sm">
             {actions}
-            {isAuthenticated ? (
-              <UserDropdown />
-            ) : (
+            {isAuthenticated ? null : (
               <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm" onClick={handleLoginClick}>
+                <Button variant="outline" size="sm" onClick={onLogin}>
                   登录
                 </Button>
-                <Button size="sm" onClick={handleSignupClick}>
+                <Button size="sm" onClick={onSignup}>
                   注册
                 </Button>
               </div>
@@ -57,12 +45,6 @@ const AppShell: React.FC<AppShellProps> = ({ children, actions }) => {
       </header>
 
       <main className="container mx-auto px-4 py-12 sm:px-6 lg:py-16">{children}</main>
-
-      <AuthDialog
-        open={appState.ui.authDialog.open}
-        onOpenChange={handleAuthDialogChange}
-        defaultTab={appState.ui.authDialog.defaultTab}
-      />
     </div>
   );
 };

@@ -13,7 +13,7 @@ import ProtectedRoute from './ProtectedRoute';
 // 懒加载页面组件
 const InputPage = React.lazy(() => import('@/pages/InputPage'));  // 修复：使用包含"Reddit Signal Scanner"文本的正确组件
 const WaitingPage = React.lazy(() => import('@/pages/WaitingPage'));
-const ReportPage = React.lazy(() => import('@/pages/ReportPageV0'));
+const ReportPage = React.lazy(() => import('@/pages/ReportPage'));
 const NotFoundPage = React.lazy(() => import('@/pages/NotFoundPage'));
 
 const AppRouter: React.FC = () => {

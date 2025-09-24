@@ -14,7 +14,6 @@ from sqlalchemy.orm import Session
 
 from ....core.database import get_session_sync
 from ....core.config import get_settings
-from ....schemas.contracts.report_contract import InsightItem
 from ....services.report_formatter import get_formatted_report
 from ....schemas.common.responses import ResponseStatus, SuccessResponse
 from ....schemas.contracts.report_contract import ReportData
@@ -59,34 +58,11 @@ async def get_analysis_report(
         finally:
             db.close()
 
-        signal = ReportData(
-            task_id=report.task_id,
-            query=report.query,
-            total_posts=report.total_posts,
-            total_comments=report.total_comments,
-            analysis_duration=report.analysis_duration,
-            key_insights=[
-                InsightItem(
-                    title=it.title,
-                    content=it.content,
-                    confidence=it.confidence,
-                    source_count=it.source_count,
-                    tags=it.tags,
-                )
-                for it in report.key_insights
-            ],
-            sentiment_summary=report.sentiment_summary,
-            trending_topics=report.trending_topics,
-            user_personas=report.user_personas,
-            generated_at=report.generated_at,
-            data_freshness=report.data_freshness,
-        )
-
         return SuccessResponse(
             status=ResponseStatus.SUCCESS,
             message=f"分析报告获取成功（{format}格式）",
             timestamp=report.generated_at,
-            data=signal,
+            data=report,
         )
 
     except ValueError as e:

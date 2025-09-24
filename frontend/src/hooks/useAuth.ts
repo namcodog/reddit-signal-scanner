@@ -1,13 +1,25 @@
-import { useContext } from 'react';
-import { AuthProvider } from './authContext';
-import type { AuthContextType } from '@/types/auth.types';
+export interface AuthContextType {
+  user: unknown;
+  isAuthenticated: boolean;
+  isLoading: boolean;
+  login: (email: string, password: string) => Promise<void>;
+  logout: () => void;
+  refreshToken: () => Promise<void>;
+  getAuthError: (error: Error) => { type: string; message: string };
+}
+
+const defaultAuthContext: AuthContextType = {
+  user: null,
+  isAuthenticated: false,
+  isLoading: false,
+  login: async () => {},
+  logout: () => {},
+  refreshToken: async () => {},
+  getAuthError: () => ({ type: 'unknown', message: '未登录' }),
+};
 
 export const useAuth = (): AuthContextType => {
-  const context = useContext(AuthProvider.Context);
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
+  return defaultAuthContext;
 };
 
 export default useAuth;

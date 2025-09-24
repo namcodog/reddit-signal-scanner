@@ -80,19 +80,55 @@ def as_float(v: object) -> float:
 def as_list(v: object) -> list[JsonValue]:
     if isinstance(v, list):
         return v
+    if isinstance(v, tuple):
+        return [cast(JsonValue, item) for item in v]
     return []
+
+
+def _mapping_from_object(candidate: object) -> dict[str, JsonValue]:
+    """尽力从任意对象提取键值对结构。"""
+
+    for attr in ("model_dump", "dict"):
+        method = getattr(candidate, attr, None)
+        if callable(method):
+            try:
+                dumped = method()
+            except TypeError:
+                continue
+            if isinstance(dumped, Mapping):
+                return {
+                    str(key): cast(JsonValue, value)
+                    for key, value in dumped.items()
+                }
+
+    if hasattr(candidate, "__dict__"):
+        return {
+            str(key): cast(JsonValue, value)
+            for key, value in vars(candidate).items()
+            if not key.startswith("_")
+        }
+
+    return {}
 
 
 def as_mapping(v: object) -> Mapping[str, JsonValue]:
     if isinstance(v, Mapping):
         return v
+    normalized = _mapping_from_object(v)
+    if normalized:
+        return normalized
     return {}
 
 
 def as_list_of_dicts(v: object) -> list[dict[str, JsonValue]]:
     """将任意对象转为 list[dict[str, JsonValue]]（I/O 边界收敛）"""
     items = as_list(v)
-    return [cast(dict[str, JsonValue], as_mapping(x)) for x in items]
+    normalized: list[dict[str, JsonValue]] = []
+    for item in items:
+        mapping = as_mapping(item)
+        if mapping:
+            normalized.append(dict(mapping))
+    return normalized
 
 
 class AnalysisStatus(str, Enum):

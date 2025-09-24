@@ -1,6 +1,17 @@
-import type { RegisterRequest, User } from '@/types/auth.types';
 import type { TaskStatus, AnalysisStep } from '@/services/sse.service';
 import type { ReportData, ReportFormat } from '@/types/contracts/report.contract';
+
+type User = {
+  id: string;
+  email: string;
+  name?: string;
+};
+
+type RegisterRequest = {
+  email: string;
+  password: string;
+  name?: string;
+};
 
 export type AppStep = 'input' | 'analysis' | 'report';
 

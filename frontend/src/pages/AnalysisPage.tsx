@@ -1,28 +1,58 @@
-/**
- * 分析等待页面 - SSE实时进度显示
- * Linus: "用户不关心技术实现，只关心能否完成任务"
- * 基于 URL驱动状态，支持页面刷新恢复
- *
- * PRD-05核心功能：
- * - SSE实时通信，降级到轮询
- * - 状态自动恢复
- * - 智能错误处理
- */
-
-import React from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { useTaskProgress } from '@/hooks/useTaskProgress';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import AppShell from '@/components/layout/AppShell';
+import NavigationBreadcrumb, { type StepKey } from '@/components/v0/NavigationBreadcrumb';
+import AnalysisProgress from '@/components/v0/AnalysisProgress';
 import FallbackUI from '@/components/FallbackUI';
+import { ANALYSIS_STEPS, AnalysisStep, formatRemainingTime, getStepIndex } from '@/services/sse.service';
+import { useTaskProgress } from '@/hooks/useTaskProgress';
 
-/**
- * 分析等待页面 - 基于PRD-05 SSE实时通信
- * Linus: "先让它工作，再让它变好"
- */
+const AUTO_REDIRECT_DELAY = 2000;
+
+const deriveProgressPercent = (status: ReturnType<typeof useTaskProgress>['status']): number => {
+  if (!status) {
+    return 0;
+  }
+
+  if (status.status === 'completed') {
+    return 100;
+  }
+
+  if (status.status === 'pending') {
+    return 10;
+  }
+
+  return typeof status.progress === 'number' ? status.progress : 0;
+};
+
+const buildSteps = (
+  current: AnalysisStep,
+  status: ReturnType<typeof useTaskProgress>['status']
+) => {
+  const activeIndex = Math.max(0, getStepIndex(current));
+  const isCompleted = status?.status === 'completed';
+
+  return ANALYSIS_STEPS.map((step, index) => {
+    let stepStatus: 'pending' | 'in-progress' | 'completed' = 'pending';
+
+    if (isCompleted || index < activeIndex) {
+      stepStatus = 'completed';
+    } else if (index === activeIndex) {
+      stepStatus = status?.status === 'failed' ? 'pending' : 'in-progress';
+    }
+
+    return {
+      id: step.step,
+      title: step.title,
+      description: step.description,
+      status: stepStatus,
+    };
+  });
+};
+
 const AnalysisPage: React.FC = () => {
   const { taskId } = useParams<{ taskId: string }>();
   const navigate = useNavigate();
-
-  // 使用SSE Hook进行实时通信
   const {
     status,
     error,
@@ -32,241 +62,160 @@ const AnalysisPage: React.FC = () => {
     disconnect,
     connectionAttempts,
   } = useTaskProgress(taskId);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const timerRef = useRef<number | null>(null);
 
-  // 任务ID验证
+  useEffect(() => {
+    if (!taskId) {
+      navigate('/');
+    }
+  }, [navigate, taskId]);
+
   if (!taskId) {
-    navigate('/');
     return null;
   }
 
-  // 降级条件：多次连接失败且无有效状态
   const shouldFallback = connectionAttempts >= 3 && !isConnected && !status;
 
   if (shouldFallback) {
     return (
       <FallbackUI
         taskId={taskId}
-        error={error || '无法建立连接'}
+        error={error ?? '无法建立连接'}
         onRetry={retry}
       />
     );
   }
 
-  // 状态映射到显示内容
-  const getDisplayInfo = () => {
-    if (!status) {
-      return {
-        step: '正在连接服务器...',
-        progress: 0,
-      };
-    }
+  const progressPercent = deriveProgressPercent(status);
+  const currentStep = status?.current_step ?? AnalysisStep.DATA_COLLECTION;
+  const steps = useMemo(() => buildSteps(currentStep, status), [currentStep, status]);
 
-    const statusMap = {
-      pending: { step: '任务排队中...', progress: 10 },
-      processing: {
-        step: status.message || '分析进行中...',
-        progress: status.progress || 50,
-      },
-      completed: { step: '分析完成！', progress: 100 },
-      failed: { step: '分析失败', progress: 0 },
-    };
+  const estimatedRemainingSeconds =
+    status?.estimated_remaining_seconds ?? undefined;
+  const formattedRemaining = estimatedRemainingSeconds
+    ? formatRemainingTime(estimatedRemainingSeconds)
+    : null;
 
-    return statusMap[status.status] || { step: '未知状态', progress: 0 };
+  const statsSnapshot = {
+    communities: status?.stats?.communities_found ?? 0,
+    posts: status?.stats?.posts_analyzed ?? 0,
+    insights: status?.stats?.insights_generated ?? 0,
   };
 
-  const { step, progress } = getDisplayInfo();
+  const liveStats = status?.stats
+    ? {
+        communities: statsSnapshot.communities,
+        posts: statsSnapshot.posts,
+        insights: statsSnapshot.insights,
+      }
+    : null;
 
-  // 自动跳转到报告页面
-  React.useEffect(() => {
-    if (status?.status === 'completed') {
-      const timer = setTimeout(() => {
-        navigate(`/report/${taskId}`);
-      }, 2000);
-      return () => clearTimeout(timer);
+  useEffect(() => {
+    if (status?.status === 'processing') {
+      if (timerRef.current === null) {
+        timerRef.current = window.setInterval(() => {
+          setElapsedSeconds((prev) => prev + 1);
+        }, 1000);
+      }
+    } else {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+      if (status?.stats?.processing_time_seconds) {
+        setElapsedSeconds(status.stats.processing_time_seconds);
+      }
     }
-  }, [status?.status, taskId, navigate]);
+
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+  }, [status?.status, status?.stats?.processing_time_seconds]);
+
+  useEffect(() => {
+    if (status?.status === 'completed') {
+      const timer = window.setTimeout(() => {
+        navigate(`/report/${taskId}`);
+      }, AUTO_REDIRECT_DELAY);
+      return () => window.clearTimeout(timer);
+    }
+    return undefined;
+  }, [navigate, status?.status, taskId]);
+
+  const formattedElapsed = useMemo(() => {
+    const minutes = Math.floor(elapsedSeconds / 60);
+    const seconds = elapsedSeconds % 60;
+    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+  }, [elapsedSeconds]);
 
   const handleCancel = () => {
-    disconnect(); // 断开SSE连接
+    disconnect();
     navigate('/');
   };
 
-  const handleRetry = () => {
-    retry(); // 重试连接
+  const handleBreadcrumbNavigate = (step: StepKey) => {
+    if (step === 'input') {
+      navigate('/');
+    }
+    if (step === 'report' && status?.status === 'completed') {
+      navigate(`/report/${taskId}`);
+    }
   };
 
+  const connectionHint = !isConnected
+    ? '实时连接已断开，正在尝试重新连接...'
+    : strategy === 'sse'
+      ? '实时连接：SSE'
+      : '实时连接：轮询模式';
+
   return (
-    <div className="min-h-screen bg-gray-50 py-12 px-4">
-      <div className="max-w-2xl mx-auto">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">
-            Reddit 信号分析进行中
-          </h1>
-          <p className="text-gray-600 mb-2">
-            任务ID:{' '}
-            <code className="bg-gray-100 px-2 py-1 rounded text-sm">
-              {taskId}
-            </code>
-          </p>
+    <AppShell>
+      <div className="mx-auto w-full max-w-4xl space-y-6 px-4 sm:px-6">
+        <NavigationBreadcrumb
+          currentStep="analysis"
+          canNavigateBack
+          onNavigate={handleBreadcrumbNavigate}
+        />
 
-          {/* 连接状态指示 */}
-          <div className="flex items-center justify-center space-x-2 text-sm">
-            <div
-              className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}
-            ></div>
-            <span className={isConnected ? 'text-green-600' : 'text-red-600'}>
-              {isConnected
-                ? `实时连接 (${strategy === 'sse' ? 'SSE' : '轮询'})`
-                : '连接断开'}
-            </span>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-lg shadow-lg p-8">
-          {/* 进度显示 */}
-          <div className="mb-8">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-lg font-semibold">分析进度</h2>
-              <span className="text-sm text-gray-500">
-                {Math.round(progress)}%
-              </span>
-            </div>
-
-            <div className="w-full bg-gray-200 rounded-full h-4 mb-4">
-              <div
-                className="bg-blue-600 h-4 rounded-full transition-all duration-1000 ease-out flex items-center justify-end pr-2"
-                style={{ width: `${Math.max(progress, 5)}%` }}
-              >
-                {progress > 10 && (
-                  <div className="text-white text-xs font-medium">
-                    {Math.round(progress)}%
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="text-center">
-              <p className="text-gray-700 mb-2">{step}</p>
-              {status?.created_at && (
-                <p className="text-sm text-gray-500">
-                  开始时间: {new Date(status.created_at).toLocaleString()}
-                </p>
-              )}
-            </div>
-          </div>
-
-          {/* 分析说明 */}
-          <div className="border-t pt-6 mb-6">
-            <h3 className="font-semibold mb-3">分析内容包括:</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm text-gray-600">
-              <div className="flex items-center">
-                <div className="w-2 h-2 bg-blue-500 rounded-full mr-2"></div>
-                Reddit热门帖子抓取
-              </div>
-              <div className="flex items-center">
-                <div className="w-2 h-2 bg-blue-500 rounded-full mr-2"></div>
-                用户评论情感分析
-              </div>
-              <div className="flex items-center">
-                <div className="w-2 h-2 bg-blue-500 rounded-full mr-2"></div>
-                关键词提取和聚类
-              </div>
-              <div className="flex items-center">
-                <div className="w-2 h-2 bg-blue-500 rounded-full mr-2"></div>
-                商业机会识别
-              </div>
-              <div className="flex items-center">
-                <div className="w-2 h-2 bg-blue-500 rounded-full mr-2"></div>
-                竞争对手分析
-              </div>
-              <div className="flex items-center">
-                <div className="w-2 h-2 bg-blue-500 rounded-full mr-2"></div>
-                市场需求评估
-              </div>
-            </div>
-          </div>
-
-          {/* 错误显示 */}
-          {error && (
-            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
-              <div className="flex items-start">
-                <div className="text-red-500 mr-3">⚠️</div>
-                <div>
-                  <p className="text-red-800 font-medium mb-1">连接错误</p>
-                  <p className="text-red-700 text-sm mb-3">{error}</p>
-                  <button
-                    onClick={handleRetry}
-                    className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 text-sm"
-                  >
-                    重新连接
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* 失败状态显示 */}
-          {status?.status === 'failed' && (
-            <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-              <div className="flex items-start">
-                <div className="text-yellow-500 mr-3">🚧</div>
-                <div>
-                  <p className="text-yellow-800 font-medium mb-1">分析失败</p>
-                  <p className="text-yellow-700 text-sm mb-3">
-                    {status.error_message || '分析过程中遇到错误，请稍后重试'}
-                  </p>
-                  <button
-                    onClick={() => navigate('/')}
-                    className="px-4 py-2 bg-yellow-600 text-white rounded-md hover:bg-yellow-700 focus:outline-none focus:ring-2 focus:ring-yellow-500 text-sm"
-                  >
-                    重新开始
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* 动作按钮 */}
-          <div className="text-center space-x-4">
+        {!isConnected && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+            {connectionHint}
+            {error ? ` · ${error}` : null}
             <button
-              onClick={handleCancel}
-              className="px-6 py-2 text-gray-600 bg-gray-100 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-500"
+              type="button"
+              onClick={retry}
+              className="ml-3 inline-flex items-center text-amber-600 underline-offset-2 hover:underline"
             >
-              取消分析
+              重新连接
             </button>
-
-            {!isConnected && (
-              <button
-                onClick={handleRetry}
-                className="px-6 py-2 text-blue-600 bg-blue-100 rounded-md hover:bg-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                重新连接
-              </button>
-            )}
           </div>
-        </div>
+        )}
 
-        {/* 提示信息 */}
-        <div className="mt-8 bg-blue-50 border border-blue-200 rounded-lg p-4">
-          <div className="flex items-start">
-            <div className="text-blue-500 mr-3">💡</div>
-            <div className="text-blue-800 text-sm">
-              <p className="font-medium mb-1">分析期间可以做什么？</p>
-              <p>这个过程需要几分钟时间。您可以：</p>
-              <ul className="mt-2 space-y-1 text-xs">
-                <li>• 准备产品资料和市场定位</li>
-                <li>• 思考目标用户群体特征</li>
-                <li>• 页面会自动跳转到报告页面</li>
-              </ul>
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-8 text-center text-sm text-gray-500">
-          <p>基于 Linus "简单胜过聪明" 设计哲学构建</p>
-        </div>
+        <AnalysisProgress
+          productDescription={''}
+          progressPercent={progressPercent}
+          steps={steps}
+          estimatedRemaining={formattedRemaining}
+          timeElapsed={formattedElapsed}
+          isComplete={status?.status === 'completed'}
+          onCancel={handleCancel}
+          onViewReport={() => navigate(`/report/${taskId}`)}
+          showReconnect={!isConnected || Boolean(error)}
+          connection={{
+            isConnected,
+            strategy,
+            error,
+            onRetry: retry,
+          }}
+          liveStats={liveStats}
+          statsSnapshot={statsSnapshot}
+        />
       </div>
-    </div>
+    </AppShell>
   );
 };
 

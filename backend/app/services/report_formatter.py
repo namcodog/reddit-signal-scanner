@@ -192,6 +192,10 @@ class ReportFormatterService:
             # 更新动态字段
             if top_opportunity_title and not executive_summary.get("top_opportunity"):
                 executive_summary["top_opportunity"] = top_opportunity_title
+            if executive_summary.get("confidence_score") is None:
+                executive_summary["confidence_score"] = float(analysis.confidence_score)
+            if not isinstance(executive_summary.get("summary_points"), list):
+                executive_summary["summary_points"] = []
 
         total_posts = int(sources_data.get("posts_analyzed", 0) or 0)
         total_comments = int(
