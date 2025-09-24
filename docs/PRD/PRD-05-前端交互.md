@@ -392,6 +392,96 @@ function getStepStatus(stepKey, currentStatus) {
     50% { transform: scale(1.05); }
     100% { transform: scale(1); }
 }
+
+### 3.5 真实数据绑定与契约校验
+
+> **目标**：报告页只消费来自后端 `ReportData` 契约的真实数据，不再依赖任何 mock。
+
+#### 数据流
+
+1. **API 调用**：`frontend/src/services/report.service.ts` 通过统一的 `apiClient` 请求 `/api/v1/report/{task_id}`，并解析后端标准 `SuccessResponse<ReportData>`。
+2. **类型约束**：响应体由 `ReportData` 接口约束（位于 `frontend/src/types/contracts/report.contract.ts`），覆盖执行摘要、市场指标、痛点、竞品、机会五大板块。
+3. **组件绑定**：
+   - `ReportPageV0.tsx` 负责加载数据、处理导出/分享操作。
+   - `ExecutiveSummary.tsx`、`PainPointsList.tsx`、`CompetitorAnalysis.tsx`、`OpportunityMatrix.tsx` 分别渲染对应板块。
+4. **端到端保障**：`tests/integration/test_report_endpoint.py` 断言 API 返回字段完备、类型正确，与前端契约完全一致。
+
+#### 样例响应（节选）
+
+```jsonc
+{
+  "status": "success",
+  "message": "分析报告获取成功（full格式）",
+  "timestamp": "2025-09-24T06:48:54.027695Z",
+  "data": {
+    "task_id": "demo-1234567890",
+    "query": "AI 驱动的 Reddit Signal Scanner",
+    "analysis_duration": 17.4,
+    "confidence_score": 0.74,
+    "executive_summary": {
+      "headline": "自动化预警是近期高优先级",
+      "total_communities": 3,
+      "key_insights": 3,
+      "top_opportunity": "引入智能化的信号监控中心",
+      "confidence_score": 0.74,
+      "summary_points": [
+        "用户在初始设置时急需可视化指引",
+        "竞品在整合能力上领先但价格不具优势",
+        "跨团队协作的实时洞察是最大的增量空间"
+      ]
+    },
+    "market_metrics": {
+      "total_mentions": 210,
+      "sentiment_score": -0.12,
+      "top_communities": ["r/startups", "r/marketing", "r/SaaS"],
+      "trending_keywords": ["onboarding", "usability", "automation"],
+      "sample_size": 210,
+      "engagement_rate": 0.42
+    },
+    "pain_points": [
+      {
+        "description": "用户反馈初始设置复杂，缺少逐步引导",
+        "sentiment_score": -0.58,
+        "frequency": 34,
+        "confidence": 0.84,
+        "severity": "medium",
+        "categories": ["onboarding", "usability"],
+        "example_posts": [
+          {
+            "post_id": "post-1",
+            "content_snippet": "初次安装太折腾"
+          }
+        ],
+        "tags": ["setup"]
+      }
+    ],
+    "competitors": [
+      {
+        "name": "Competitor Alpha",
+        "market_position": "leader",
+        "mention_count": 21,
+        "sentiment_score": 0.24,
+        "strengths": ["生态完善", "品牌知名度"],
+        "weaknesses": ["价格昂贵", "学习曲线陡峭"]
+      }
+    ],
+    "opportunities": [
+      {
+        "title": "引入智能化的信号监控中心",
+        "description": "提供跨社区的关键词报警和竞品联动分析",
+        "market_size_indicator": "large",
+        "urgency_score": 0.78,
+        "feasibility_score": 0.66,
+        "target_communities": ["r/startups", "r/marketing"],
+        "related_keywords": ["automation", "alerting"],
+        "estimated_demand": 1800
+      }
+    ]
+  }
+}
+```
+
+前端在加载失败时仍保留原有的容错流程（重试/降级），但正常路径已完全依赖真实数据。
 ```
 
 ## 4. 验收标准
