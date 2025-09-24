@@ -1,4 +1,4 @@
-# RedditNavigator .gitignore  
+# RedditNavigator .gitignore
 # 遵循Linus哲学：保护重要文件，忽略垃圾
 # 更新日期: 2025-08-20 (适配新文件结构)
 
@@ -17,7 +17,10 @@ config/config.yaml
 # =============================================================================
 
 # 数据库文件
-data/*.db  
+data/*.db
+
+# 测试产物
+reports/*.xml
 data/*.sqlite3
 *.db
 *.sqlite3
@@ -94,7 +97,7 @@ pip-selfcheck.json
 .LSOverride
 ._*
 
-# Windows  
+# Windows
 Thumbs.db
 ehthumbs.db
 Desktop.ini
@@ -118,7 +121,7 @@ temp/*
 # 备份文件
 backup/
 *.bak
-*.backup  
+*.backup
 *_backup.*
 *_old.*
 *_fix.*
@@ -186,7 +189,7 @@ dist/
 *.egg-info/
 
 # =============================================================================
-# 🚫 危险文件模式 (安全考虑)  
+# 🚫 危险文件模式 (安全考虑)
 # =============================================================================
 
 # 任何包含password, key, secret的文件
