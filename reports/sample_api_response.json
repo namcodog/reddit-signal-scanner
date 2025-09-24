@@ -1,0 +1,103 @@
+{
+  "success": true,
+  "data": {
+    "report_id": "demo-20250924-143022",
+    "task_id": "task-abc123",
+    "generated_at": "2025-09-24T14:30:22Z",
+    "executive_summary": {
+      "overview": "基于Reddit讨论分析，发现了多个商业机会领域",
+      "key_findings": [
+        "AI工具需求持续增长",
+        "远程工作解决方案市场活跃",
+        "可持续发展产品受关注"
+      ],
+      "market_size_estimate": "中等规模市场机会",
+      "confidence_score": 0.85
+    },
+    "market_metrics": {
+      "total_mentions": 1247,
+      "trending_keywords": [
+        "AI automation",
+        "remote work",
+        "sustainability",
+        "productivity tools"
+      ],
+      "sentiment_summary": {
+        "positive": 0.65,
+        "neutral": 0.25,
+        "negative": 0.10
+      },
+      "engagement_score": 0.78,
+      "time_range": {
+        "start": "2025-09-17T00:00:00Z",
+        "end": "2025-09-24T00:00:00Z"
+      }
+    },
+    "pain_points": [
+      {
+        "title": "复杂的工作流程自动化",
+        "description": "用户反映现有自动化工具过于复杂，需要简化的解决方案",
+        "frequency": 156,
+        "severity": "high",
+        "categories": ["productivity", "automation"]
+      },
+      {
+        "title": "远程团队协作困难",
+        "description": "分布式团队在项目协作中遇到沟通和同步问题",
+        "frequency": 89,
+        "severity": "medium",
+        "categories": ["collaboration", "remote-work"]
+      }
+    ],
+    "competitors": [
+      {
+        "name": "Zapier",
+        "market_position": "领导者",
+        "strengths": ["易用性", "集成数量"],
+        "weaknesses": ["价格较高", "复杂场景支持不足"],
+        "mention_count": 45
+      },
+      {
+        "name": "Microsoft Power Automate",
+        "market_position": "挑战者",
+        "strengths": ["企业集成", "Office生态"],
+        "weaknesses": ["学习曲线陡峭"],
+        "mention_count": 32
+      }
+    ],
+    "opportunities": [
+      {
+        "title": "简化版自动化平台",
+        "description": "针对小企业的简化自动化解决方案",
+        "market_size": "large",
+        "difficulty": "medium",
+        "time_to_market": "6-12 months",
+        "potential_revenue": "high",
+        "key_features": [
+          "拖拽式界面",
+          "预设模板",
+          "一键部署"
+        ]
+      },
+      {
+        "title": "远程团队协作工具",
+        "description": "专为远程团队设计的轻量级协作平台",
+        "market_size": "medium",
+        "difficulty": "low",
+        "time_to_market": "3-6 months",
+        "potential_revenue": "medium",
+        "key_features": [
+          "实时同步",
+          "异步沟通",
+          "进度跟踪"
+        ]
+      }
+    ]
+  },
+  "metadata": {
+    "version": "1.0",
+    "processing_time_ms": 2340,
+    "data_sources": ["reddit"],
+    "analysis_methods": ["nlp", "sentiment_analysis", "trend_detection"]
+  }
+}
