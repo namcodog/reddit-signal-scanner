@@ -70,4 +70,3 @@ def downgrade() -> None:
     op.drop_index("ix_feedback_events_task", table_name="feedback_events")
     op.drop_index("ix_feedback_events_type_time", table_name="feedback_events")
     op.drop_table("feedback_events")
-

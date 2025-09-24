@@ -54,4 +54,3 @@ def test_demo_simulator_status_progression() -> None:
     report = sim.get_report(task_id)
     assert report is not None
     assert report.task_id == task_id
-

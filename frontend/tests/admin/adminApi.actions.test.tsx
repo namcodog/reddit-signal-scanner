@@ -48,4 +48,3 @@ describe('adminApi actions', () => {
     expect(JSON.parse(init.body as string)).toMatchObject({ task_id: 't1', satisfied: true })
   })
 })
-

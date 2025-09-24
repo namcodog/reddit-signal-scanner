@@ -11,7 +11,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'app'))
 def test_api_response_structure():
     """测试API响应结构是否包含5个关键字段"""
     print("🔍 测试API响应结构...")
-    
+
     # 模拟一个完整的API响应结构
     mock_api_response = {
         "success": True,
@@ -22,7 +22,7 @@ def test_api_response_structure():
             "total_comments": 250,
             "analysis_duration": 15.5,
             "confidence_score": 0.85,
-            
+
             # 5个关键字段 - 这是PR-1的核心验证目标
             "executive_summary": {
                 "headline": "核心用户痛点分析",
@@ -36,7 +36,7 @@ def test_api_response_structure():
                     "市场存在明显的功能缺口"
                 ]
             },
-            
+
             "market_metrics": {
                 "total_mentions": 350,
                 "sentiment_score": 0.65,
@@ -45,7 +45,7 @@ def test_api_response_structure():
                 "engagement_rate": 0.72,
                 "sample_size": 100
             },
-            
+
             "pain_points": [
                 {
                     "title": "缺乏个性化推荐",
@@ -58,13 +58,13 @@ def test_api_response_structure():
                 {
                     "title": "界面复杂难用",
                     "description": "多数用户认为现有产品界面过于复杂",
-                    "severity": "medium", 
+                    "severity": "medium",
                     "confidence": 0.8,
                     "mention_count": 98,
                     "examples": ["操作流程复杂", "学习成本高"]
                 }
             ],
-            
+
             "competitors": [
                 {
                     "name": "竞品A",
@@ -77,7 +77,7 @@ def test_api_response_structure():
                     "market_share_estimate": 0.35
                 },
                 {
-                    "name": "竞品B", 
+                    "name": "竞品B",
                     "description": "性价比较高的替代方案",
                     "market_position": "challenger",
                     "mention_count": 156,
@@ -87,7 +87,7 @@ def test_api_response_structure():
                     "market_share_estimate": 0.22
                 }
             ],
-            
+
             "opportunities": [
                 {
                     "title": "AI驱动的个性化推荐",
@@ -107,7 +107,7 @@ def test_api_response_structure():
                     "title": "简化用户界面设计",
                     "description": "重新设计更直观的用户界面",
                     "potential": "medium",
-                    "difficulty": "easy", 
+                    "difficulty": "easy",
                     "market_size": "medium",
                     "confidence": 0.75,
                     "timeframe": "3-6个月",
@@ -118,7 +118,7 @@ def test_api_response_structure():
                     ]
                 }
             ],
-            
+
             # 其他字段
             "key_insights": [
                 {
@@ -141,10 +141,10 @@ def test_api_response_structure():
         },
         "timestamp": "2025-09-24T10:30:00Z"
     }
-    
+
     # 验证5个关键字段的存在性和类型
     data = mock_api_response["data"]
-    
+
     # 1. executive_summary
     assert "executive_summary" in data, "缺少executive_summary字段"
     assert isinstance(data["executive_summary"], dict), "executive_summary应该是字典类型"
@@ -152,7 +152,7 @@ def test_api_response_structure():
     required_exec_fields = ["headline", "total_communities", "key_insights", "confidence_score", "summary_points"]
     for field in required_exec_fields:
         assert field in exec_summary, f"executive_summary缺少{field}字段"
-    
+
     # 2. market_metrics
     assert "market_metrics" in data, "缺少market_metrics字段"
     assert isinstance(data["market_metrics"], dict), "market_metrics应该是字典类型"
@@ -160,26 +160,26 @@ def test_api_response_structure():
     required_market_fields = ["total_mentions", "sentiment_score", "top_communities", "trending_keywords"]
     for field in required_market_fields:
         assert field in market_metrics, f"market_metrics缺少{field}字段"
-    
+
     # 3. pain_points
     assert "pain_points" in data, "缺少pain_points字段"
     assert isinstance(data["pain_points"], list), "pain_points应该是列表类型"
-    
+
     # 4. competitors
     assert "competitors" in data, "缺少competitors字段"
     assert isinstance(data["competitors"], list), "competitors应该是列表类型"
-    
+
     # 5. opportunities
     assert "opportunities" in data, "缺少opportunities字段"
     assert isinstance(data["opportunities"], list), "opportunities应该是列表类型"
-    
+
     print("✅ API响应结构验证通过")
-    
+
     # 输出完整的JSON示例供PR描述使用
     print("\n📋 完整API响应JSON示例：")
     print("=" * 50)
     print(json.dumps(mock_api_response, indent=2, ensure_ascii=False))
-    
+
     return True
 
 
@@ -187,13 +187,13 @@ def main():
     """运行API响应结构测试"""
     print("🚀 开始API响应结构测试...")
     print("=" * 50)
-    
+
     try:
         test_api_response_structure()
         print("=" * 50)
         print("🎉 API响应结构测试通过！5个关键字段都存在且类型正确")
         return True
-        
+
     except Exception as e:
         print(f"❌ 测试失败: {e}")
         import traceback

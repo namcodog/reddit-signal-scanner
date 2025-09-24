@@ -47,4 +47,3 @@ def test_summarize_task_must_and_a_score(m: ExternalAnalysisMetrics, expect_gree
     else:
         assert s.must.all_passed() is False
         assert s.a_score <= 75
-

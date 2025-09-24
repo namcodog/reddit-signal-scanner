@@ -100,4 +100,3 @@ export function isMetricEvent(e: FeedbackEventRequest): e is MetricEvent {
 export function isModerationEvent(e: FeedbackEventRequest): e is ModerationEvent {
   return e.event_type === FeedbackEventType.ModerationAction;
 }
-

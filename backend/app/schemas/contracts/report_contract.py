@@ -61,6 +61,65 @@ class PainPointInsight(BaseModel):
 
 class CompetitorInsight(BaseModel):
     name: str = Field(..., min_length=1)
+    description: Optional[str] = Field(default=None)
+    market_position: Optional[Literal["leader", "challenger", "follower", "niche"]] = Field(default=None)
+    mention_count: int = Field(default=0, ge=0)
+    sentiment_score: float = Field(default=0.0, ge=-1.0, le=1.0)
+    strengths: List[str] = Field(default_factory=list)
+    weaknesses: List[str] = Field(default_factory=list)
+    market_share_estimate: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+
+
+class OpportunityInsight(BaseModel):
+    title: str = Field(..., min_length=1)
+    description: str = Field(..., min_length=1)
+    potential: Literal["low", "medium", "high"] = Field(default="medium")
+    difficulty: Literal["easy", "medium", "hard"] = Field(default="medium")
+    market_size: Optional[str] = Field(default=None)
+    confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    timeframe: Optional[str] = Field(default=None)
+    key_insights: List[str] = Field(default_factory=list)
+
+
+class ExecutiveSummary(BaseModel):
+    headline: Optional[str] = Field(default=None)
+    total_communities: int = Field(default=0, ge=0)
+    key_insights: int = Field(default=0, ge=0)
+    top_opportunity: Optional[str] = Field(default=None)
+    confidence_score: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    summary_points: List[str] = Field(default_factory=list)
+
+
+class MarketMetrics(BaseModel):
+    total_mentions: int = Field(default=0, ge=0)
+    sentiment_score: float = Field(default=0.0, ge=-1.0, le=1.0)
+    top_communities: List[str] = Field(default_factory=list)
+    trending_keywords: List[str] = Field(default_factory=list)
+    engagement_rate: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    sample_size: Optional[int] = Field(default=None, ge=0)
+
+
+class PainPointExample(BaseModel):
+    post_id: str
+    community: Optional[str] = Field(default=None)
+    permalink: Optional[str] = Field(default=None)
+    content_snippet: Optional[str] = Field(default=None)
+    upvotes: Optional[int] = Field(default=None, ge=0)
+
+
+class PainPointInsight(BaseModel):
+    description: str = Field(..., min_length=1)
+    sentiment_score: float = Field(..., ge=-1.0, le=1.0)
+    frequency: int = Field(..., ge=0)
+    confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    severity: Optional[Literal["low", "medium", "high"]] = Field(default=None)
+    categories: List[str] = Field(default_factory=list)
+    example_posts: List[PainPointExample] = Field(default_factory=list)
+    tags: List[str] = Field(default_factory=list)
+
+
+class CompetitorInsight(BaseModel):
+    name: str = Field(..., min_length=1)
     mention_count: int = Field(default=0, ge=0)
     sentiment_score: float = Field(default=0.0, ge=-1.0, le=1.0)
     strengths: List[str] = Field(default_factory=list)

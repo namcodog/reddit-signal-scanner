@@ -27,7 +27,7 @@
   | `analyses.insights` 字段 | 报告输出 | 说明 |
   | --- | --- | --- |
   | `pain_points[]` | `data.pain_points[]` | 直接映射；补齐 `severity`、示例帖子等默认值 |
-  | `competitors[]` | `data.competitors[]` | 计算 `share_of_voice`、缺省总结文本 | 
+  | `competitors[]` | `data.competitors[]` | 计算 `share_of_voice`、缺省总结文本 |
   | `opportunities[]` | `data.opportunities[]` | 保留评分字段，补齐默认标签 |
   | `analysis_summary.executive_summary` | `data.executive_summary` | 若缺失，后端按关键洞察生成摘要 |
   | `analysis_summary.market_metrics` | `data.market_metrics` | 若缺失，后端依据 `sources` 推算提及量等 |
@@ -146,45 +146,45 @@
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `executive_summary.headline` | `string?` | 报告主标题，可为空 | 
-| `executive_summary.total_communities` | `number` | 参与分析的社区数量 | 
-| `executive_summary.key_insights` | `number` | 关键洞察条目数 | 
-| `executive_summary.top_opportunity` | `string?` | 系统评估的最佳机会 | 
-| `executive_summary.confidence_score` | `number? (0-1)` | 报告整体置信度 | 
-| `executive_summary.summary_points` | `string[]` | 1~3 条要点摘要 | 
-| `market_metrics.total_mentions` | `number` | 帖子数 + 评论数 | 
-| `market_metrics.sentiment_score` | `number (-1~1)` | 正负向差值（正 - 负） | 
-| `market_metrics.top_communities` | `string[]` | 热门社区列表 | 
-| `market_metrics.trending_keywords` | `string[]` | 高频关键词 | 
-| `market_metrics.engagement_rate` | `number? (0-1)` | 互动率，若无法统计返回空 | 
-| `market_metrics.sample_size` | `number?` | 有效样本数量（posts） | 
-| `pain_points[].description` | `string` | 用户痛点描述 | 
-| `pain_points[].sentiment_score` | `number (-1~1)` | 情感强度（负值越痛） | 
-| `pain_points[].frequency` | `number` | 提及次数 | 
-| `pain_points[].confidence` | `number?` | 算法置信度（0-1，可选） | 
-| `pain_points[].severity` | `"low"\|"medium"\|"high"` | 严重程度标签 | 
-| `pain_points[].categories` | `string[]` | 痛点分类标签 | 
-| `pain_points[].tags` | `string[]` | 主题关键词 | 
-| `pain_points[].example_posts[]` | `object` | 证据帖：`post_id`、`community`、`permalink?`、`content_snippet`、`upvotes?` | 
-| `competitors[].name` | `string` | 竞品名称 | 
-| `competitors[].mention_count` | `number` | 提及次数 | 
-| `competitors[].sentiment_score` | `number (-1~1)` | 情感趋势 | 
-| `competitors[].strengths` / `weaknesses` | `string[]` | 优劣势列表 | 
-| `competitors[].price_mentions` | `string[]` | 价格相关提及 | 
-| `competitors[].market_position` | `leader\|challenger\|niche\|unknown` | 市场定位 | 
-| `competitors[].share_of_voice` | `number (0-1)` | 竞品声量占比（自动计算） | 
-| `competitors[].summary` | `string` | 简要总结 | 
-| `competitors[].website` | `string?` | 官网链接 | 
-| `opportunities[].title` | `string` | 机会标题 | 
-| `opportunities[].description` | `string` | 机会描述 | 
-| `opportunities[].market_size_indicator` | `tiny/small/medium/large/huge/unknown` | 市场规模指标 | 
-| `opportunities[].urgency_score` | `number (0-1)` | 紧迫程度 | 
-| `opportunities[].feasibility_score` | `number (0-1)` | 可行性评估 | 
-| `opportunities[].target_communities` | `string[]` | 推荐切入社区 | 
-| `opportunities[].related_keywords` | `string[]` | 关键词 | 
-| `opportunities[].estimated_demand` | `number?` | 需求量估算 | 
-| `opportunities[].potential_score` | `number? (0-1)` | 综合潜力评分 | 
-| `opportunities[].timeframe` | `string?` | 建议落地时间窗口 | 
+| `executive_summary.headline` | `string?` | 报告主标题，可为空 |
+| `executive_summary.total_communities` | `number` | 参与分析的社区数量 |
+| `executive_summary.key_insights` | `number` | 关键洞察条目数 |
+| `executive_summary.top_opportunity` | `string?` | 系统评估的最佳机会 |
+| `executive_summary.confidence_score` | `number? (0-1)` | 报告整体置信度 |
+| `executive_summary.summary_points` | `string[]` | 1~3 条要点摘要 |
+| `market_metrics.total_mentions` | `number` | 帖子数 + 评论数 |
+| `market_metrics.sentiment_score` | `number (-1~1)` | 正负向差值（正 - 负） |
+| `market_metrics.top_communities` | `string[]` | 热门社区列表 |
+| `market_metrics.trending_keywords` | `string[]` | 高频关键词 |
+| `market_metrics.engagement_rate` | `number? (0-1)` | 互动率，若无法统计返回空 |
+| `market_metrics.sample_size` | `number?` | 有效样本数量（posts） |
+| `pain_points[].description` | `string` | 用户痛点描述 |
+| `pain_points[].sentiment_score` | `number (-1~1)` | 情感强度（负值越痛） |
+| `pain_points[].frequency` | `number` | 提及次数 |
+| `pain_points[].confidence` | `number?` | 算法置信度（0-1，可选） |
+| `pain_points[].severity` | `"low"\|"medium"\|"high"` | 严重程度标签 |
+| `pain_points[].categories` | `string[]` | 痛点分类标签 |
+| `pain_points[].tags` | `string[]` | 主题关键词 |
+| `pain_points[].example_posts[]` | `object` | 证据帖：`post_id`、`community`、`permalink?`、`content_snippet`、`upvotes?` |
+| `competitors[].name` | `string` | 竞品名称 |
+| `competitors[].mention_count` | `number` | 提及次数 |
+| `competitors[].sentiment_score` | `number (-1~1)` | 情感趋势 |
+| `competitors[].strengths` / `weaknesses` | `string[]` | 优劣势列表 |
+| `competitors[].price_mentions` | `string[]` | 价格相关提及 |
+| `competitors[].market_position` | `leader\|challenger\|niche\|unknown` | 市场定位 |
+| `competitors[].share_of_voice` | `number (0-1)` | 竞品声量占比（自动计算） |
+| `competitors[].summary` | `string` | 简要总结 |
+| `competitors[].website` | `string?` | 官网链接 |
+| `opportunities[].title` | `string` | 机会标题 |
+| `opportunities[].description` | `string` | 机会描述 |
+| `opportunities[].market_size_indicator` | `tiny/small/medium/large/huge/unknown` | 市场规模指标 |
+| `opportunities[].urgency_score` | `number (0-1)` | 紧迫程度 |
+| `opportunities[].feasibility_score` | `number (0-1)` | 可行性评估 |
+| `opportunities[].target_communities` | `string[]` | 推荐切入社区 |
+| `opportunities[].related_keywords` | `string[]` | 关键词 |
+| `opportunities[].estimated_demand` | `number?` | 需求量估算 |
+| `opportunities[].potential_score` | `number? (0-1)` | 综合潜力评分 |
+| `opportunities[].timeframe` | `string?` | 建议落地时间窗口 |
 
 > 备注：所有新增结构在 Pydantic 层严格校验；若后端暂时缺字段，会回传相应默认值（空对象/空数组/0）。
 

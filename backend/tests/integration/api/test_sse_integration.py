@@ -8,4 +8,3 @@ def test_stream_endpoint_contract(client: "object") -> None:
     if resp.status_code == 200:
         ctype = resp.headers.get("content-type", "")
         assert "text/event-stream" in ctype
-

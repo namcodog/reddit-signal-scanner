@@ -103,25 +103,25 @@ await session.execute(
 
 ## ⚠️ 未清技术债与风险点
 
-1. **业务功能 TODO / FIXME（18 / 0 处）**  
-   - `backend/app/main.py`: Celery 队列启动、健康检查、监控依旧待补齐。  
-   - `backend/app/services/failure_analyzer.py`: 失败影响面统计、告警目标仍为占位。  
-   - `backend/app/services/notification_service.py`: 通知落库/历史记录尚未实现。  
+1. **业务功能 TODO / FIXME（18 / 0 处）**
+   - `backend/app/main.py`: Celery 队列启动、健康检查、监控依旧待补齐。
+   - `backend/app/services/failure_analyzer.py`: 失败影响面统计、告警目标仍为占位。
+   - `backend/app/services/notification_service.py`: 通知落库/历史记录尚未实现。
    - `backend/app/api/v1/endpoints/analyze.py`: 任务取消接口仍保留占位实现。
 
-2. **数据结构债务**  
-   - `Dict[str, Any]` 仍在部分响应适配器与监控结构中存在（23 处），后续需逐步替换。  
+2. **数据结构债务**
+   - `Dict[str, Any]` 仍在部分响应适配器与监控结构中存在（23 处），后续需逐步替换。
    - 建议优先梳理监控告警、任务状态等公共结构，统一为 TypedDict/Pydantic。
 
-3. **异常处理债务**  
-   - `except Exception` 仍有 111 处，集中于认证、速率限制、任务调度链路。  
+3. **异常处理债务**
+   - `except Exception` 仍有 111 处，集中于认证、速率限制、任务调度链路。
    - 需持续拆分为具体异常 + 结构化日志/告警，便于定位。
 
-4. **功能未落地**  
-   - `background_crawler` 真实 Reddit API 尚待接入，现仍以缓存/Mock 数据为主。  
+4. **功能未落地**
+   - `background_crawler` 真实 Reddit API 尚待接入，现仍以缓存/Mock 数据为主。
    - 通知流水落库、恢复策略的人工闭环流程仍需完善。
 
-5. **文档/流程偏差**  
+5. **文档/流程偏差**
    - 过往报告宣称“技术债清零”，需同步更新其他文档及项目宣告，避免误导排期。
 
 ## 🔜 下一阶段计划（建议）
@@ -184,6 +184,6 @@ await session.execute(
 ---
 
 **维护说明**：
-1. 每次执行 `make type-check`、`make quick-gate-local` 或运行 Serena 巡检后，应同步更新本页指标。  
-2. 任何文档若引用“技术债务清零”，必须指向此页最新状态。  
+1. 每次执行 `make type-check`、`make quick-gate-local` 或运行 Serena 巡检后，应同步更新本页指标。
+2. 任何文档若引用“技术债务清零”，必须指向此页最新状态。
 3. 当 TODO、Dict、异常等关键指标满足阶段目标时，再更新相应里程碑描述。

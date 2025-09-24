@@ -23,4 +23,3 @@ class AdminDecisionResponse(BaseModel):
     code: int = 0
     data: AdminDecisionSaved
     trace_id: Optional[str] = None
-

@@ -44,4 +44,3 @@ describe('AdminCommunitiesPage actions', () => {
     expect(await screen.findByText(/trace_id/i)).toBeInTheDocument()
   })
 })
-

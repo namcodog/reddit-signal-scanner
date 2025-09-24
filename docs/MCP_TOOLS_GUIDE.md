@@ -81,7 +81,7 @@
 ```
 请使用v0-mcp创建一个现代的登录表单，包含：
 - 邮箱输入框
-- 密码输入框  
+- 密码输入框
 - 记住我复选框
 - 登录按钮
 - 忘记密码链接
@@ -166,7 +166,7 @@ echo "TURSO_DATABASE_URL: ${TURSO_DATABASE_URL:0:20}..."
    ```bash
    # 检查.env文件
    cat .env | grep -E "(V0_API_KEY|TAVILY_API_KEY)"
-   
+
    # 重新加载环境变量
    source .env
    ```
@@ -175,7 +175,7 @@ echo "TURSO_DATABASE_URL: ${TURSO_DATABASE_URL:0:20}..."
    ```bash
    # 检查文件权限
    ls -la .claude/mcp.json
-   
+
    # 修复权限
    chmod 644 .claude/mcp.json
    ```

@@ -56,4 +56,3 @@ describe('feedback contract types', () => {
     expect(isMetricEvent(e3)).toBe(true)
   })
 })
-

@@ -1,13 +1,13 @@
 # PRD-07-08 Admin 前端 MVP 完整验收报告
 
-更新时间：2025-09-19  
-关联PRD：docs/PRD/PRD-07-Admin后台.md §7.4/§7.5/§7.6/§7.7  
+更新时间：2025-09-19
+关联PRD：docs/PRD/PRD-07-Admin后台.md §7.4/§7.5/§7.6/§7.7
 关联任务：workflow/tasks/prd-07.yaml → prd07-08
 
 ## 一、结论
 
-- 当前仅具备“查看类”的最小能力，核心“管理操作/权限/埋点/测试”显著缺失。  
-- 总体完成度（综合功能/安全/体验/测试）：约 25%。  
+- 当前仅具备“查看类”的最小能力，核心“管理操作/权限/埋点/测试”显著缺失。
+- 总体完成度（综合功能/安全/体验/测试）：约 25%。
 - 建议在合并前补齐最小闭环：操作按钮 → 权限 → trace_id → 埋点 → 单测。
 
 ## 二、已完成（✅）
@@ -18,13 +18,13 @@
 - `feedback.tsx` 反馈汇总页框架
 
 2) API 服务层（frontend/src/services/adminApi.ts）
-- TS 类型定义与基础查询封装  
+- TS 类型定义与基础查询封装
 - 查询接口：`getCommunitiesSummary` / `getAnalysisSummary` / `getFeedbackSummary`
 
 3) 后端 API 支撑（backend）
 - 反馈相关端点具备最小可用：
-  - 导出原始事件：`/api/v1/admin/feedback/export`（JSON/CSV，时间范围，DB→Redis→文件三级回退）  
-    - 参考：`backend/app/api/v1/endpoints/admin_feedback.py:export_feedback_events`  
+  - 导出原始事件：`/api/v1/admin/feedback/export`（JSON/CSV，时间范围，DB→Redis→文件三级回退）
+    - 参考：`backend/app/api/v1/endpoints/admin_feedback.py:export_feedback_events`
     - 覆盖用例：`backend/tests/integration/api/test_admin_feedback_export.py`
   - 管理员反馈（满意/不满意）：`/api/v1/admin/feedback/analysis`（已就绪）
   - 汇总接口：`/api/v1/admin/feedback/summary`（存在实现与用例，稳定性待进一步验证）
@@ -52,11 +52,11 @@
 
 ## 四、完成度评估（量化）
 
-- 基础架构: 70%  
-- 核心业务功能: 25%  
-- 权限安全: 0%  
-- 用户体验: 30%  
-- 测试保障: 0%  
+- 基础架构: 70%
+- 核心业务功能: 25%
+- 权限安全: 0%
+- 用户体验: 30%
+- 测试保障: 0%
 
 总体完成度：≈ 25%
 
@@ -86,8 +86,8 @@ P1（稳态保障）
 
 ## 七、风险与回滚
 
-- 权限缺失导致敏感操作暴露：先行加 UI 层门控与接口 403 兜底  
-- 操作无埋点：无法追溯问题与审计，须尽快补齐  
+- 权限缺失导致敏感操作暴露：先行加 UI 层门控与接口 403 兜底
+- 操作无埋点：无法追溯问题与审计，须尽快补齐
 - 无测试：引入回归风险，建议优先补齐最小单测集
 
 ## 八、快速验证指南
@@ -116,4 +116,3 @@ npm run type-check && npm test
 - 服务封装：`frontend/src/services/adminApi.ts`
 - 后端导出：`backend/app/api/v1/endpoints/admin_feedback.py:1`
 - 新增用例：`backend/tests/integration/api/test_admin_feedback_export.py:1`
-

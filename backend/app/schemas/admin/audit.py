@@ -14,4 +14,3 @@ class AuditRecord(BaseModel):
     method: str = Field(..., description="HTTP 方法")
     action: str = Field(..., description="语义化动作名，例如 community_decision/analysis_feedback/export_patch")
     status_code: int = Field(..., description="响应状态码")
-

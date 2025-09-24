@@ -47,4 +47,3 @@ def test_delete_user_cascades_tasks(sync_db_session: "object") -> None:
 
     # 任务应被级联删除
     assert sync_db_session.get(Task, tid) is None
-

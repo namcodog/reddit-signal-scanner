@@ -16,4 +16,3 @@ def test_analyze_create_and_query_paths(client: "object") -> None:
     # 尝试查询报告草路径（可能未完成，允许 200/409/404）
     r = client.get(f"/api/v1/report/{task_id}")
     assert r.status_code in (200, 404, 409)
-

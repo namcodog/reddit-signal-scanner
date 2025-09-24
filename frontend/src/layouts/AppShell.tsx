@@ -48,4 +48,3 @@ const AppShell: React.FC<AppShellProps> = ({ children, extra }) => {
 };
 
 export default AppShell;
-

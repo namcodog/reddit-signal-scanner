@@ -13,4 +13,3 @@ def test_health_concurrency_basic(client: "object") -> None:
         codes = [f.result() for f in as_completed(futures)]
 
     assert all(c == 200 for c in codes)
-

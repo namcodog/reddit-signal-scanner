@@ -25,4 +25,3 @@ describe('Admin actions smoke', () => {
     cy.wait('@postDecision')
   })
 })
-

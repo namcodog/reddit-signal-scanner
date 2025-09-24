@@ -76,4 +76,3 @@ async def list_events(
 
     result = await session.execute(stmt)
     return list(result.scalars())
-

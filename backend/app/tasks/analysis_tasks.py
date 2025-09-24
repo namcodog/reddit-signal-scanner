@@ -743,9 +743,10 @@ def _build_sources_payload(
         1.0,
     )
     filtered_spam = _coerce_int(report.data_sources.get("filtered_spam_posts")) or 0
-    language_distribution = report.data_sources.get("language_distribution")
-    if not isinstance(language_distribution, dict):
-        language_distribution = {}
+    language_distribution_raw = report.data_sources.get("language_distribution")
+    language_distribution: dict[str, int] = {}
+    if isinstance(language_distribution_raw, dict):
+        language_distribution = language_distribution_raw
     algorithm_version = str(report.data_sources.get("algorithm_version") or "v1")
     processing_parameters = {
         "data_sources": report.data_sources,

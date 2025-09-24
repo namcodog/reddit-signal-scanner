@@ -22,4 +22,3 @@ def test_build_patch_and_dump_yaml() -> None:
 
     ytext = dump_yaml(patch)
     assert "core:" in ytext and "labels:" in ytext
-

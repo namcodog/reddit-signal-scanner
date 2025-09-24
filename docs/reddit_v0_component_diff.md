@@ -17,4 +17,4 @@
 - **需重构/重写**：`AppStateProvider`、页面组装结构、`ProductInputForm`、`AnalysisProgress`、`NavigationBreadcrumb`（以设计稿为准）。
 - **新增工作**：统一主题 Token、登录弹窗触发逻辑、导出/反馈按钮行为的真实 API 对接、Story/测试覆盖。
 
-后续阶段将基于此清单安排开发顺序，避免遗漏关键交互。 
+后续阶段将基于此清单安排开发顺序，避免遗漏关键交互。

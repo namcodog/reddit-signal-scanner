@@ -163,4 +163,3 @@ def test_invalid_pain_point_severity_rejected() -> None:
 
     with pytest.raises(ValidationError):
         ReportData(**payload)
-

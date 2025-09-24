@@ -54,4 +54,3 @@ async def test_admin_analysis_detail_contract(sync_db_session: "object") -> None
     assert resp.task_id == str(t.id)
     assert 0 <= resp.a_score <= 100
     assert hasattr(resp, "must")
-

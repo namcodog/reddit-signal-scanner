@@ -1,6 +1,6 @@
 /**
  * V2版本的应用状态管理Hook
- * 
+ *
  * 基于设计版use-app-state.ts，但适配到现有的真实API系统
  * 功能：
  * 1. 统一的状态管理（认证、导航、分析、报告）
@@ -49,16 +49,16 @@ export interface AppState {
   // 导航状态
   currentStep: AppStep;
   productDescription: string;
-  
+
   // 认证状态
   auth: AuthState;
-  
+
   // 分析状态
   analysis: AnalysisState;
-  
+
   // 报告状态
   report: ReportState;
-  
+
   // 全局状态
   error: string | null;
   isLoading: boolean;
@@ -109,18 +109,18 @@ export interface UseAppStateReturn {
   actions: {
     // 导航操作
     setCurrentStep: (step: AppStep) => void;
-    
+
     // 认证操作
     login: (email: string, password: string, name?: string) => Promise<ActionResult<{ user: V0User; token: string }>>;
     logout: () => Promise<ActionResult>;
-    
+
     // 分析操作
     startAnalysis: (description: string) => Promise<ActionResult<V0AnalysisTask>>;
     cancelAnalysis: () => Promise<ActionResult>;
-    
+
     // 报告操作
     loadReport: (taskId: string) => Promise<ActionResult<V0AnalysisReport>>;
-    
+
     // 错误处理
     setError: (error: string | null) => void;
     clearError: () => void;
@@ -149,17 +149,17 @@ export function useAppStateV2(): UseAppStateReturn {
 
   // 认证操作
   const login = useCallback(async (
-    email: string, 
-    password: string, 
+    email: string,
+    password: string,
     name?: string
   ): Promise<ActionResult<{ user: V0User; token: string }>> => {
     setState(prev => ({ ...prev, isLoading: true, error: null }));
-    
+
     try {
-      const result = name 
+      const result = name
         ? await v0ApiAdapter.signup(name, email, password)
         : await v0ApiAdapter.login(email, password);
-      
+
       if (result.success && result.data) {
         setState(prev => ({
           ...prev,
@@ -170,19 +170,19 @@ export function useAppStateV2(): UseAppStateReturn {
           },
           isLoading: false,
         }));
-        
+
         return {
           success: true,
           data: result.data,
         };
       }
-      
+
       setState(prev => ({
         ...prev,
         error: result.error || '登录失败',
         isLoading: false,
       }));
-      
+
       return {
         success: false,
         error: result.error || '登录失败',
@@ -194,7 +194,7 @@ export function useAppStateV2(): UseAppStateReturn {
         error: errorMessage,
         isLoading: false,
       }));
-      
+
       return {
         success: false,
         error: errorMessage,
@@ -227,7 +227,7 @@ export function useAppStateV2(): UseAppStateReturn {
         currentReport: null,
       },
     }));
-    
+
     return { success: true };
   }, []);
 
@@ -318,23 +318,23 @@ export function useAppStateV2(): UseAppStateReturn {
 
   const cancelAnalysis = useCallback(async (): Promise<ActionResult> => {
     const currentTaskId = state.analysis.currentTask?.id;
-    
+
     if (currentTaskId) {
       await v0ApiAdapter.cancelAnalysisTask(currentTaskId);
     }
-    
+
     // 停止轮询
     if (pollingIntervalRef.current) {
       clearInterval(pollingIntervalRef.current);
       pollingIntervalRef.current = null;
     }
-    
+
     // 关闭WebSocket
     if (wsRef.current) {
       wsRef.current.close();
       wsRef.current = null;
     }
-    
+
     setState(prev => ({
       ...prev,
       currentStep: 'input',
@@ -352,7 +352,7 @@ export function useAppStateV2(): UseAppStateReturn {
         },
       },
     }));
-    
+
     return { success: true };
   }, [state.analysis.currentTask?.id]);
 
@@ -369,7 +369,7 @@ export function useAppStateV2(): UseAppStateReturn {
 
     try {
       const result = await v0ApiAdapter.getAnalysisReport(taskId);
-      
+
       if (result.success && result.data) {
         setState(prev => ({
           ...prev,
@@ -380,13 +380,13 @@ export function useAppStateV2(): UseAppStateReturn {
             isLoading: false,
           },
         }));
-        
+
         return {
           success: true,
           data: result.data,
         };
       }
-      
+
       setState(prev => ({
         ...prev,
         error: result.error || '加载报告失败',
@@ -395,7 +395,7 @@ export function useAppStateV2(): UseAppStateReturn {
           isLoading: false,
         },
       }));
-      
+
       return {
         success: false,
         error: result.error || '加载报告失败',
@@ -410,7 +410,7 @@ export function useAppStateV2(): UseAppStateReturn {
           isLoading: false,
         },
       }));
-      
+
       return {
         success: false,
         error: errorMessage,
@@ -432,11 +432,11 @@ export function useAppStateV2(): UseAppStateReturn {
     if (pollingIntervalRef.current) {
       clearInterval(pollingIntervalRef.current);
     }
-    
+
     pollingIntervalRef.current = setInterval(async () => {
       try {
         const result = await v0ApiAdapter.getAnalysisTask(taskId);
-        
+
        if (result.success && result.data) {
          const task = result.data;
           const rawStats = (task as unknown as { stats?: { communities_found?: number; posts_analyzed?: number; insights_generated?: number; } }).stats;
@@ -467,7 +467,7 @@ export function useAppStateV2(): UseAppStateReturn {
               },
             },
           }));
-          
+
           // 如果任务完成，停止轮询并加载报告
           if (task.status === 'completed' && task.id) {
             if (pollingIntervalRef.current) {
@@ -490,7 +490,7 @@ export function useAppStateV2(): UseAppStateReturn {
               clearInterval(pollingIntervalRef.current);
               pollingIntervalRef.current = null;
             }
-            
+
             setState(prev => ({
               ...prev,
               analysis: {

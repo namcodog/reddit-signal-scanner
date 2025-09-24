@@ -21,4 +21,3 @@ def test_task_default_status_pending(sync_db_session: "object") -> None:
     assert got is not None
     # server_default 应赋值为 'pending'
     assert str(getattr(got, "status", "")) == "pending"
-

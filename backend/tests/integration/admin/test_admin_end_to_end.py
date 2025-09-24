@@ -44,4 +44,3 @@ def test_decision_to_patch_and_feedback_summary(monkeypatch: "object", client: "
     body = sf.json()
     assert body.get("code") == 0 and "data" in body
     assert isinstance(body["data"].get("total", 0), int)
-

@@ -45,4 +45,3 @@ async def test_admin_communities_summary_contract(sync_db_session: "object") -> 
     # 至少包含我们插入的社区
     names = [it.community for it in resp.data.items]
     assert "r/test_contract" in names
-

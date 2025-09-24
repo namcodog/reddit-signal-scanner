@@ -20,7 +20,12 @@ from ..models.task import Task
 from pydantic import BaseModel, ValidationError
 
 from ..schemas.contracts.report_contract import (
+    CompetitorInsight,
+    ExecutiveSummary,
     InsightItem,
+    MarketMetrics,
+    OpportunityInsight,
+    PainPointInsight,
     ReportData,
     ReportFormat,
 )
@@ -343,14 +348,19 @@ class ReportFormatterService:
             )
 
             example_posts = item.get("example_posts")
+            needs_conversion = False
             if not isinstance(example_posts, list) or not example_posts:
+                needs_conversion = True
+            else:
+                for raw_example in example_posts:
+                    if not isinstance(raw_example, Mapping):
+                        needs_conversion = True
+                        break
+            if needs_conversion:
                 examples = self._convert_evidence_posts(
                     item.get("evidence_posts") or example_posts, index
                 )
-                if examples:
-                    item["example_posts"] = examples
-                else:
-                    item["example_posts"] = []
+                item["example_posts"] = examples if examples else []
 
             if "tags" not in item:
                 tags = item.get("tags") or item.get("categories") or []
@@ -801,62 +811,47 @@ def get_formatted_report(
         generated_at=str(data.get("generated_at", raw.get("timestamp", ""))),
         data_freshness=str(data.get("data_freshness", "unknown")),
         html_content=data.get("html_content"),
-        data_coverage=data.get("data_coverage"),
-        executive_summary=_coerce_executive_summary(data.get("executive_summary")),
-        market_metrics=_coerce_market_metrics(data.get("market_metrics")),
+        market_metrics=market_metrics,
         pain_points=pain_points,
         competitors=competitors,
         opportunities=opportunities,
+        data_coverage=data.get("data_coverage"),
     )
 
 
-def _coerce_executive_summary(raw: Any) -> dict[str, Any]:
+def _coerce_executive_summary(raw: Any) -> ExecutiveSummary:
     """兜底机制：确保executive_summary字段结构正确"""
-    if isinstance(raw, dict):
+    if isinstance(raw, ExecutiveSummary):
         return raw
-    return {
-        "headline": None,
-        "total_communities": 0,
-        "key_insights": 0,
-        "top_opportunity": None,
-        "confidence_score": 0.0,
-        "summary_points": [],
-    }
+    try:
+        return ExecutiveSummary.model_validate(raw or {})
+    except ValidationError:
+        return ExecutiveSummary()
 
 
-def _coerce_market_metrics(raw: Any) -> dict[str, Any]:
+def _coerce_market_metrics(raw: Any) -> MarketMetrics:
     """兜底机制：确保market_metrics字段结构正确"""
-    if isinstance(raw, dict):
+    if isinstance(raw, MarketMetrics):
         return raw
-    return {
-        "total_mentions": 0,
-        "sentiment_score": 0.0,
-        "top_communities": [],
-        "trending_keywords": [],
-        "engagement_rate": 0.0,
-        "sample_size": 0,
-    }
+    try:
+        return MarketMetrics.model_validate(raw or {})
+    except ValidationError:
+        return MarketMetrics()
 
 
-def _coerce_pain_points(raw: Any) -> list[dict[str, Any]]:
+def _coerce_pain_points(raw: Any) -> list[PainPointInsight]:
     """兜底机制：确保pain_points字段为列表类型"""
-    if isinstance(raw, list):
-        return raw
-    return []
+    return _coerce_list(raw, PainPointInsight)
 
 
-def _coerce_competitors(raw: Any) -> list[dict[str, Any]]:
+def _coerce_competitors(raw: Any) -> list[CompetitorInsight]:
     """兜底机制：确保competitors字段为列表类型"""
-    if isinstance(raw, list):
-        return raw
-    return []
+    return _coerce_list(raw, CompetitorInsight)
 
 
-def _coerce_opportunities(raw: Any) -> list[dict[str, Any]]:
+def _coerce_opportunities(raw: Any) -> list[OpportunityInsight]:
     """兜底机制：确保opportunities字段为列表类型"""
-    if isinstance(raw, list):
-        return raw
-    return []
+    return _coerce_list(raw, OpportunityInsight)
 
 
 TModel = TypeVar("TModel", bound=BaseModel)

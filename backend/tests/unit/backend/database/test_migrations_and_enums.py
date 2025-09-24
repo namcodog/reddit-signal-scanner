@@ -15,4 +15,3 @@ def test_task_status_enum_exists() -> None:
             assert set(["pending", "processing", "completed", "failed"]).issubset(set(values))
     finally:
         engine.dispose()
-

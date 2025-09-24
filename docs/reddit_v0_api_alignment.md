@@ -21,4 +21,4 @@
 - **鉴权头**：现前端通过 Cookie/CSRF 方案，无显式 Bearer Token；设计版 token 驱动的 Header 可忽略。
 - **SSE/WS 重试策略**：现前端实现已满足设计稿的「可视重连提示」需求，UI 需同步展示 `connectionAttempts`、`strategy` 等信息。
 
-该清单将在 Phase 2/3 改造中作为接口对照表，确保所有组件迁移到真实数据路径。 
+该清单将在 Phase 2/3 改造中作为接口对照表，确保所有组件迁移到真实数据路径。

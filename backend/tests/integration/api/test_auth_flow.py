@@ -13,4 +13,3 @@ def test_auth_register_and_health(client: "object") -> None:
     payload = {"email": email, "password": "P@ssw0rd!"}
     r = client.post("/api/v1/auth/register", json=payload)
     assert r.status_code in (200, 201, 409)  # 409 already exists is acceptable in CI re-runs
-

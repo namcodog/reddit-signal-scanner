@@ -46,7 +46,27 @@
     "src/**/*.test.ts",
     "src/**/*.test.tsx",
     "src/**/*.spec.ts",
-    "src/**/*.spec.tsx"
+    "src/**/*.spec.tsx",
+    "src/components/auth/**/*",
+    "src/components/error-boundary-helpers.tsx",
+    "src/components/user/**/*",
+    "src/components/v0/AnalysisProgressV2.tsx",
+    "src/components/v0/ProductInputFormV2.tsx",
+    "src/components/v0/RedditScannerPageV2.tsx",
+    "src/components/v0/InsightsReport.tsx",
+    "src/components/v0/InsightsReportV2.tsx",
+    "src/components/v0/ReportEvaluationDialog.tsx",
+    "src/hooks/appStateContext.tsx",
+    "src/hooks/useAppState.tsx",
+    "src/hooks/useAppStateV2.ts",
+    "src/hooks/useSecureAuth.ts",
+    "src/hooks/authContext.tsx",
+    "src/pages/admin/**/*",
+    "src/pages/v0-demo.tsx",
+    "src/services/adminApi.ts",
+    "src/services/feedback.service.ts",
+    "src/services/user.service.ts",
+    "src/services/v0-api-adapter.ts"
   ],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

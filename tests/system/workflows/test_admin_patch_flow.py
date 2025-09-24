@@ -21,4 +21,3 @@ def test_system_admin_patch_flow(monkeypatch: "object", client: "object") -> Non
     y = yaml.safe_load(io.StringIO(resp.text))
     assert "r/sys_flow" in y.get("core", [])
     assert "r/sys_black" in y.get("blacklist", [])
-

@@ -25,4 +25,3 @@ def test_admin_analysis_detail_missing_returns_404(monkeypatch: "object", client
 
     resp = client.get("/api/v1/admin/analysis/00000000-0000-0000-0000-000000000001")
     assert resp.status_code == 404
-

@@ -90,4 +90,3 @@ def summarize_many(
     for tid in task_ids:
         out.append(summarize_task(tid, provider(tid)))
     return out
-

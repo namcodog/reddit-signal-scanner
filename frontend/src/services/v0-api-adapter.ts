@@ -1,6 +1,6 @@
 /**
  * V0 API适配器 - 将设计版API调用适配到现有真实API
- * 
+ *
  * 功能：
  * 1. 将设计版的Mock API调用转换为真实API调用
  * 2. 处理数据结构映射和字段转换
@@ -419,13 +419,13 @@ class V0ApiAdapter {
             (reportData.opportunities as ReportOpportunityInsight[] | undefined) ?? []
           ),
         };
-        
+
         return {
           success: true,
           data: v0Report,
         };
       }
-      
+
       return {
         success: false,
         error: '获取报告失败',
@@ -447,7 +447,7 @@ class V0ApiAdapter {
       // 这里可以调用现有的取消API，如果有的话
       // 目前先返回成功，实际实现需要根据后端API确定
       logger.info('V0ApiAdapter.cancelAnalysisTask called for task:', taskId);
-      
+
       return {
         success: true,
       };

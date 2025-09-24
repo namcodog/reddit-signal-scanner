@@ -30,4 +30,3 @@ async def test_create_and_list_feedback_event(db_session: "object") -> None:
     end = datetime.now(timezone.utc) + timedelta(minutes=5)
     rows = await list_events(db_session, start=start, end=end, limit=10)
     assert any(str(r.id) == ev_id for r in rows)
-

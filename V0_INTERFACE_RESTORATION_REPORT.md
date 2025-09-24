@@ -131,7 +131,7 @@ import { useAppStateV2 } from '@/hooks/useAppStateV2';
 
 function MyComponent() {
   const { state, actions } = useAppStateV2();
-  
+
   // 使用统一的状态和操作
   const handleAnalysis = () => {
     actions.startAnalysis(description);

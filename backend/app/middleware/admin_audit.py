@@ -76,4 +76,3 @@ def _append_audit(record: AuditRecord) -> None:
     with AUDIT_FILE.open("a", encoding="utf-8") as f:
         f.write(json.dumps(record.model_dump(), ensure_ascii=False))
         f.write("\n")
-

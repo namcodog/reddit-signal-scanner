@@ -58,4 +58,3 @@ def test_analysis_json_schema_constraints(sync_db_session: "object") -> None:
 
     got = sync_db_session.query(Analysis).filter(Analysis.task_id == t.id).one()
     assert got.confidence_percentage == float(good.confidence_score) * 100
-

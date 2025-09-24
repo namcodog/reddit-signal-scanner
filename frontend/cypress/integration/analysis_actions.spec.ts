@@ -24,4 +24,3 @@ describe('Admin analysis actions smoke', () => {
     cy.wait('@postFeedback')
   })
 })
-

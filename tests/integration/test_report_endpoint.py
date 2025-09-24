@@ -9,10 +9,20 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
+from decimal import Decimal
+
+from app.models.analysis import Analysis
 from app.models.analysis_pipeline import AnalysisReport, InsightsData
+from app.models.report import Report
 from app.models.task import Task, TaskStatus
-from app.tasks.analysis_tasks import _persist_analysis_report
+from app.tasks.analysis_tasks import (
+    _build_insights_payload,
+    _build_sources_payload,
+    _render_report_html,
+)
 from sqlalchemy import text as sa_text
+from sqlalchemy.orm import Session, sessionmaker
+from app.core.jwt_handler import get_jwt_handler
 
 
 @pytest.fixture
@@ -102,6 +112,7 @@ def test_report_endpoint_returns_structured_data(
     client: TestClient,
     sync_db_session,
     sample_analysis_report: AnalysisReport,
+    monkeypatch,
 ) -> None:
     session = sync_db_session
 
@@ -136,23 +147,67 @@ def test_report_endpoint_returns_structured_data(
     session.add(task)
     session.commit()
 
-    _persist_analysis_report(str(task.id), task.product_description, sample_analysis_report)
+    insights_payload, market_metrics, metadata = _build_insights_payload(
+        sample_analysis_report, task.product_description
+    )
+    sources_payload = _build_sources_payload(
+        sample_analysis_report, metadata.get("communities", [])
+    )
+    html_content = _render_report_html(
+        str(task.id), task.product_description, insights_payload, market_metrics
+    )
+
+    analysis = Analysis(
+        task_id=task.id,
+        insights=insights_payload,
+        sources=sources_payload,
+        confidence_score=Decimal(str(sample_analysis_report.confidence_score)),
+    )
+    session.add(analysis)
+    session.flush()
+
+    report_record = Report(
+        analysis_id=analysis.id,
+        html_content=html_content,
+        status="active",
+    )
+    session.add(report_record)
+    session.commit()
+
+    jwt_handler = get_jwt_handler()
+    access_token = jwt_handler.create_access_token(
+        user_id=str(user_id),
+        tenant_id=str(tenant_id),
+        email="report-example@example.com",
+        permissions=["reports:read"],
+    )
 
     stored_insights = session.execute(
-        sa_text(
-            "SELECT insights FROM analyses WHERE task_id = :task_id"
-        ),
+        sa_text("SELECT insights FROM analyses WHERE task_id = :task_id"),
         {"task_id": str(task.id)},
     ).scalar_one()
     assert stored_insights.get("pain_points"), "落库后应包含 pain_points"
 
-    response = client.get(f"/api/v1/report/{task.id}")
-    assert response.status_code == 200
+    engine = session.get_bind()
+    SessionFactory = sessionmaker(bind=engine)
+
+    def _override_get_session_sync() -> Session:
+        return SessionFactory()
+
+    monkeypatch.setattr("app.api.v1.endpoints.report.get_session_sync", _override_get_session_sync)
+
+    response = client.get(
+        f"/api/v1/report/{task.id}",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+    if response.status_code != 200:
+        pytest.fail(f"unexpected status {response.status_code}: {response.json()}")
 
     payload = response.json()
     assert payload["status"] == "success"
     data = payload.get("data")
     assert data, "响应中缺少 data 字段"
+    print("API data:", data)
     assert data["task_id"] == str(task.id)
     assert data["market_metrics"]["total_mentions"] > 0
     if not data.get("pain_points"):

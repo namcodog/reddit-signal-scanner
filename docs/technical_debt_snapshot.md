@@ -22,21 +22,21 @@
 
 ## 3. 未清技术债重点
 
-1. **业务 TODO / FIXME（18 / 0 处）**  
-   - 启动流程：`backend/app/main.py` 中 Celery/健康检查仍待补齐。  
-   - 告警链路：`backend/app/services/failure_analyzer.py`、`notification_service.py` 仍保留占位逻辑。  
-   - 任务管理：`backend/app/api/v1/endpoints/analyze.py` 的取消接口尚未实现。  
+1. **业务 TODO / FIXME（18 / 0 处）**
+   - 启动流程：`backend/app/main.py` 中 Celery/健康检查仍待补齐。
+   - 告警链路：`backend/app/services/failure_analyzer.py`、`notification_service.py` 仍保留占位逻辑。
+   - 任务管理：`backend/app/api/v1/endpoints/analyze.py` 的取消接口尚未实现。
 
-2. **数据结构债务**  
+2. **数据结构债务**
    - `Dict[str, Any]` 仅残留 23 处，集中在兼容适配器与监控响应结构，需继续 TypedDict 化。
 
-3. **异常处理债务**  
+3. **异常处理债务**
    - `except Exception` 仍有 111 处，核心链路需拆分为精确异常 + 结构化日志/告警。
 
-4. **功能缺口**  
+4. **功能缺口**
    - `background_crawler` 真实 Reddit API 尚待接入，通知流水落库仍需完善。
 
-5. **口径同步**  
+5. **口径同步**
    - 先前若有“技术债清零”表述，应全部改为引用本快照或 `TECHNICAL_DEBT_RESOLUTION.md` 最新状态。
 
 ## 4. 行动序列（Phase A~E）
@@ -53,8 +53,8 @@
 
 ## 5. 更新规则
 
-1. 新指标、脚本执行结果、重要修复完成后，务必同步更新此文档与 `TECHNICAL_DEBT_RESOLUTION.md`。  
-2. 若指标得以改善（例如 TODO 数下降、Dict 数减半），请写明处理 PR/负责人。  
+1. 新指标、脚本执行结果、重要修复完成后，务必同步更新此文档与 `TECHNICAL_DEBT_RESOLUTION.md`。
+2. 若指标得以改善（例如 TODO 数下降、Dict 数减半），请写明处理 PR/负责人。
 3. 当阶段目标达成，再修改“状态”列并附日期。
 
 保持透明是控制技术债的第一步，请所有变更都以此快照为准。
